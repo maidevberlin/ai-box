@@ -20,6 +20,7 @@ import subprocess
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import behaviours
 import story
 import worlds
 
@@ -64,6 +65,7 @@ class Handler(BaseHTTPRequestHandler):
             ids = sorted(filter(RUN_ID.match, os.listdir(story.RUNS)), reverse=True)
             return self.send({
                 "worlds": [worlds.describe(name) for name in worlds.names()],
+                "behaviours": behaviours.described(),
                 "models": MODELS, "prompt": last_prompt(ids), "runs": [
                 {"id": i, "review": story.review(os.path.join(story.RUNS, i)),
                  "world": story.world(os.path.join(story.RUNS, i)),

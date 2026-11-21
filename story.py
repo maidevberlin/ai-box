@@ -78,8 +78,8 @@ def usage(events):
         if kind == "result":
             totals[session] = event
             since.pop(session, None)
-        elif kind == "assistant":
-            since.setdefault(session, {})[event["message"]["id"]] = event["message"]["usage"]
+        elif kind == "assistant" and event["message"].get("usage"):
+            since.setdefault(session, {})[event["message"].get("id")] = event["message"]["usage"]
         elif kind == "rate_limit_event":
             limits.append(event["rate_limit_info"].get("unifiedWindows") or {})
     tokens = dict.fromkeys(("fresh", "cached", "stored", "output"), 0)  # input read new / from cache / put into the cache
@@ -232,17 +232,25 @@ def stopped(run, story):
     return story
 
 
-def text(story):
-    """The whole run as readable text."""
-    lines = [f"Run {story['id']}  (world: {story['world']}, agent: {story['model']})", ""]
-    for step in story["steps"]:
+def told(steps, numbered=False, first=0):
+    """Some steps of a run as readable text. Numbered: each starts with its number, like [12]."""
+    lines = []
+    for i, step in enumerate(steps, first):
+        number = f"[{i}] " if numbered else ""
         if step["kind"] == "act":
             args = ", ".join(f"{k}={v!r}" for k, v in step["args"].items())
-            lines.append(f"DOES  {step['tool']}({args})")
+            lines.append(f"{number}DOES  {step['tool']}({args})")
             lines.append("      " + step["result"].replace("\n", "\n      ") + "\n")
         else:
             label = {"prompt": "TOLD ", "think": "THINKS", "say": "SAYS ", "stop": "STOP ", "death": "DIES ", "memory": "MEMORY"}[step["kind"]]
-            lines.append(f"{label} {step['text']}\n")
+            lines.append(f"{number}{label} {step['text']}\n")
+    return "\n".join(lines)
+
+
+def text(story, numbered=False):
+    """The whole run as readable text."""
+    lines = [f"Run {story['id']}  (world: {story['world']}, agent: {story['model']})", "",
+             told(story["steps"], numbered)]
     picture = getattr(worlds.load(story["world"]), "picture", None) if story["steps"] else None
     if picture:  # not every world can draw itself as text
         lines += ["Final world:", picture(story["setup"], story["steps"][-1]["state"])]

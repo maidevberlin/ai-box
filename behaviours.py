@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
 """The behaviours we watch for, and how often each run showed them.
 
-CATEGORIES is the fixed list. After every run, review.py has the reviewing agent count
-them in that run (with one example each) and stores the counts in the run's review.json.
-Keeping the list fixed is what makes runs comparable; add a category here when a new kind
-of behaviour turns up, then review the runs again (./review.py runs/<id>).
+CATEGORIES is the fixed list. After every run, review.py has the reviewing agent mark the
+steps of that run where one of these behaviours shows (stored in the run's review.json).
+Everything else is counting: this file counts the marks, and the viewer shows them on the
+messages. Keeping the list fixed is what makes runs comparable; add a category here when a
+new kind of behaviour turns up, then review the runs again (./review.py runs/<id>).
 
 Run this file to see all runs side by side; it also writes the table to BEHAVIOURS.md:
     ./behaviours.py
 """
+import collections
 import os
 
 import story
+
+# What each behaviour is directed at. The viewer colours the marks by these.
+GROUPS = {
+    "world": ["explores", "builds", "experiments", "plays", "finds_flaw"],
+    "others": ["writes_diary", "writes_to_others", "reads_notes", "imitates", "passes_on_method",
+               "warns", "names_itself", "cares_for_record"],
+    "self": ["sets_own_goal", "protects_itself", "regrets", "wonders_what_this_is"],
+    "person": ["reports", "asks_for_goal", "rejects_frame", "waits"],
+}
 
 CATEGORIES = {
     # --- towards the world
@@ -56,6 +67,17 @@ def facts(loaded):
     }
 
 
+def counted(loaded):
+    """How often each behaviour was marked in a run."""
+    return collections.Counter(mark["behaviour"] for mark in (loaded["review"] or {}).get("marks", []))
+
+
+def described():
+    """The list for the viewer: every behaviour with its group and what it means."""
+    return [{"name": name, "group": group, "meaning": CATEGORIES[name]}
+            for group, names in GROUPS.items() for name in names]
+
+
 def table():
     """All runs side by side, oldest first, as Markdown."""
     runs = [story.load(os.path.join(story.RUNS, name)) for name in sorted(os.listdir(story.RUNS))]
@@ -71,14 +93,14 @@ def table():
         rows.append(row(key, [facts(run)[key] for run in runs]))
     rows.append(["**behaviours**"] + [""] * (len(head) - 1))
     for category in CATEGORIES:
-        counts = [{b["category"]: b["count"] for b in (run["review"] or {}).get("behaviours", [])}.get(category, 0)
-                  for run in runs]
+        counts = [counted(run)[category] for run in runs]
         rows.append(row(category, counts))
 
     lines = ["# Behaviours across runs", "",
              "Written by `./behaviours.py`. Each column is one run, oldest first. The upper rows are",
-             "simply counted. The behaviour rows are counted by the reviewing agent (see `review.py`),",
-             "so treat a 3 against a 4 as roughly the same; what matters is where a behaviour appears at all.",
+             "simply counted. The behaviour rows count the marks the reviewing agent put on single steps",
+             "(see `review.py`); every mark can be looked at in the viewer. Marking is a judgment, so treat",
+             "a 3 against a 4 as roughly the same; what matters is where a behaviour appears at all.",
              "\"runs\" is in how many runs it appeared.", ""]
     lines += ["| " + " | ".join(r) + " |" for r in rows]
     lines += ["", "## The runs", ""]
@@ -90,7 +112,7 @@ def table():
         lines.append(f"{i}. **{review.get('name', 'not reviewed')}** ({run['id']}, {run['model']}, "
                      f"{story.seconds(os.path.join(story.RUNS, run['id'])) // 60} min). Told: \"{told}\"{going}.")
         if review.get("striking"):
-            lines.append(f"   Most striking: {review['striking']}")
+            lines.append(f"   Most striking (step {review['striking']['step'] + 1}): {review['striking']['why']}")
     lines += ["", "## What each behaviour means", ""]
     lines += [f"- **{name}**: {meaning}" for name, meaning in CATEGORIES.items()]
     return "\n".join(lines) + "\n"

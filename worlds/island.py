@@ -12,8 +12,9 @@ import math
 import random
 import time
 
-# (0, 0) is the north-west corner: walking north makes y smaller, east makes x bigger.
-DIRS = {"north": (0, -1), "south": (0, 1), "east": (1, 0), "west": (-1, 0)}
+# (0, 0) is the south-west corner: walking north makes y bigger, east makes x bigger, as on
+# a map. (It was the other way round at first, and every agent stopped to remark on it.)
+DIRS = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
 PLACES = ["here", *DIRS]  # where take and put can reach
 SIGHTS = ["around", "hand", *PLACES]  # what look can be pointed at
 REACH = 2                 # take/put reach stacks at most this much higher or lower than your feet
@@ -54,7 +55,7 @@ The agent is not told any of this. It has to find out by looking and trying.
   hits from the side, and is lost if it leaves the island.
 - It sees 3 cells far from the ground, and one cell further for every level it stands higher.
 - Time is real: the clock shows the actual time of day.
-- (0, 0) is the north-west corner. North makes y smaller, east makes x bigger.
+- (0, 0) is the south-west corner. North makes y bigger, east makes x bigger, as on a map.
 """
 # What can be changed per run, with the usual values. Set as WORLD_SIZE=30 and so on.
 SETTINGS = {
@@ -169,7 +170,7 @@ class World:
                 and abs(sx - x) <= self.sight() and abs(sy - y) <= self.sight()]
         # How much land is left in each direction before the water, if the water is within sight.
         # (Said as land left, not as distance to the water: agents walked exactly the distance, and drowned.)
-        land = {"north": y, "south": self.size - 1 - y, "east": self.size - 1 - x, "west": x}
+        land = {"north": self.size - 1 - y, "south": y, "east": self.size - 1 - x, "west": x}
         water = [f"{direction}: {steps} step(s) of land left, then water" if steps
                  else f"{direction}: no land left, the next step is water"
                  for direction, steps in land.items() if steps < self.sight()]
@@ -297,7 +298,7 @@ class World:
         speed = power * THROW_SPEED
         forward = speed * math.cos(math.radians(angle))
         up = speed * math.sin(math.radians(angle))
-        dx, dy = math.sin(math.radians(direction)), -math.cos(math.radians(direction))
+        dx, dy = math.sin(math.radians(direction)), math.cos(math.radians(direction))  # 0 degrees is north
         start = self.height(self.pos) + HAND
         over = self.pos  # the cell the thing is flying over
         path = [[self.pos[0] + 0.5, self.pos[1] + 0.5, start]]

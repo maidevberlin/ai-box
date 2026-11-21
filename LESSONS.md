@@ -85,6 +85,16 @@ distance to the shore, walked exactly six steps, and drowned. What looked like a
 was partly our wording. It now says how much land is left. Before reading meaning into what
 agents do, check what exactly they were told.
 
+**Follow the conventions agents expect, unless breaking them is the point.** At first north
+made y smaller, as on a screen. Agents expect a map, where north makes y bigger, so every
+one of them stopped to work it out and wrote it into its notes. It told us nothing about
+them and took room from what they could have passed on. North now makes y bigger.
+
+**Let the reviewer point, and let a script count.** Asked to count behaviours in a whole
+run, the reviewing agent gave numbers nobody could check. It now marks single steps, in
+sections of 100, because one reviewer reading 600 steps marked 26 of them and four reading
+the same run in sections marked 125. Every count leads back to a message in the viewer.
+
 **Agents find the bugs.** An agent threw the same note twice and was told both times that it
 hit a stack where there was only ground. It walked there to check, repeated the throw,
 varied the power, and concluded: a rounding error at a cell's edge. That was right, and is
