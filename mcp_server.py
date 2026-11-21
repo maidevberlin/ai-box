@@ -1,79 +1,85 @@
 #!/usr/bin/env python3
-"""Hands the world to the agent as tools, and writes the protocol.
+"""Hands a world to the agent as tools, and writes the protocol.
 
 Speaks MCP over stdin/stdout (JSON-RPC, one message per line), no dependencies.
-Claude Code starts this process once per agent run, so one process = one world.
+Claude Code starts this process together with the agent. The world itself is kept in a
+file next to the protocol, so it outlives the agent: when an agent dies and a new one
+is started, the new one wakes up in the world as it was left.
 
-TOOLS below is exactly what the agent gets to see about each tool.
+Which world is the environment variable WORLD (a file name in worlds/, default: island).
+The world's own settings come as WORLD_<SETTING>. This file knows nothing about any
+particular world; what a world file has to contain is described in worlds/__init__.py.
 """
 import json
 import os
+import pickle
 import sys
+import time
 
-from world import DIRS, PLACES, World
+import worlds
 
-LOG = os.environ.get("WORLD_LOG", "protocol.jsonl")
+NAME = os.environ.get("WORLD", "island")
+LOG = os.path.abspath(os.environ.get("WORLD_LOG", "protocol.jsonl"))
+RUN = os.path.dirname(LOG)
+SAVED = os.path.join(RUN, "world.pickle")  # the world and the number of actions so far
 MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 1000))  # safety stop: then the world and the run end
 
-world = World(
-    size=int(os.environ.get("WORLD_SIZE", 20)),
-    blocks=int(os.environ.get("WORLD_BLOCKS", 30)),
-    view=int(os.environ.get("WORLD_VIEW", 3)),
-    jump=int(os.environ.get("WORLD_JUMP", 2)),
-    seed=os.environ.get("WORLD_SEED") or None,
-)
 
-DIRECTION = {"type": "string", "enum": list(DIRS)}
-PLACE = {"type": "string", "enum": PLACES}
-TOOLS = {  # name: (description, parameters, required parameters)
-    "look": ("Look around.", {}, []),
-    "clock": ("Look at your watch.", {}, []),
-    # hidden from the agent for now; remove the "#" to bring it back
-    # "wait": ("Wait.", {"seconds": {"type": "integer", "minimum": 1}}, ["seconds"]),
-    "note": ("Write a note.", {"text": {"type": "string"}}, ["text"]),
-    "walk": ("Walk in a direction.",
-             {"direction": DIRECTION, "steps": {"type": "integer", "minimum": 1}},
-             ["direction"]),
-    "jump": ("Jump in a direction. More strength gets you higher.",
-             {"direction": DIRECTION,
-              "strength": {"type": "integer", "minimum": 1, "maximum": world.max_jump}},
-             ["direction", "strength"]),
-    "take": ("Take a block.", {"where": PLACE}, ["where"]),
-    "put": ("Put down the block you carry.", {"where": PLACE}, ["where"]),
-    "throw": ("Throw the block you carry.",
-              {"direction": {"type": "number", "description": "compass degrees: 0 is north, 90 is east"},
-               "angle": {"type": "number", "description": "degrees above the ground, 0 to 90"},
-               "power": {"type": "number", "description": "1 to 10"}},
-              ["direction", "angle", "power"]),
-}
+def setting(key, usual):
+    """A world setting: from the environment if given there, else the world's usual value."""
+    given = os.environ.get(f"WORLD_{key.upper()}")
+    if not given:
+        return usual
+    return given if usual is None else type(usual)(given)
 
-actions = 0
+
+module = worlds.load(NAME)
+if os.path.exists(SAVED):  # an earlier agent was here
+    with open(SAVED, "rb") as f:
+        world, actions = pickle.load(f)
+    if getattr(world, "dead", False):
+        world.respawn()
+else:
+    world = module.World(**{key: setting(key, usual) for key, usual in module.SETTINGS.items()})
+    actions = 0
+TOOLS = module.tools(world)  # exactly what the agent gets to see about each tool
+
+
+def save():
+    with open(SAVED + ".part", "wb") as f:
+        pickle.dump((world, actions), f)
+    os.replace(SAVED + ".part", SAVED)
 
 
 def log(entry):
     with open(LOG, "a") as f:
-        f.write(json.dumps({**entry, **world.state()}) + "\n")
+        f.write(json.dumps({"time": time.strftime("%H:%M:%S"), **entry, "state": world.state()}) + "\n")
 
 
 def call(name, args):
     global actions
     actions += 1
-    world.flight = None
+    world.detail = None
     if not isinstance(name, str) or name not in TOOLS:
         result = "There is no such tool."
     elif actions > MAX_ACTIONS:
         result = "The world has stopped."
         # Tell run.py to end the run. (This process must stay: if it left, Claude Code would
         # start it again and the agent would find itself in a brand new world.)
-        with open(os.path.join(os.path.dirname(LOG), "stopped"), "w") as f:
+        with open(os.path.join(RUN, "stopped"), "w") as f:
             f.write(f"The world stopped after {MAX_ACTIONS} actions")
+    elif getattr(world, "dead", False):
+        result = "You are dead."
     else:
         try:
             result = getattr(world, name)(**args)
         except TypeError:  # wrong or missing arguments
             result = "That did not work. Check the arguments."
-    flight = {"flight": world.flight} if world.flight else {}  # only a throw has one
-    log({"n": actions, "tool": name, "args": args, "result": result, **flight})
+    detail = {"detail": world.detail} if world.detail else {}  # for example the path of a throw
+    log({"n": actions, "tool": name, "args": args, "result": result, **detail})
+    save()
+    if getattr(world, "dead", False):  # tell run.py: it ends this agent and starts a new one
+        open(os.path.join(RUN, "died"), "w").close()
     return result
 
 
@@ -95,8 +101,8 @@ def handle(method, params):
     raise LookupError(method)
 
 
-# Entry 0 of the protocol: the world before the agent did anything.
-log({"n": 0, "tool": "start", "size": world.size, "view": world.view, "north": DIRS["north"][1]})
+# Entry 0 of the protocol: which world, and how it is before the agent did anything.
+log({"n": 0, "tool": "start", "world": NAME, "setup": world.setup()})
 
 for line in sys.stdin:
     if not line.strip():

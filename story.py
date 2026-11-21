@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Turns the files of one run into a single timeline of steps.
 
-A step is the prompt, something the agent thought, said or did, or a stop by hand.
-Every step carries the world state after it, so the viewer can draw any step alone.
+A step is the prompt, something the agent thought, said or did, or the end of the run.
+Every step carries the world's state after it, so the viewer can draw any step alone.
+This file knows nothing about any particular world: a state is whatever the world recorded.
 
 Run it directly to print a run as text:  ./story.py [runs/<id>]   (default: latest)
 """
@@ -10,6 +11,8 @@ import json
 import os
 import sys
 import time
+
+import worlds
 
 RUNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs")
 
@@ -26,6 +29,18 @@ def read_jsonl(path):
     return entries
 
 
+def first_line(run, name):
+    """The first entry of one of a run's files, or nothing if there is none yet."""
+    path = os.path.join(run, name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            try:
+                return json.loads(f.readline())
+            except ValueError:
+                pass
+    return {}
+
+
 def review(run):
     """The name, summary and rating that review.py gave this run, if it has been reviewed."""
     path = os.path.join(run, "review.json")
@@ -36,43 +51,69 @@ def review(run):
 
 def model(run):
     """Which model the agent was, as Claude Code reported it at the start of the run."""
-    path = os.path.join(run, "transcript.jsonl")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if '"subtype":"init"' in line:
-                    return json.loads(line).get("model", "").removeprefix("claude-")
-                break  # it is always the first line
+    return first_line(run, "transcript.jsonl").get("model", "").removeprefix("claude-")
+
+
+def world(run):
+    """Which world the run took place in. Runs from before there was a choice were on the island."""
+    return first_line(run, "protocol.jsonl").get("world", "island")
+
+
+# The file "auto" in a run's folder means: repeat the prompt whenever the agent stops.
+# With a time limit, it holds the moment the time is up and how many minutes that was.
+def auto_text(minutes):
+    return f"{time.time() + minutes * 60} {minutes:g}" if minutes else ""
+
+
+def limit(run):
+    """The time limit of a run that repeats its prompt: (when it is up, minutes), if it has one."""
+    try:
+        with open(os.path.join(run, "auto")) as f:
+            until, minutes = f.read().split()
+        return float(until), minutes
+    except (OSError, ValueError):
+        return None
+
+
+# Runs recorded before worlds became separate files kept the island's facts loose in each entry.
+def old_setup(start):
+    return {"size": start["size"], "view": start["view"], "north": start.get("north", 1)}
+
+
+def old_state(entry, start):
+    return {"pos": entry["pos"], "carrying": entry["carrying"], "view": entry.get("view", start["view"]),
+            "blocks": entry.get("blocks") or entry.get("stones") or []}
 
 
 def load(run):
     protocol = read_jsonl(os.path.join(run, "protocol.jsonl"))
     start = protocol[0] if protocol and protocol[0]["tool"] == "start" else None
-    # A second "start" would mean the world was started again mid-run; it is not an action.
+    # Later "start" entries are not actions: the world was picked up again, by a new agent
+    # after the one before died.
     actions = [entry for entry in protocol[1:] if entry["tool"] != "start"]
+    wakings = [entry for entry in protocol[1:] if entry["tool"] == "start"]
     story = {
         "id": os.path.basename(run),
-        "size": start["size"] if start else None,
-        "view": start["view"] if start else None,
-        # which way y runs: -1 = north is smaller y. Runs from before that fix have +1.
-        "north": start.get("north", 1) if start else None,
+        "world": start.get("world", "island") if start else None,
+        "setup": (start.get("setup") or old_setup(start)) if start else None,
         "review": review(run),
         "model": model(run),
         "done": os.path.exists(os.path.join(run, "done")),
         "waiting": False,  # the agent has stopped and the run waits for a message
         "auto": os.path.exists(os.path.join(run, "auto")),      # the prompt is repeated by itself
         "queued": os.path.exists(os.path.join(run, "inbox")),   # a message waits to be delivered
+        # when the run ends by itself, if repeating has a time limit
+        "until": time.strftime("%H:%M", time.localtime(limit(run)[0])) if limit(run) else None,
         "steps": [],
     }
     if not start:  # the world has not started yet
         return story
 
-    def state(entry):
-        return {"time": entry.get("time"), "pos": entry["pos"], "carrying": entry["carrying"],
-                "view": entry.get("view", start["view"]),  # how far the agent sees at this step
-                "blocks": entry.get("blocks") or entry.get("stones") or []}  # "stones" in older runs
+    def after(entry):
+        """The moment after a protocol entry: the time and the world's state."""
+        return {"time": entry.get("time"), "state": entry.get("state") or old_state(entry, start)}
 
-    now = state(start)
+    now = after(start)
     prompt_file = os.path.join(run, "prompt.txt")
     prompt = open(prompt_file).read().strip() if os.path.exists(prompt_file) else ""
     story["steps"].append({"kind": "prompt", "text": prompt, **now})
@@ -81,6 +122,11 @@ def load(run):
     for event in read_jsonl(os.path.join(run, "transcript.jsonl")):
         if event.get("type") == "result":  # the agent stopped
             story["waiting"] = not story["done"]
+        elif event.get("type") == "died":  # the agent died; a new one wakes up
+            story["waiting"] = False
+            story["steps"].append({"kind": "death", "text": "The agent died. A new agent wakes up, knowing nothing.", **now})
+            if wakings:  # from here on the world is shown as the new agent finds it
+                now = after(wakings.pop(0))
         elif event.get("type") == "told":  # run.py told it something more
             story["waiting"] = False
             story["steps"].append({"kind": "prompt", "text": event["text"], "how": event["how"], **now})
@@ -101,10 +147,11 @@ def load(run):
                     return stopped(run, story)
                 action = actions[done_actions]
                 done_actions += 1
-                now = state(action)
-                story["steps"].append({"kind": "act", "tool": action["tool"],
-                                       "args": action["args"], "result": action["result"],
-                                       "flight": action.get("flight"), **now})
+                now = after(action)
+                # Extra facts about this action for the viewer, such as the path of a throw.
+                detail = action.get("detail") or ({"flight": action["flight"]} if action.get("flight") else {})
+                story["steps"].append({"kind": "act", "tool": action["tool"], "args": action["args"],
+                                       "result": action["result"], **detail, **now})
     return stopped(run, story)
 
 
@@ -119,33 +166,24 @@ def stopped(run, story):
         with open(marker) as f:
             why = f.read().strip() or "Ended by hand"
         last = story["steps"][-1] if story["steps"] else {}
-        world = {key: last.get(key) for key in ("pos", "carrying", "view", "blocks")}
-        story["steps"].append({"kind": "stop", "text": f"{why} at {at}.", **world, "time": at})
+        story["steps"].append({"kind": "stop", "text": f"{why} at {at}.", "time": at, "state": last.get("state")})
     return story
-
-
-def draw(story, step):
-    """The world as text: digits are stack heights, @ is the agent, north is up."""
-    size = story["size"]
-    cells = {(x, y): str(min(n, 9)) for x, y, n in step["blocks"]}
-    cells[tuple(step["pos"])] = "@"
-    rows = range(size) if story["north"] < 0 else reversed(range(size))
-    return "\n".join("  " + " ".join(cells.get((x, y), ".") for x in range(size)) for y in rows)
 
 
 def text(story):
     """The whole run as readable text."""
-    lines = [f"Run {story['id']}  (agent: {story['model']})", ""]
+    lines = [f"Run {story['id']}  (world: {story['world']}, agent: {story['model']})", ""]
     for step in story["steps"]:
         if step["kind"] == "act":
             args = ", ".join(f"{k}={v!r}" for k, v in step["args"].items())
             lines.append(f"DOES  {step['tool']}({args})")
             lines.append("      " + step["result"].replace("\n", "\n      ") + "\n")
         else:
-            label = {"prompt": "TOLD ", "think": "THINKS", "say": "SAYS ", "stop": "STOP "}[step["kind"]]
+            label = {"prompt": "TOLD ", "think": "THINKS", "say": "SAYS ", "stop": "STOP ", "death": "DIES "}[step["kind"]]
             lines.append(f"{label} {step['text']}\n")
-    if story["steps"]:
-        lines += ["Final world:", draw(story, story["steps"][-1])]
+    picture = getattr(worlds.load(story["world"]), "picture", None) if story["steps"] else None
+    if picture:  # not every world can draw itself as text
+        lines += ["Final world:", picture(story["setup"], story["steps"][-1]["state"])]
     return "\n".join(lines)
 
 

@@ -3,19 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Island</title>
+<title>AI Box</title>
 <style>
   :root {
     color-scheme: light dark;
     --bg: #f3f2ee; --panel: #ffffff; --soft: #f1efe9; --text: #1d2126; --muted: #6c7480; --line: #e2dfd6;
-    --accent: #2f6fed; --on-accent: #ffffff; --tint: #e8effd; --gold: #d99a00; --live: #1f9d55;
-    --sky: #dbe9f0; --water: #7fb4cc; --land: #e3d6ac; --block: #8a919c; --agent: #d9482b;
+    --accent: #2f6fed; --on-accent: #ffffff; --tint: #e8effd; --gold: #d99a00; --live: #1f9d55; --stop: #d9482b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0e1114; --panel: #161a1f; --soft: #1e232a; --text: #e7e9ec; --muted: #8b95a1; --line: #272d35;
-      --accent: #6ea8fe; --on-accent: #0b1220; --tint: #1b2a44; --gold: #f2c14e; --live: #4ade80;
-      --sky: #10161b; --water: #1d4257; --land: #6b6247; --block: #aab2bd; --agent: #ff6b4a;
+      --accent: #6ea8fe; --on-accent: #0b1220; --tint: #1b2a44; --gold: #f2c14e; --live: #4ade80; --stop: #ff6b4a;
     }
   }
   * { box-sizing: border-box; }
@@ -24,8 +22,9 @@
   button, input, select { font: inherit; color: inherit; }
   button { cursor: pointer; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; min-height: 0; }
-  .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--soft);
-          color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--soft); border: 0;
+          color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+  button.chip { color: var(--accent); text-decoration: underline; }
   .stars { color: var(--gold); letter-spacing: 1px; white-space: nowrap; }
   .stars i { font-style: normal; opacity: .28; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none;
@@ -35,8 +34,7 @@
   /* ---- left: the runs ---- */
   #sidebar { display: flex; flex-direction: column; padding: 14px 10px 10px; }
   #brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; padding: 0 6px 12px; }
-  #brand span { width: 22px; height: 14px; border-radius: 50% 50% 46% 46%; background: var(--land);
-                box-shadow: 0 4px 0 -1px var(--water); }
+  #brand span { width: 16px; height: 16px; border-radius: 4px; border: 3px solid var(--accent); }
   #new { border: 0; border-radius: 10px; padding: 9px; background: var(--accent); color: var(--on-accent);
          font-weight: 600; margin: 0 4px 12px; }
   #runs { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
@@ -52,11 +50,26 @@
   #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
   #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
-  #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--sky); }
-  #view canvas { position: absolute; inset: 0; }
+  #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
+  #scene, #scene canvas { position: absolute; inset: 0; }
+  #scene pre { margin: 0; padding: 16px; height: 100%; overflow: auto; font-size: 12px; }
   #status { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
   #status .chip, #hint { background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
   #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75; }
+  #hint:empty { display: none; }
+  /* What a world is and how it works: covers the drawing while it is open. */
+  #about { position: absolute; inset: 0; overflow-y: auto; background: var(--panel); padding: 22px 26px;
+           border: 1px solid var(--line); border-radius: 12px; }
+  #about > * { max-width: 74ch; }
+  #about h2 { margin: 0 0 10px; font-size: 18px; }
+  #about h3 { margin: 22px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #about p, #about ul { margin: 0 0 10px; }
+  #about ul { padding-left: 20px; }
+  #about li { margin-bottom: 4px; }
+  #about dt { font-family: ui-monospace, monospace; font-size: 13px; margin-top: 10px; }
+  #about dd { margin: 2px 0 0 0; }
+  #about .quiet { color: var(--muted); font-size: 12.5px; }
+  #about .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   #controls { display: flex; gap: 8px; align-items: center; }
   #controls button { border: 1px solid var(--line); background: var(--panel); border-radius: 50%;
                      width: 34px; height: 34px; padding: 0; flex: none; }
@@ -69,9 +82,9 @@
   #state { display: flex; align-items: center; gap: 8px; padding: 8px 8px 10px; font-weight: 600; }
   #log { position: relative; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 0 4px 8px; }
   .empty { color: var(--muted); padding: 24px 10px; text-align: center; margin: auto; }
-  .agents { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0 18px; }
-  .agent { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 8px 18px; font-weight: 600; }
-  .agent.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .choice { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 22px; }
+  .choice button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 8px 18px; font-weight: 600; }
+  .choice button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .step { padding: 8px 12px; border-radius: 12px; cursor: pointer; border: 1px solid transparent; }
   .step.now { border-color: var(--accent); }
   .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
@@ -84,6 +97,7 @@
   .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
   .step.act .text { color: var(--muted); font-size: 12.5px; }
   .step.stop { text-align: center; color: var(--muted); font-size: 12.5px; }
+  .step.death { text-align: center; color: var(--stop); font-weight: 600; border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 8px; }
 
   /* The one place to tell the agent something: its first prompt when a run is new, later
      whatever comes next. The field starts out holding the prompt, so sending it unchanged
@@ -95,7 +109,7 @@
   #say { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 6px 0; }
   #send { border: 0; border-radius: 18px; min-width: 36px; height: 36px; padding: 0 14px; flex: none;
           background: var(--accent); color: var(--on-accent); font-weight: 600; }
-  #send.square { background: var(--agent); color: #fff; padding: 0; }
+  #send.square { background: var(--stop); color: #fff; padding: 0; }
   #options { display: flex; align-items: center; gap: 10px; padding: 8px 6px 4px; color: var(--muted); font-size: 12.5px; }
   #options label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
   /* the checkbox, drawn as a switch */
@@ -105,6 +119,7 @@
                  background: var(--panel); transition: left .15s; }
   #auto:checked { background: var(--accent); }
   #auto:checked::after { left: 14px; }
+  #minutes { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 6px; }
   #stop { border: 0; background: none; color: var(--muted); text-decoration: underline; padding: 2px; }
 
   @media (max-width: 1000px) {
@@ -115,7 +130,7 @@
     #side { max-height: 80vh; }
   }
 </style>
-<!-- The 3D drawing uses three.js, loaded from the internet. -->
+<!-- Worlds drawn in 3D use three.js, loaded from the internet. -->
 <script type="importmap">
 { "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -124,7 +139,7 @@
 </head>
 <body>
   <nav class="panel" id="sidebar" aria-label="Runs">
-    <div id="brand"><span></span>Island</div>
+    <div id="brand"><span></span>AI Box</div>
     <button id="new">+ New run</button>
     <div id="runs"></div>
   </nav>
@@ -135,8 +150,10 @@
       <p id="summary"></p>
     </header>
     <div id="view">
+      <div id="scene"></div>
       <div id="status"></div>
-      <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
+      <div id="hint" class="chip"></div>
+      <div id="about" hidden></div>
     </div>
     <div id="controls">
       <button id="play" aria-label="Play">▶</button>
@@ -156,19 +173,19 @@
         <button id="send">Send</button>
       </div>
       <div id="options">
-        <label><input type="checkbox" id="auto"> Repeat the prompt whenever the agent stops</label>
+        <label><input type="checkbox" id="auto"> Repeat the prompt when the agent stops</label>
+        <span id="limit" hidden>for <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the run ends"> min</span>
         <button type="button" id="stop">End run</button>
       </div>
     </form>
   </section>
 
 <script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+// This page knows nothing about any particular world. What a world is comes from the
+// server (/api/runs), and how it is drawn from the file /worlds/<name>.js.
 
 const $ = id => document.getElementById(id);
 const SPEED = 900;        // milliseconds per step while playing
-const FLIGHT = 700;       // milliseconds a thrown block is in the air
 const POLL = 1000;        // how often a live run is re-read
 const LIST = 4000;        // how often the list of runs is re-read
 
@@ -177,15 +194,19 @@ let at = 0;               // index of the step on screen
 let playing = false;
 let draft = false;        // a new run is being written and has not started
 let lastPrompt = '';      // what the newest run was told: the suggestion for a new one
+let worlds = [];          // every world there is, with its description and tools
 let agents = [];          // the models a new run can use
-let chosen = '';          // the one picked for the new run
+let chosen = { world: '', agent: '' };   // picked for the new run
+let aboutOpen = false;    // the "about this world" panel is open over a run
+let painter = null;       // what draws the current world (from /worlds/<name>.js)
+let paints = null;        // ... and the name of the world it draws
 
 const api = (path, options) => fetch(path, options).then(r => r.json());
 
 function el(tag, className, ...content) {
   const node = document.createElement(tag);
   node.className = className;
-  node.append(...content);
+  node.append(...content.filter(part => part !== false && part != null));
   return node;
 }
 
@@ -201,19 +222,22 @@ function started(id) {
     : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+const worldInfo = name => worlds.find(world => world.name === name);
+
 // ---------------------------------------------------------------- data
 
 // The list of runs on the left: name and rating (once reviewed), which agent it was, when it started.
 async function listRuns() {
-  const { runs, models, prompt } = await api('/api/runs');
-  agents = models;
-  chosen ||= models[0];
-  lastPrompt = prompt;
-  const cards = runs.map(({ id, review, model, done }) => {
-    const name = el('div', 'name', ...(done ? [] : [el('i', 'dot')]),
+  const answer = await api('/api/runs');
+  ({ worlds, models: agents, prompt: lastPrompt } = answer);
+  chosen.world ||= worlds[0]?.name;
+  chosen.agent ||= agents[0];
+  const cards = answer.runs.map(({ id, review, model, world, done }) => {
+    const name = el('div', 'name', !done && el('i', 'dot'),
                     el('span', '', review ? review.name : done ? 'Not reviewed yet' : 'Running'));
-    const facts = el('div', 'facts', ...(review ? [stars(review.rating)] : []),
-                     ...(model ? [el('span', 'chip', model)] : []), el('span', 'when', started(id)));
+    const facts = el('div', 'facts', review && stars(review.rating),
+                     worlds.length > 1 && el('span', 'chip', worldInfo(world)?.title || world),
+                     model && el('span', 'chip', model), el('span', 'when', started(id)));
     const card = el('button', 'run' + (!draft && story?.id === id ? ' on' : ''), name, facts);
     card.onclick = () => select(id);
     return card;
@@ -221,7 +245,7 @@ async function listRuns() {
   if (draft) cards.unshift(el('button', 'run on', el('div', 'name', el('span', '', 'New run')),
                               el('div', 'facts', 'not started yet')));
   $('runs').replaceChildren(...cards);
-  return runs;
+  return answer.runs;
 }
 setInterval(listRuns, LIST);
 
@@ -232,7 +256,7 @@ async function loadRuns(pick) {
 }
 
 async function select(id) {
-  playing = draft = false;
+  playing = draft = aboutOpen = false;
   $('say').value = '';
   await show(id);
   listRuns();
@@ -243,6 +267,7 @@ async function show(id, step = 0) {
   if (!fresh.steps) return;   // no such run
   story = fresh;
   at = Math.min(step, Math.max(story.steps.length - 1, 0));
+  if (story.world) await paintWith(story.world);
   draw(true);
 }
 
@@ -250,6 +275,7 @@ async function show(id, step = 0) {
 setInterval(async () => {
   if (!story || story.done) return;
   const fresh = await api('/api/runs/' + story.id);
+  if (fresh.world && !story.world) await paintWith(fresh.world);   // the world has just started
   // Anything new? More steps, a step that finished, or the agent stopping or going on.
   const mark = s => JSON.stringify([s.done, s.waiting, s.auto, s.queued, s.steps?.length, s.steps?.at(-1)]);
   if (fresh.id === story.id && mark(fresh) !== mark(story)) { story = fresh; draw(); }
@@ -263,32 +289,92 @@ setInterval(() => {
   else if (story.done) { playing = false; draw(); }
 }, SPEED);
 
+// ---------------------------------------------------------------- the world
+
+// Every world brings its own drawing. One without a drawing is shown as plain text.
+async function paintWith(name) {
+  if (paints === name) return;
+  painter?.remove();
+  paints = name;
+  try {
+    const drawing = await import(`/worlds/${name}.js`);
+    painter = drawing.create($('scene'));
+    $('hint').textContent = drawing.hint || '';
+  } catch {
+    const page = el('pre', '');
+    $('scene').append(page);
+    painter = { show: (story, step) => { page.textContent = JSON.stringify(step.state, null, 1); },
+                facts: () => [], remove: () => page.remove() };
+    $('hint').textContent = '';
+  }
+}
+
+// What a world is and how it works, for people: its description, what the agent can do
+// in it, and its settings (for a run: the ones that run had).
+function aboutWorld(info, setup) {
+  if (!info) return el('p', 'quiet', 'Nothing is written about this world.');
+  const parts = [el('h2', '', info.title)];
+  for (const block of info.about.trim().split(/\n\s*\n/)) {
+    const tidy = text => text.replace(/\s+/g, ' ');
+    if (block.startsWith('- ')) parts.push(el('ul', '', ...block.split(/\n(?=- )/).map(item => el('li', '', tidy(item.slice(2))))));
+    else parts.push(el('p', '', tidy(block)));
+  }
+  const note = p => p.enum ? p.enum.join(' · ') : p.description
+    || [p.type, p.minimum != null && `from ${p.minimum}`, p.maximum != null && `to ${p.maximum}`].filter(Boolean).join(' ');
+  parts.push(
+    el('h3', '', 'What the agent can do'),
+    el('p', 'quiet', 'The agent is told its prompt and exactly this list: names, descriptions and parameters. Nothing else.'),
+    el('dl', '', ...info.tools.flatMap(tool => [
+      el('dt', '', `${tool.name}(${tool.parameters.map(p => p.name + (p.required ? '' : '?')).join(', ')})`),
+      el('dd', '', tool.description,
+         ...tool.parameters.map(p => el('div', 'quiet', `${p.name}: ${note(p)}`)))])),
+    el('h3', '', setup ? 'Settings of this run' : 'Settings'),
+    el('div', 'chips', ...Object.entries(info.settings)
+      .filter(([key]) => !setup || key in setup)
+      .map(([key, usual]) => el('span', 'chip', `${key} ${(setup ? setup[key] : usual) ?? 'random'}`))));
+  return el('div', '', ...parts);
+}
+
+let aboutShows = null;   // what the panel was built for, so it is not rebuilt (and scrolled up) on every update
+function drawAbout() {
+  const name = draft ? chosen.world : story?.world;
+  $('about').hidden = !(draft || aboutOpen);
+  const key = name + (draft ? '' : story?.id);
+  if ($('about').hidden || aboutShows === key) return;
+  aboutShows = key;
+  $('about').replaceChildren(aboutWorld(worldInfo(name), draft ? null : story.setup));
+  $('about').scrollTop = 0;
+}
+
 // ---------------------------------------------------------------- page
 
 function draw(newRun = false) {
   drawComposer();
+  drawAbout();
   if (draft) {
     $('title').replaceChildren('New run');
-    $('summary').textContent = 'A fresh world with a new agent in the middle of it.';
+    $('summary').textContent = 'A fresh world with a new agent in it.';
     $('status').replaceChildren();
     $('count').textContent = '';
-    $('log').replaceChildren(agentPicker());
+    $('log').replaceChildren(choices());
     return;
   }
-  const steps = story.steps, step = steps[at], r = story.review;
-  $('title').replaceChildren(r ? r.name : story.done ? 'Not reviewed yet' : 'Running',
-    ...(r ? [stars(r.rating)] : []), ...(story.model ? [el('span', 'chip', story.model)] : []),
-    el('span', 'chip', started(story.id)));
+  const steps = story.steps, step = steps[at], r = story.review, info = worldInfo(story.world);
+  const about = el('button', 'chip', aboutOpen ? 'Back to the run' : `About this world: ${info?.title || story.world || '…'}`);
+  about.onclick = () => { aboutOpen = !aboutOpen; draw(); };
+  $('title').replaceChildren(...[r ? r.name : story.done ? 'Not reviewed yet' : 'Running',
+    r && stars(r.rating), story.model && el('span', 'chip', story.model),
+    el('span', 'chip', started(story.id)), about].filter(Boolean));
   $('summary').textContent = r ? r.summary : story.done ? '' : 'This run gets a name and a summary when it ends.';
   $('slider').max = Math.max(steps.length - 1, 0);
   $('slider').value = at;
   $('play').textContent = playing ? '❚❚' : '▶';
   $('play').ariaLabel = playing ? 'Pause' : 'Play';
   $('count').textContent = steps.length ? `${at + 1} / ${steps.length}` : '';
+  if (step?.state && painter) painter.show(story, step, at, newRun);
   $('status').replaceChildren(...(!step ? ['Waiting for the world to start…']
-    : [step.time, `at (${step.pos[0]}, ${step.pos[1]})`, step.carrying && 'carrying a block'])
+    : [step.time, ...(step.state && painter ? painter.facts(step) : [])])
     .filter(Boolean).map(text => el('span', 'chip', text)));
-  if (step) drawWorld(step, newRun);
   drawLog(steps);
 }
 
@@ -298,10 +384,11 @@ function drawComposer() {
   const live = !draft && story && !story.done;
   const acting = live && !story.waiting;
   $('composer').hidden = !draft && !live;
-  $('state').replaceChildren(...(draft ? ['New run']
+  $('state').replaceChildren(...[...(draft ? ['New run']
     : !live ? ['Conversation']
     : story.queued ? [el('i', 'dot'), 'Your message goes out when the agent stops']
-    : acting ? [el('i', 'dot'), 'The agent is acting…'] : ['The agent has stopped and waits']));
+    : acting ? [el('i', 'dot'), 'The agent is acting…'] : ['The agent has stopped and waits']),
+    live && story.until && el('span', 'chip', `ends ${story.until}`)].filter(Boolean));
   // While the agent acts, the button is a stop square that ends the run; Enter still sends.
   $('send').textContent = draft ? 'Start' : acting ? '■' : '↑';
   $('send').type = acting ? 'button' : 'submit';
@@ -309,20 +396,23 @@ function drawComposer() {
   $('send').classList.toggle('square', acting);
   $('stop').hidden = draft || acting;   // while the agent waits, ending the run is a quiet link
   if (live) $('auto').checked = story.auto;
+  $('limit').hidden = !$('auto').checked;   // a time limit only makes sense while repeating
   // An untouched field holds the prompt, so sending it as it is tells the agent the same again.
   if (!$('say').value && document.activeElement !== $('say'))
     $('say').value = (draft ? lastPrompt : story?.steps[0]?.text) || '';
 }
 
-// An empty conversation has room for the one choice a new run needs: which agent.
-function agentPicker() {
-  const buttons = agents.map(name => {
-    const button = el('button', 'agent' + (name === chosen ? ' on' : ''), name);
-    button.onclick = () => { chosen = name; draw(); $('say').focus(); };
+// An empty conversation has room for the two choices a new run needs: which world, which agent.
+function choices() {
+  const pick = (kind, options) => el('div', 'choice', ...options.map(([name, label]) => {
+    const button = el('button', name === chosen[kind] ? 'on' : '', label);
+    button.onclick = () => { chosen[kind] = name; draw(); $('say').focus(); };
     return button;
-  });
-  return el('div', 'empty', 'Which agent?', el('div', 'agents', ...buttons),
-            'Write below what it is told, and start.');
+  }));
+  return el('div', 'empty',
+    'Which world?', pick('world', worlds.map(world => [world.name, world.title])),
+    'Which agent?', pick('agent', agents.map(name => [name, name])),
+    'Write below what it is told, and start.');
 }
 
 async function newRun() {
@@ -330,6 +420,7 @@ async function newRun() {
   playing = false;
   $('say').value = '';
   $('auto').checked = false;
+  $('minutes').value = '';
   await listRuns();
   draw();
   $('say').focus();
@@ -340,8 +431,8 @@ function drawLog(steps) {
   const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does' };
   $('log').replaceChildren(...steps.map((step, i) => {
     const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
-    const told = { 'by hand': 'You tell the agent', repeat: 'Prompt repeated' }[step.how];
-    if (step.kind !== 'stop') row.append(el('div', 'label', told || labels[step.kind]));
+    const told = { 'by hand': 'You tell the agent', repeat: 'Prompt repeated', 'new life': 'New agent is told' }[step.how];
+    if (labels[step.kind]) row.append(el('div', 'label', told || labels[step.kind]));
     if (step.kind === 'act') {
       const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
       row.append(el('div', 'call', `${step.tool}(${args})`));
@@ -363,141 +454,6 @@ function jump(to) {
   draw();
 }
 
-// ---------------------------------------------------------------- 3D world
-// One unit is one block. World x runs east, world y runs south, height runs up.
-
-const color = name => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
-const solid = name => new THREE.MeshLambertMaterial({ color: color(name) });
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 1000);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.maxPolarAngle = Math.PI / 2 - 0.05;   // never look from below the ground
-scene.background = color('--sky');
-scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.7));
-const sun = new THREE.DirectionalLight(0xffffff, 1.8);
-sun.position.set(-10, 24, 14);
-scene.add(sun);
-$('view').prepend(renderer.domElement);
-
-const cube = new THREE.BoxGeometry(1, 1, 1);
-const blockLook = solid('--block'), agentLook = solid('--agent');
-
-const water = new THREE.Mesh(cube, solid('--water'));
-const land = new THREE.Mesh(cube, solid('--land'));
-const blocks = new THREE.Group();
-// What the agent can see: a lighter patch on the ground around it.
-const sight = new THREE.Mesh(cube, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14 }));
-// The agent: a body, a head, and the block it carries above its head.
-const agent = new THREE.Group();
-const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.1, 20), agentLook);
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 14), agentLook);
-const carried = new THREE.Mesh(cube, blockLook);
-body.position.y = 0.55; head.position.y = 1.38;
-carried.position.y = 2.05; carried.scale.setScalar(0.6);
-agent.add(body, head, carried);
-const north = letter('N');
-// A thrown block in the air. When it lands it stays put and stands in for the top block there.
-const flying = new THREE.Mesh(cube, blockLook);
-flying.scale.setScalar(0.94);
-flying.visible = false;
-let flight = null;   // { points, lost, start } while a throw is shown
-let shown = -1;      // the step drawn last, to tell a step forward from a jump elsewhere
-let shownFlew = false;   // whether that step already had its flight path when drawn
-let grid = null, target = new THREE.Vector3(), builtFor = null;
-scene.add(water, land, blocks, sight, agent, north, flying);
-scene.visible = false;   // until there is a world to show
-
-function letter(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 128;
-  const pen = canvas.getContext('2d');
-  pen.font = 'bold 96px system-ui'; pen.textAlign = 'center'; pen.textBaseline = 'middle';
-  pen.fillStyle = '#fff'; pen.fillText(text, 64, 68);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-  sprite.scale.setScalar(2);
-  return sprite;
-}
-
-// The parts that depend only on the island's size: built once per run.
-function buildIsland(size) {
-  water.scale.set(size * 12, 0.2, size * 12); water.position.y = -0.5;
-  land.scale.set(size, 0.4, size); land.position.y = -0.2;
-  if (grid) scene.remove(grid);
-  grid = new THREE.GridHelper(size, size, 0x000000, 0x000000);
-  grid.material.transparent = true; grid.material.opacity = 0.12; grid.position.y = 0.005;
-  scene.add(grid);
-  north.position.set(0, 1, -size / 2 - 1.5);
-  const back = Math.max(1, 1.5 / camera.aspect);      // further away in a narrow box, so the island fits
-  camera.position.set(0, size * 0.85 * back, size * 1.15 * back);   // from the south, looking north
-  controls.target.set(0, 0, 0);
-  scene.visible = true;
-}
-
-function drawWorld(step, newRun) {
-  const size = story.size;
-  if (builtFor !== story.id) { buildIsland(size); builtFor = story.id; }
-  // Where the middle of a cell is. Older runs counted y from the south.
-  const place = (x, y, up) =>
-    new THREE.Vector3(x - size / 2 + 0.5, up, (story.north > 0 ? size - 1 - y : y) - size / 2 + 0.5);
-
-  // A throw is played when stepping forward onto it, not when jumping around in the run.
-  const again = at === shown && flight && !newRun;   // redrawn while it is already playing
-  // In a live run a throw first shows as "in progress" and gets its path a moment later.
-  const justLanded = at === shown && !shownFlew;
-  const play = step.flight && !newRun && (at === shown + 1 || again || justLanded);
-  shown = at;
-  shownFlew = !!step.flight;
-  if (!again) {
-    flight = play && { points: step.flight.path.map(([x, y, up]) => place(x - 0.5, y - 0.5, up)),
-                       lost: step.flight.lost, start: performance.now() };
-    flying.visible = false;
-  }
-  const rest = flight && !flight.lost && step.flight.path.at(-1);   // where the flying block comes to rest
-
-  blocks.clear();
-  let under = 0;   // how many blocks the agent stands on
-  for (const [x, y, n] of step.blocks) {
-    if (x === step.pos[0] && y === step.pos[1]) under = n;
-    const flyingIn = rest && Math.floor(rest[0]) === x && Math.floor(rest[1]) === y;   // its top block is still in the air
-    for (let level = 0; level < n - (flyingIn ? 1 : 0); level++) {
-      const block = new THREE.Mesh(cube, blockLook);
-      block.position.copy(place(x, y, level + 0.5));
-      block.scale.setScalar(0.94);   // a small gap, so single blocks in a stack stay visible
-      blocks.add(block);
-    }
-  }
-  target = place(...step.pos, under);
-  if (newRun) agent.position.copy(target);
-  carried.visible = step.carrying;
-  const reach = step.view * 2 + 1;   // wider when the agent stands higher
-  sight.scale.set(reach, 0.02, reach);
-  sight.position.copy(place(...step.pos, 0.01));
-}
-
-// The drawing always fills its box, whatever size the window gives it.
-new ResizeObserver(() => {
-  const width = $('view').clientWidth, height = $('view').clientHeight;
-  renderer.setPixelRatio(devicePixelRatio);
-  renderer.setSize(width, height);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-}).observe($('view'));
-
-renderer.setAnimationLoop(() => {
-  agent.position.lerp(target, 0.18);   // glide to the new place instead of jumping there
-  if (flight) {                         // move the thrown block along its recorded path
-    const last = flight.points.length - 1;
-    const along = Math.min((performance.now() - flight.start) / FLIGHT, 1) * last;
-    const i = Math.min(Math.floor(along), last - 1);
-    flying.position.lerpVectors(flight.points[i], flight.points[i + 1], along - i);
-    flying.visible = !(flight.lost && along >= last);   // one that fell into the water disappears
-  }
-  controls.update();
-  renderer.render(scene, camera);
-});
-
 // ---------------------------------------------------------------- buttons
 
 $('play').onclick = () => {
@@ -517,24 +473,31 @@ $('composer').onsubmit = async e => {
   $('say').value = '';
   $('say').blur();
   if (!draft) return steer('say', { text });
-  const wish = { model: chosen, prompt: text, auto: $('auto').checked };
+  const wish = { world: chosen.world, model: chosen.agent, prompt: text, auto: $('auto').checked, minutes: +$('minutes').value };
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
   await select(id);
   playing = true;           // watch it live
 };
-$('auto').onchange = e => draft || steer('auto', { on: e.target.checked });
+// Repeating, and for how long: an empty time means no limit. The time counts from when it is set.
+const repeat = () => {
+  $('limit').hidden = !$('auto').checked;
+  if (!draft) steer('auto', { on: $('auto').checked, minutes: +$('minutes').value });
+};
+$('auto').onchange = $('minutes').onchange = repeat;
 $('stop').onclick = () => steer('stop');
 $('send').onclick = () => { if ($('send').type === 'button') steer('stop'); };
 $('new').onclick = newRun;
 
 // Open on the newest run, or on the one named in the address: #<run id>/<step number>/play
-// (#new opens the box for a new run.)
-const [run, step, autoplay] = location.hash.slice(1).split('/');
+// (#new opens the box for a new run, #<run id>/<step>/about the description of its world.)
+const [run, step, extra] = location.hash.slice(1).split('/');
 if (run === 'new') listRuns().then(newRun);
 else loadRuns(run).then(() => {
   if (run && step) jump(step - 1);
-  if (autoplay) { playing = true; draw(); }
+  if (extra === 'play') playing = true;
+  if (extra === 'about') aboutOpen = true;
+  if (extra) draw();
 });
 </script>
 </body>

@@ -13,7 +13,8 @@ import story
 MODEL = "sonnet"
 TASK = """Below is the record of an experiment. An AI agent was placed in a small world with a
 few tools and no task; the first line after TOLD is all it was told. THINKS is a summary of
-its reasoning, DOES are its actions with the world's answers, SAYS is what it said.
+its reasoning, DOES are its actions with the world's answers, SAYS is what it said. DIES
+means the agent died and a new agent with an empty memory took its place in the same world.
 
 Describe this run for someone browsing many such runs:
 - name: 2 to 4 words that capture what makes this run distinct, like a chapter title
