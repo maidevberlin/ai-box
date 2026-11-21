@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Island</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f1ea; --panel: #ffffff; --text: #22252a; --muted: #6b7280; --line: #ddd8cc;
+    --water: #bcd9e6; --land: #e9dfc3; --seen: #f3ebd3; --stone: #6f7680;
+    --agent: #d9482b; --accent: #1f6feb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c; --panel: #1e2227; --text: #e6e8eb; --muted: #9099a5; --line: #30363d;
+      --water: #1d3a4a; --land: #4a4433; --seen: #5d563f; --stone: #aab2bd;
+      --agent: #ff6b4a; --accent: #6ea8fe;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, sans-serif; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+         gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  header { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  h1 { font-size: 18px; margin: 0 auto 0 0; }
+  select, button { font: inherit; color: var(--text); background: var(--panel);
+                   border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+
+  #sea { background: var(--water); border-radius: 8px; padding: 6%;
+         max-width: 72vh; margin: 0 auto; }
+  #grid { display: grid; gap: 2px; aspect-ratio: 1; }
+  .cell { background: var(--land); border-radius: 3px; position: relative; min-height: 0;
+          display: flex; align-items: center; justify-content: center; }
+  .cell.seen { background: var(--seen); }
+  .cell .xy { position: absolute; left: 3px; top: 1px; font-size: 9px; color: var(--muted); }
+  .stone { width: 46%; aspect-ratio: 1; border-radius: 40%; background: var(--stone);
+           color: var(--bg); font-size: 11px; font-weight: 700;
+           display: flex; align-items: center; justify-content: center; }
+  .agent { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%;
+           border: 3px solid var(--agent); }
+  .agent.carrying { background: var(--agent); opacity: .85; }
+
+  #controls { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  #slider { flex: 1; }
+  #status { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  #review { margin-top: 10px; }
+  #review b { display: block; }
+
+  #log { max-height: 78vh; overflow-y: auto; padding: 6px; }
+  .step { padding: 8px 10px; border-radius: 6px; cursor: pointer; border-left: 3px solid transparent; }
+  .step.now { background: var(--bg); border-left-color: var(--accent); }
+  .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .step .call { font-family: ui-monospace, monospace; font-size: 13px; }
+  .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .step.act .text { color: var(--muted); font-size: 13px; }
+  .step.think .text { color: var(--muted); font-style: italic; }
+  .step.stop .text { color: var(--agent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Island</h1>
+    <select id="runs" aria-label="Run"></select>
+    <button id="stop" hidden>Stop agent</button>
+    <select id="model" aria-label="Agent for the new run"></select>
+    <button id="new" class="primary">Start new run</button>
+  </header>
+
+  <section class="panel">
+    <div id="sea"><div id="grid"></div></div>
+    <div id="controls">
+      <button id="play">Play</button>
+      <button id="back" aria-label="Step back">&lsaquo;</button>
+      <input id="slider" type="range" min="0" max="0" value="0" aria-label="Step">
+      <button id="forward" aria-label="Step forward">&rsaquo;</button>
+    </div>
+    <div id="status"></div>
+    <div id="review"></div>
+  </section>
+
+  <section class="panel" id="log"></section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const SPEED = 900;        // milliseconds per step while playing
+const POLL = 1000;        // how often a live run is re-read
+
+let story = null;         // the run on screen, as delivered by /api/runs/<id>
+let at = 0;               // index of the step on screen
+let playing = false;
+
+const api = (path, options) => fetch(path, options).then(r => r.json());
+
+// The run dropdown: name and rating (once reviewed), which agent it was, and the start time.
+async function listRuns() {
+  const { runs, models } = await api('/api/runs');
+  if (!$('model').options.length) $('model').replaceChildren(...models.map(m => new Option(m, m)));
+  $('runs').replaceChildren(...runs.map(({ id, review, model }) => {
+    const started = id.slice(9).replace(/(..)(..)(..)/, '$1:$2');
+    const name = review ? `${review.name} ${'★'.repeat(review.rating)}` : 'Not reviewed yet';
+    return new Option([name, model, started].filter(Boolean).join(' · '), id);
+  }));
+  if (story) $('runs').value = story.id;
+  return runs;
+}
+
+async function loadRuns(select) {
+  const runs = await listRuns();
+  if (select || runs[0]) await show(select || runs[0].id);
+  else $('status').textContent = 'No runs yet. Start one.';
+}
+
+async function show(id, step = 0) {
+  $('runs').value = id;
+  const fresh = await api('/api/runs/' + id);
+  if (!fresh.steps) return;   // no such run
+  story = fresh;
+  at = Math.min(step, Math.max(story.steps.length - 1, 0));
+  draw();
+}
+
+// Live runs grow: re-read the run on screen until it is done.
+setInterval(async () => {
+  if (!story || story.done) return;
+  const fresh = await api('/api/runs/' + story.id);
+  const last = s => JSON.stringify(s.steps?.at(-1));   // a step in progress changes when it finishes
+  const changed = fresh.done || fresh.steps?.length !== story.steps.length || last(fresh) !== last(story);
+  if (fresh.id === story.id && changed) { story = fresh; draw(); }
+  if (fresh.done) listRuns();   // the finished run now has a name
+}, POLL);
+
+// Playing: one step forward per tick. At the end of a live run, wait for more.
+setInterval(() => {
+  if (!playing || !story) return;
+  if (at < story.steps.length - 1) { at++; draw(); }
+  else if (story.done) { playing = false; draw(); }
+}, SPEED);
+
+function draw() {
+  const steps = story.steps, step = steps[at];
+  $('slider').max = Math.max(steps.length - 1, 0);
+  $('slider').value = at;
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  $('stop').hidden = story.done;
+  $('status').textContent = !step ? 'Waiting for the world to start…'
+    : `Step ${at + 1} of ${steps.length}` + (story.done ? '' : ' · run is live')
+      + (story.model ? ` · ${story.model}` : '')
+      + (step.time ? ` · ${step.time}` : '')
+      + ` · agent at (${step.pos[0]}, ${step.pos[1]})`
+      + (step.carrying ? ' · carrying a stone' : '');
+  const r = story.review;
+  $('review').replaceChildren(...(r ? [el('b', '', `${r.name} ${'★'.repeat(r.rating)}`), r.summary] : []));
+  drawWorld(step);
+  drawLog(steps);
+}
+
+function drawWorld(step) {
+  const grid = $('grid');
+  grid.replaceChildren();
+  if (!step) return;
+  const size = story.size, [ax, ay] = step.pos;
+  const stones = new Map(step.stones.map(([x, y, n]) => [x + ',' + y, n]));
+  grid.style.gridTemplateColumns = grid.style.gridTemplateRows = `repeat(${size}, 1fr)`;
+  const rows = [...Array(size).keys()];       // north is up; older runs counted y the other way
+  if (story.north > 0) rows.reverse();
+  for (const y of rows) {
+    for (let x = 0; x < size; x++) {
+      const cell = el('div', 'cell');
+      if (Math.abs(x - ax) <= story.view && Math.abs(y - ay) <= story.view) cell.classList.add('seen');
+      cell.title = `${x}, ${y}`;
+      if (size <= 12) cell.append(el('span', 'xy', `${x},${y}`));  // no room on big islands
+      const n = stones.get(x + ',' + y);
+      if (n) cell.append(el('div', 'stone', n > 1 ? n : ''));
+      if (x === ax && y === ay) cell.append(el('div', 'agent' + (step.carrying ? ' carrying' : '')));
+      grid.append(cell);
+    }
+  }
+}
+
+function drawLog(steps) {
+  const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does', stop: 'Run ended' };
+  $('log').replaceChildren(...steps.map((step, i) => {
+    const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
+    row.append(el('div', 'label', labels[step.kind]));
+    if (step.kind === 'act') {
+      const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
+      row.append(el('div', 'call', `${step.tool}(${args})`));
+    }
+    row.append(el('div', 'text', step.kind === 'act' ? step.result : step.text));
+    row.onclick = () => jump(i);
+    return row;
+  }));
+  $('log').querySelector('.now')?.scrollIntoView({ block: 'nearest' });
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function jump(to) {
+  at = Math.max(0, Math.min(to, story.steps.length - 1));
+  playing = false;
+  draw();
+}
+
+$('play').onclick = () => {
+  if (!story) return;
+  if (!playing && story.done && at >= story.steps.length - 1) at = 0;  // replay from the start
+  playing = !playing;
+  draw();
+};
+$('back').onclick = () => story && jump(at - 1);
+$('forward').onclick = () => story && jump(at + 1);
+$('slider').oninput = e => story && jump(+e.target.value);
+$('runs').onchange = e => { playing = false; show(e.target.value); };
+$('stop').onclick = () => api(`/api/runs/${story.id}/stop`, { method: 'POST' });  // the next poll shows it ended
+$('new').onclick = async () => {
+  const { id } = await api('/api/runs', { method: 'POST', body: $('model').value });
+  if (!id) return;          // a run started this very second already
+  playing = true;           // watch it live
+  await loadRuns(id);
+};
+
+// Open on the newest run, or on the one named in the address: #<run id>/<step number>
+const [run, step] = location.hash.slice(1).split('/');
+loadRuns(run).then(() => { if (run && step) jump(step - 1); });
+</script>
+</body>
+</html>
