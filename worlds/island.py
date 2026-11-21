@@ -17,7 +17,7 @@ import time
 DIRS = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
 PLACES = ["here", *DIRS]  # where take and put can reach
 SIGHTS = ["around", "hand", *PLACES]  # what look can be pointed at
-REACH = 2                 # take/put reach stacks at most this much higher or lower than your feet
+REACH = 2                 # put reaches stacks at most this much higher or lower than your feet
 GRAVITY = 9.8             # blocks per second squared
 THROW_SPEED = 1.5         # blocks per second, per point of power
 HAND = 1.5                # a throw starts this high above your feet
@@ -39,8 +39,9 @@ The agent is not told any of this. It has to find out by looking and trying.
   is as it was left, with every block and note where it was. What the dead agent carried
   is gone.
 - Jumping gets the agent up: strength 1 or 2 is how many higher the next cell may be.
-- It carries one thing at a time. Take and put work on its own cell or the one next to it,
-  if that stack is at most 2 higher or lower than its feet.
+- It carries one thing at a time. Take and put work on its own cell or the one next to it.
+  It can put a thing on a stack that is at most 2 higher or lower than its feet, and it can
+  always take back what it could have put there: a block from a stack up to 3 higher.
 - Putting a block under its own feet lifts it; taking that block lowers it.
 - A note is a thing like a block, but flat: it has no height. Writing one puts it in the
   agent's hand. From there it can be put down, taken again and thrown, and it can lie on
@@ -244,20 +245,26 @@ class World:
         self.pos = ahead
         return f"You jumped {direction}. {self.where()}"
 
-    def reach(self, place):
-        """The cell take/put aims at, or the sentence saying why it cannot be reached."""
+    def reach(self, place, taking=False):
+        """The cell take/put aims at, or the sentence saying why it cannot be reached.
+
+        Whatever can be put somewhere can be taken back from there: a block put on a stack
+        2 above the feet makes it 3 high, so taking a block reaches one level higher than putting.
+        """
         if place not in PLACES:
             return "Unknown place. Use here, north, south, east or west."
         cell = self.next_to(place)
         if not self.on_island(cell):
             return "There is only water."
-        if abs(self.height(cell) - self.height(self.pos)) > REACH:
+        above = self.height(cell) - self.height(self.pos)
+        up = REACH + (1 if taking and self.top(cell) == BLOCK else 0)
+        if not -REACH <= above <= up:
             return f"The stack there is {self.height(cell)} high. That is out of your reach."
         return cell
 
     def take(self, where="here"):
         """Take the top thing of a stack. Taking the one under your feet lowers you."""
-        cell = self.reach(where)
+        cell = self.reach(where, taking=True)
         if isinstance(cell, str):
             return cell
         if self.carrying:

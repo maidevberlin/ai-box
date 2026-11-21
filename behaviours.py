@@ -113,6 +113,14 @@ def table():
                      f"{story.seconds(os.path.join(story.RUNS, run['id'])) // 60} min). Told: \"{told}\"{going}.")
         if review.get("striking"):
             lines.append(f"   Most striking (step {review['striking']['step'] + 1}): {review['striking']['why']}")
+    lines += ["", "## Highlights", "",
+              "The marks rated 4 or 5 out of 5 for interest, with their step. A 5 is the step the",
+              "reviewer of the whole run found most striking.", ""]
+    for i, run in enumerate(runs, 1):
+        for mark in (run["review"] or {}).get("marks", []):
+            if mark.get("interest", 0) >= 4:
+                lines.append(f"- Run {i}, step {mark['step'] + 1}, {mark['behaviour']} "
+                             f"({mark['interest']}): {mark['what']}")
     lines += ["", "## What each behaviour means", ""]
     lines += [f"- **{name}**: {meaning}" for name, meaning in CATEGORIES.items()]
     return "\n".join(lines) + "\n"

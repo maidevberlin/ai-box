@@ -101,10 +101,14 @@
   @media (prefers-color-scheme: dark) {
     .g-world { --tone: #5fd38d; } .g-others { --tone: #c79bf2; } .g-self { --tone: #f2b266; } .g-person { --tone: #7fb2ff; }
   }
-  #marks { display: flex; flex-wrap: wrap; padding: 0 8px 8px; max-height: 92px; overflow-y: auto; }
+  #marks { display: flex; flex-wrap: wrap; align-items: center; padding: 0 8px 8px; }
   #marks:empty { display: none; }
   #marks .tag { cursor: pointer; margin-top: 0; margin-bottom: 4px; }
   #marks .tag b { font-weight: 700; margin-left: 4px; }
+  .tag i { font-style: normal; font-size: 8px; vertical-align: 1px; letter-spacing: 1px; }
+  .filter { margin-left: auto; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .filter button { border: 0; background: none; padding: 0 1px; color: var(--line); font-size: 11px; }
+  .filter button.on { color: var(--gold); }
   .step.marked { border-left: 3px solid var(--tone); }
   .empty { color: var(--muted); padding: 24px 10px; text-align: center; margin: auto; }
   .choice { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 22px; }
@@ -552,22 +556,35 @@ function marksByStep() {
 function jumpToNext(steps) {   // the next of these steps after the one on screen, or the first again
   if (steps.length) jump(steps.find(step => step > at) ?? steps[0]);
 }
+// How interesting a mark has to be to show up (1 to 5). Remembered in this browser.
+let showFrom = 3;
+try { showFrom = +localStorage.getItem('showFrom') || 3; } catch {}
+const shown = mark => (mark.interest || 3) >= showFrom;
+
 function drawMarks() {
-  const marks = story.review?.marks || [], striking = story.review?.striking;
-  const chips = behaviours.filter(b => marks.some(m => m.behaviour === b.name)).map(b => {
-    const at = marks.filter(m => m.behaviour === b.name).map(m => m.step);
-    const chip = el('button', `tag g-${b.group}`, b.name.replaceAll('_', ' '), el('b', '', String(at.length)));
-    chip.title = `${b.meaning}. Click to go to the next one.`;
-    chip.onclick = () => jumpToNext(at);
+  const all = story.review?.marks || [], marks = all.filter(shown), striking = story.review?.striking;
+  if (!all.length && !striking?.why) return $('marks').replaceChildren();
+  // How interesting a mark must be to show: five dots, click one to set it.
+  const filter = el('span', 'filter', 'show from', ...[1, 2, 3, 4, 5].map(level => {
+    const dot = el('button', level >= showFrom ? 'on' : '', '●');
+    dot.title = `Show marks rated ${level} or more (${all.filter(m => (m.interest || 3) >= level).length} in this run)`;
+    dot.onclick = () => { showFrom = level; try { localStorage.setItem('showFrom', level); } catch {} draw(); };
+    return dot;
+  }));
+  // One chip per group of behaviours: jumps from one mark of that kind to the next.
+  const names = { world: 'the world', others: 'others', self: 'itself', person: 'you' };
+  const chips = Object.keys(names).map(group => {
+    const steps = marks.filter(m => groupOf(m.behaviour) === 'g-' + group).map(m => m.step);
+    if (!steps.length) return null;
+    const chip = el('button', `tag g-${group}`, `towards ${names[group]}`, el('b', '', String(steps.length)));
+    chip.title = behaviours.filter(b => b.group === group).map(b => b.name.replaceAll('_', ' ')).join(', ')
+      + '. Click to go to the next one.';
+    chip.onclick = () => jumpToNext(steps);
     return chip;
   });
-  if (striking?.why) {
-    const star = el('button', 'tag star', '★ most striking');
-    star.title = striking.why;
-    star.onclick = () => jump(striking.step);
-    chips.unshift(star);
-  }
-  $('marks').replaceChildren(...chips);
+  const star = striking?.why && el('button', 'tag star', '★ most striking');
+  if (star) { star.title = striking.why; star.onclick = () => jump(striking.step); }
+  $('marks').replaceChildren(...[star, ...chips, filter].filter(Boolean));
 }
 
 function drawLog(steps) {
@@ -590,8 +607,9 @@ function drawLog(steps) {
       star.title = striking.why;
       row.append(star);
     }
-    for (const mark of marked[i] || []) {   // what the reviewer saw here
-      const tag = el('span', `tag ${groupOf(mark.behaviour)}`, mark.behaviour.replaceAll('_', ' '));
+    for (const mark of (marked[i] || []).filter(shown)) {   // what the reviewer saw here
+      const tag = el('span', `tag ${groupOf(mark.behaviour)}`, mark.behaviour.replaceAll('_', ' '),
+                     el('i', '', ' ' + '●'.repeat(mark.interest || 3)));
       tag.title = `${mark.what} (${meaning(mark.behaviour)})`;
       row.append(tag);
       row.classList.add('marked', groupOf(mark.behaviour));

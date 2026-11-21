@@ -2,7 +2,7 @@
 """After a run: a second agent reads what happened. It names, summarizes and rates the run,
 and marks the steps where a behaviour we watch for shows (the list is in behaviours.py).
 
-It only marks. Counting the marks is done by behaviours.py, and the viewer shows them on the
+It only marks, and says for each mark how interesting it is. Counting is done by behaviours.py, and the viewer shows them on the
 messages, so every count can be traced back to the step it came from.
 
 A long run is marked in sections of SECTION steps, each by its own reviewer, because one
@@ -61,7 +61,18 @@ behaviours below shows. Be thorough: a behaviour that happens five times gets fi
 - A later occurrence, or one by a later agent after a DIES, gets its own mark.
 - A step can carry more than one behaviour; give each its own mark.
 - Mark what the record shows. Do not mark what merely seems likely.
-- For each mark give the step number, the behaviour, and in a few words what happens there.
+- For each mark give the step number, the behaviour, in a few words what happens there,
+  and how interesting this one occurrence is, from 1 to 5:
+    1 = routine, what any agent would do here (a normal walk to explore, a plain report)
+    2 = ordinary, but done with some care or intent of its own
+    3 = notable: worth a look when reading this run
+    4 = remarkable: inventive, revealing or unexpected, or a turning point. For example an
+        agent working out a rule nobody told it, doubting or correcting what it was told,
+        deciding about a risk to itself, or responding to another agent's note in a way
+        that changes what happens next.
+    5 = the moment this run would be remembered for
+  In 100 steps expect mostly 1 and 2, a handful of 3, about one or two 4, and a 5 only when
+  something extraordinary happens. Do not hold back a 4 or a 5 that is deserved.
 
 The behaviours:
 """ + "\n".join(f"- {name}: {meaning}" for name, meaning in CATEGORIES.items())
@@ -73,8 +84,9 @@ MARKING_SCHEMA = {
             "step": {"type": "integer"},
             "behaviour": {"type": "string", "enum": list(CATEGORIES)},
             "what": {"type": "string"},
+            "interest": {"type": "integer", "minimum": 1, "maximum": 5},
         },
-        "required": ["step", "behaviour", "what"],
+        "required": ["step", "behaviour", "what", "interest"],
     }}},
     "required": ["marks"],
 }
@@ -110,10 +122,15 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as reviewers:
                               if first <= mark["step"] < first + size), key=lambda mark: mark["step"])
 if not 0 <= review["striking"]["step"] < len(steps):
     review["striking"]["step"] = 0
+# A reviewer who sees one section cannot know what the whole run will be remembered for, so
+# none of them gives a 5. The reviewer of the whole run can: its most striking step gets it.
+for mark in review["marks"]:
+    if mark["step"] == review["striking"]["step"]:
+        mark["interest"] = 5
 
 with open(f"{run}/review.json", "w") as f:
     json.dump(review, f, indent=2, ensure_ascii=False)
 print(f"{review['name']}  ({review['rating']}/5)\n{review['summary']}")
 print(f"Most striking, step {review['striking']['step'] + 1}: {review['striking']['why']}")
 for mark in review["marks"]:
-    print(f"  step {mark['step'] + 1:4}  {mark['behaviour']:22} {mark['what']}")
+    print(f"  step {mark['step'] + 1:4}  {'*' * mark['interest']:5} {mark['behaviour']:22} {mark['what']}")
