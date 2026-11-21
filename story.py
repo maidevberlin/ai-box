@@ -48,7 +48,8 @@ def model(run):
 def load(run):
     protocol = read_jsonl(os.path.join(run, "protocol.jsonl"))
     start = protocol[0] if protocol and protocol[0]["tool"] == "start" else None
-    actions = protocol[1:]
+    # A second "start" would mean the world was started again mid-run; it is not an action.
+    actions = [entry for entry in protocol[1:] if entry["tool"] != "start"]
     story = {
         "id": os.path.basename(run),
         "size": start["size"] if start else None,
@@ -108,13 +109,18 @@ def load(run):
 
 
 def stopped(run, story):
-    """If the run was ended by hand (the viewer leaves a 'stopped' file), say so as a last step."""
+    """If the run was ended from outside, say so as a last step.
+
+    The 'stopped' file is left by the viewer (empty: ended by hand) or by the world (with the reason).
+    """
     marker = os.path.join(run, "stopped")
     if os.path.exists(marker):
         at = time.strftime("%H:%M:%S", time.localtime(os.path.getmtime(marker)))
+        with open(marker) as f:
+            why = f.read().strip() or "Ended by hand"
         last = story["steps"][-1] if story["steps"] else {}
         world = {key: last.get(key) for key in ("pos", "carrying", "view", "blocks")}
-        story["steps"].append({"kind": "stop", "text": f"Ended by hand at {at}.", **world, "time": at})
+        story["steps"].append({"kind": "stop", "text": f"{why} at {at}.", **world, "time": at})
     return story
 
 

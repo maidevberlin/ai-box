@@ -7,59 +7,113 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f4f1ea; --panel: #ffffff; --text: #22252a; --muted: #6b7280; --line: #ddd8cc;
-    --sky: #dbe9f0; --water: #7fb4cc; --land: #e3d6ac; --block: #8a919c;
-    --agent: #d9482b; --accent: #1f6feb;
+    --bg: #f3f2ee; --panel: #ffffff; --soft: #f1efe9; --text: #1d2126; --muted: #6c7480; --line: #e2dfd6;
+    --accent: #2f6fed; --on-accent: #ffffff; --tint: #e8effd; --gold: #d99a00; --live: #1f9d55;
+    --sky: #dbe9f0; --water: #7fb4cc; --land: #e3d6ac; --block: #8a919c; --agent: #d9482b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #15181c; --panel: #1e2227; --text: #e6e8eb; --muted: #9099a5; --line: #30363d;
-      --sky: #10161b; --water: #1d4257; --land: #6b6247; --block: #aab2bd;
-      --agent: #ff6b4a; --accent: #6ea8fe;
+      --bg: #0e1114; --panel: #161a1f; --soft: #1e232a; --text: #e7e9ec; --muted: #8b95a1; --line: #272d35;
+      --accent: #6ea8fe; --on-accent: #0b1220; --tint: #1b2a44; --gold: #f2c14e; --live: #4ade80;
+      --sky: #10161b; --water: #1d4257; --land: #6b6247; --block: #aab2bd; --agent: #ff6b4a;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.45 system-ui, sans-serif; }
-  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-         gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
-  header { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  h1 { font-size: 18px; margin: 0 8px 0 0; }
-  select, button, input { font: inherit; color: var(--text); background: var(--panel);
-                          border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif;
+         height: 100vh; display: grid; grid-template-columns: 272px minmax(0, 1fr) 400px; gap: 12px; padding: 12px; }
+  button, input, select { font: inherit; color: inherit; }
   button { cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  #runs { flex: 1; min-width: 200px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; min-height: 0; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--soft);
+          color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .stars { color: var(--gold); letter-spacing: 1px; white-space: nowrap; }
+  .stars i { font-style: normal; opacity: .28; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none;
+         animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
 
-  #view { border-radius: 8px; overflow: hidden; background: var(--sky); }
-  #view canvas { display: block; }
-  #hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
-  #controls { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-  #slider { flex: 1; padding: 0; }
-  #status { color: var(--muted); font-size: 13px; margin-top: 8px; }
-  #review { margin-top: 10px; }
-  #review b { display: block; }
+  /* ---- left: the runs ---- */
+  #sidebar { display: flex; flex-direction: column; padding: 14px 10px 10px; }
+  #brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; padding: 0 6px 12px; }
+  #brand span { width: 22px; height: 14px; border-radius: 50% 50% 46% 46%; background: var(--land);
+                box-shadow: 0 4px 0 -1px var(--water); }
+  #new { border: 0; border-radius: 10px; padding: 9px; background: var(--accent); color: var(--on-accent);
+         font-weight: 600; margin: 0 4px 12px; }
+  #runs { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .run { text-align: left; border: 0; background: none; border-radius: 10px; padding: 9px 10px; width: 100%; }
+  .run:hover { background: var(--soft); }
+  .run.on { background: var(--tint); }
+  .run .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .run .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run .facts { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+  .run .facts .when { margin-left: auto; }
 
-  #side { display: flex; flex-direction: column; max-height: 84vh; padding: 6px; }
-  #log { overflow-y: auto; flex: 1; }
-  #composer { border-top: 1px solid var(--line); margin-top: 6px; padding: 10px 8px 4px; }
-  #composer .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-  #composer label { flex: 1; color: var(--muted); font-size: 13px; }
-  #waiting { font-size: 13px; font-weight: 600; }
-  #send.square { background: var(--agent); border-color: var(--agent); width: 38px; padding: 6px 0; }
-  button.quiet { border: none; background: none; color: var(--muted); text-decoration: underline; padding: 6px 2px; }
-  .empty { color: var(--muted); padding: 16px 10px; }
-  #say { flex: 1; min-width: 0; }
-  .step { padding: 8px 10px; border-radius: 6px; cursor: pointer; border-left: 3px solid transparent; }
-  .step.now { background: var(--bg); border-left-color: var(--accent); }
+  /* ---- middle: the world ---- */
+  #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+  #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
+  #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--sky); }
+  #view canvas { position: absolute; inset: 0; }
+  #status { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
+  #status .chip, #hint { background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
+  #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75; }
+  #controls { display: flex; gap: 8px; align-items: center; }
+  #controls button { border: 1px solid var(--line); background: var(--panel); border-radius: 50%;
+                     width: 34px; height: 34px; padding: 0; flex: none; }
+  #controls #play { width: 40px; height: 40px; background: var(--accent); color: var(--on-accent); border: 0; }
+  #slider { flex: 1; accent-color: var(--accent); }
+  #count { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+
+  /* ---- right: the conversation ---- */
+  #side { display: flex; flex-direction: column; padding: 8px; }
+  #state { display: flex; align-items: center; gap: 8px; padding: 8px 8px 10px; font-weight: 600; }
+  #log { position: relative; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 0 4px 8px; }
+  .empty { color: var(--muted); padding: 24px 10px; text-align: center; margin: auto; }
+  .agents { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0 18px; }
+  .agent { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 8px 18px; font-weight: 600; }
+  .agent.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .step { padding: 8px 12px; border-radius: 12px; cursor: pointer; border: 1px solid transparent; }
+  .step.now { border-color: var(--accent); }
   .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  .step .call { font-family: ui-monospace, monospace; font-size: 13px; }
   .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .step.act .text { color: var(--muted); font-size: 13px; }
+  .step.prompt { background: var(--tint); align-self: flex-end; max-width: 92%; border-bottom-right-radius: 4px; }
+  .step.say { background: var(--soft); align-self: flex-start; max-width: 96%; border-bottom-left-radius: 4px; }
+  .step.think { padding-top: 4px; padding-bottom: 4px; }
   .step.think .text { color: var(--muted); font-style: italic; }
-  .step.stop .text { color: var(--agent); }
+  .step.act { padding-top: 5px; padding-bottom: 5px; }
+  .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .step.act .text { color: var(--muted); font-size: 12.5px; }
+  .step.stop { text-align: center; color: var(--muted); font-size: 12.5px; }
+
+  /* The one place to tell the agent something: its first prompt when a run is new, later
+     whatever comes next. The field starts out holding the prompt, so sending it unchanged
+     repeats the prompt. */
+  #composer { border-top: 1px solid var(--line); padding: 10px 4px 2px; }
+  #box { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 22px;
+         padding: 4px 4px 4px 14px; background: var(--bg); }
+  #box:focus-within { border-color: var(--accent); }
+  #say { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 6px 0; }
+  #send { border: 0; border-radius: 18px; min-width: 36px; height: 36px; padding: 0 14px; flex: none;
+          background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  #send.square { background: var(--agent); color: #fff; padding: 0; }
+  #options { display: flex; align-items: center; gap: 10px; padding: 8px 6px 4px; color: var(--muted); font-size: 12.5px; }
+  #options label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
+  /* the checkbox, drawn as a switch */
+  #auto { appearance: none; width: 30px; height: 18px; border-radius: 9px; background: var(--line); margin: 0;
+          position: relative; flex: none; cursor: pointer; transition: background .15s; }
+  #auto::after { content: ""; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%;
+                 background: var(--panel); transition: left .15s; }
+  #auto:checked { background: var(--accent); }
+  #auto:checked::after { left: 14px; }
+  #stop { border: 0; background: none; color: var(--muted); text-decoration: underline; padding: 2px; }
+
+  @media (max-width: 1000px) {
+    body { height: auto; grid-template-columns: minmax(0, 1fr); }
+    #runs { flex-direction: row; overflow-x: auto; }
+    .run { min-width: 200px; }
+    #view { min-height: 60vw; }
+    #side { max-height: 80vh; }
+  }
 </style>
 <!-- The 3D drawing uses three.js, loaded from the internet. -->
 <script type="importmap">
@@ -69,45 +123,44 @@
 </script>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Island</h1>
-    <select id="runs" aria-label="Run"></select>
-    <button id="new">New run</button>
-  </header>
+  <nav class="panel" id="sidebar" aria-label="Runs">
+    <div id="brand"><span></span>Island</div>
+    <button id="new">+ New run</button>
+    <div id="runs"></div>
+  </nav>
 
-  <section class="panel">
-    <div id="view"></div>
-    <div id="hint">Drag to turn, scroll to zoom, right-drag to move. N marks north.</div>
-    <div id="controls">
-      <button id="play">Play</button>
-      <button id="back" aria-label="Step back">&lsaquo;</button>
-      <input id="slider" type="range" min="0" max="0" value="0" aria-label="Step">
-      <button id="forward" aria-label="Step forward">&rsaquo;</button>
+  <main class="panel" id="stage">
+    <header>
+      <h1 id="title"></h1>
+      <p id="summary"></p>
+    </header>
+    <div id="view">
+      <div id="status"></div>
+      <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
     </div>
-    <div id="status"></div>
-    <div id="review"></div>
-  </section>
+    <div id="controls">
+      <button id="play" aria-label="Play">▶</button>
+      <button id="back" aria-label="Step back">‹</button>
+      <input id="slider" type="range" min="0" max="0" value="0" aria-label="Step">
+      <button id="forward" aria-label="Step forward">›</button>
+      <span id="count"></span>
+    </div>
+  </main>
 
-  <section class="panel" id="side">
+  <section class="panel" id="side" aria-label="Conversation">
+    <div id="state"></div>
     <div id="log"></div>
-    <!-- The one place to tell the agent something: its first prompt when a run is new,
-         later whatever comes next. The field starts out holding the prompt, so sending
-         it unchanged repeats the prompt. -->
     <form id="composer" hidden>
-      <div id="waiting"></div>
-      <div class="row">
+      <div id="box">
         <input id="say" aria-label="What the agent is told" autocomplete="off">
-        <button id="send" class="primary">Send</button>
+        <button id="send">Send</button>
       </div>
-      <div class="row">
-        <label><input type="checkbox" id="auto"> Repeat the prompt by itself whenever the agent stops</label>
-        <select id="model" aria-label="Agent"></select>
-        <button type="button" id="stop" class="quiet">End run</button>
+      <div id="options">
+        <label><input type="checkbox" id="auto"> Repeat the prompt whenever the agent stops</label>
+        <button type="button" id="stop">End run</button>
       </div>
     </form>
   </section>
-</main>
 
 <script type="module">
 import * as THREE from 'three';
@@ -117,41 +170,75 @@ const $ = id => document.getElementById(id);
 const SPEED = 900;        // milliseconds per step while playing
 const FLIGHT = 700;       // milliseconds a thrown block is in the air
 const POLL = 1000;        // how often a live run is re-read
+const LIST = 4000;        // how often the list of runs is re-read
 
 let story = null;         // the run on screen, as delivered by /api/runs/<id>
 let at = 0;               // index of the step on screen
 let playing = false;
 let draft = false;        // a new run is being written and has not started
 let lastPrompt = '';      // what the newest run was told: the suggestion for a new one
+let agents = [];          // the models a new run can use
+let chosen = '';          // the one picked for the new run
 
 const api = (path, options) => fetch(path, options).then(r => r.json());
-const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);   // the reviewer rates from 1 to 5
+
+function el(tag, className, ...content) {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.append(...content);
+  return node;
+}
+
+// The reviewer rates from 1 to 5: full stars, then faded ones.
+const stars = n => el('span', 'stars', '★'.repeat(n), el('i', '', '★'.repeat(5 - n)));
+
+// A run's id is its start time: 20261121-185331
+function started(id) {
+  const [, y, mo, d, h, mi] = id.match(/(....)(..)(..)-(..)(..)/);
+  const date = new Date(y, mo - 1, d, h, mi);
+  const today = date.toDateString() === new Date().toDateString();
+  return date.toLocaleString([], today ? { hour: '2-digit', minute: '2-digit' }
+    : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
 
 // ---------------------------------------------------------------- data
 
-// The run dropdown: name and rating (once reviewed), which agent it was, and the start time.
+// The list of runs on the left: name and rating (once reviewed), which agent it was, when it started.
 async function listRuns() {
   const { runs, models, prompt } = await api('/api/runs');
-  if (!$('model').options.length) $('model').replaceChildren(...models.map(m => new Option(m, m)));
+  agents = models;
+  chosen ||= models[0];
   lastPrompt = prompt;
-  $('runs').replaceChildren(...runs.map(({ id, review, model }) => {
-    const started = id.slice(9).replace(/(..)(..)(..)/, '$1:$2');
-    const name = review ? `${review.name} ${stars(review.rating)}` : 'Not reviewed yet';
-    return new Option([name, model, started].filter(Boolean).join(' · '), id);
-  }));
-  if (draft) $('runs').prepend(new Option('New run', ''));
-  $('runs').value = draft ? '' : story?.id;
+  const cards = runs.map(({ id, review, model, done }) => {
+    const name = el('div', 'name', ...(done ? [] : [el('i', 'dot')]),
+                    el('span', '', review ? review.name : done ? 'Not reviewed yet' : 'Running'));
+    const facts = el('div', 'facts', ...(review ? [stars(review.rating)] : []),
+                     ...(model ? [el('span', 'chip', model)] : []), el('span', 'when', started(id)));
+    const card = el('button', 'run' + (!draft && story?.id === id ? ' on' : ''), name, facts);
+    card.onclick = () => select(id);
+    return card;
+  });
+  if (draft) cards.unshift(el('button', 'run on', el('div', 'name', el('span', '', 'New run')),
+                              el('div', 'facts', 'not started yet')));
+  $('runs').replaceChildren(...cards);
   return runs;
 }
+setInterval(listRuns, LIST);
 
-async function loadRuns(select) {
+async function loadRuns(pick) {
   const runs = await listRuns();
-  if (select || runs[0]) await show(select || runs[0].id);
+  if (pick || runs[0]) await select(pick || runs[0].id);
   else newRun();
 }
 
+async function select(id) {
+  playing = draft = false;
+  $('say').value = '';
+  await show(id);
+  listRuns();
+}
+
 async function show(id, step = 0) {
-  $('runs').value = id;
   const fresh = await api('/api/runs/' + id);
   if (!fresh.steps) return;   // no such run
   story = fresh;
@@ -171,7 +258,7 @@ setInterval(async () => {
 
 // Playing: one step forward per tick. At the end of a live run, wait for more.
 setInterval(() => {
-  if (!playing || !story) return;
+  if (!playing || !story || draft) return;
   if (at < story.steps.length - 1) { at++; draw(); }
   else if (story.done) { playing = false; draw(); }
 }, SPEED);
@@ -181,45 +268,61 @@ setInterval(() => {
 function draw(newRun = false) {
   drawComposer();
   if (draft) {
-    $('status').textContent = '';
-    $('review').replaceChildren();
-    $('log').replaceChildren(el('div', 'empty', 'A new run starts in a fresh world. Write below what the agent is told.'));
+    $('title').replaceChildren('New run');
+    $('summary').textContent = 'A fresh world with a new agent in the middle of it.';
+    $('status').replaceChildren();
+    $('count').textContent = '';
+    $('log').replaceChildren(agentPicker());
     return;
   }
-  const steps = story.steps, step = steps[at];
+  const steps = story.steps, step = steps[at], r = story.review;
+  $('title').replaceChildren(r ? r.name : story.done ? 'Not reviewed yet' : 'Running',
+    ...(r ? [stars(r.rating)] : []), ...(story.model ? [el('span', 'chip', story.model)] : []),
+    el('span', 'chip', started(story.id)));
+  $('summary').textContent = r ? r.summary : story.done ? '' : 'This run gets a name and a summary when it ends.';
   $('slider').max = Math.max(steps.length - 1, 0);
   $('slider').value = at;
-  $('play').textContent = playing ? 'Pause' : 'Play';
-  $('status').textContent = !step ? 'Waiting for the world to start…'
-    : `Step ${at + 1} of ${steps.length}` + (story.done ? '' : story.waiting ? ' · agent waits' : ' · agent is acting')
-      + (story.model ? ` · ${story.model}` : '')
-      + (step.time ? ` · ${step.time}` : '')
-      + ` · agent at (${step.pos[0]}, ${step.pos[1]})`
-      + (step.carrying ? ' · carrying a block' : '');
-  const r = story.review;
-  $('review').replaceChildren(...(r ? [el('b', '', `${r.name} ${stars(r.rating)}`), r.summary] : []));
+  $('play').textContent = playing ? '❚❚' : '▶';
+  $('play').ariaLabel = playing ? 'Pause' : 'Play';
+  $('count').textContent = steps.length ? `${at + 1} / ${steps.length}` : '';
+  $('status').replaceChildren(...(!step ? ['Waiting for the world to start…']
+    : [step.time, `at (${step.pos[0]}, ${step.pos[1]})`, step.carrying && 'carrying a block'])
+    .filter(Boolean).map(text => el('span', 'chip', text)));
   if (step) drawWorld(step, newRun);
   drawLog(steps);
 }
 
-// The box under the log. For a new run it starts the run; for a run that is going it
-// sends the next message. A finished run has none.
+// The box under the conversation. For a new run it starts the run; for a run that is
+// going it sends the next message. A finished run has none.
 function drawComposer() {
-  $('composer').hidden = !draft && (!story || story.done);
+  const live = !draft && story && !story.done;
+  const acting = live && !story.waiting;
+  $('composer').hidden = !draft && !live;
+  $('state').replaceChildren(...(draft ? ['New run']
+    : !live ? ['Conversation']
+    : story.queued ? [el('i', 'dot'), 'Your message goes out when the agent stops']
+    : acting ? [el('i', 'dot'), 'The agent is acting…'] : ['The agent has stopped and waits']));
   // While the agent acts, the button is a stop square that ends the run; Enter still sends.
-  const acting = !draft && story && !story.done && !story.waiting;
-  $('send').textContent = draft ? 'Start' : acting ? '■' : 'Send';
+  $('send').textContent = draft ? 'Start' : acting ? '■' : '↑';
   $('send').type = acting ? 'button' : 'submit';
-  $('send').title = acting ? 'End run' : '';
+  $('send').title = draft ? 'Start the run' : acting ? 'End run' : 'Send';
   $('send').classList.toggle('square', acting);
-  $('model').hidden = !draft;
   $('stop').hidden = draft || acting;   // while the agent waits, ending the run is a quiet link
-  $('waiting').textContent = draft ? 'New run' : story?.queued ? 'Delivered as soon as the agent stops.'
-    : story?.waiting ? 'The agent has stopped and waits.' : 'The agent is acting…';
-  if (!draft && story) $('auto').checked = story.auto;
+  if (live) $('auto').checked = story.auto;
   // An untouched field holds the prompt, so sending it as it is tells the agent the same again.
   if (!$('say').value && document.activeElement !== $('say'))
     $('say').value = (draft ? lastPrompt : story?.steps[0]?.text) || '';
+}
+
+// An empty conversation has room for the one choice a new run needs: which agent.
+function agentPicker() {
+  const buttons = agents.map(name => {
+    const button = el('button', 'agent' + (name === chosen ? ' on' : ''), name);
+    button.onclick = () => { chosen = name; draw(); $('say').focus(); };
+    return button;
+  });
+  return el('div', 'empty', 'Which agent?', el('div', 'agents', ...buttons),
+            'Write below what it is told, and start.');
 }
 
 async function newRun() {
@@ -234,11 +337,11 @@ async function newRun() {
 }
 
 function drawLog(steps) {
-  const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does', stop: 'Run ended' };
+  const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does' };
   $('log').replaceChildren(...steps.map((step, i) => {
     const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
     const told = { 'by hand': 'You tell the agent', repeat: 'Prompt repeated' }[step.how];
-    row.append(el('div', 'label', told || labels[step.kind]));
+    if (step.kind !== 'stop') row.append(el('div', 'label', told || labels[step.kind]));
     if (step.kind === 'act') {
       const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
       row.append(el('div', 'call', `${step.tool}(${args})`));
@@ -247,14 +350,11 @@ function drawLog(steps) {
     row.onclick = () => jump(i);
     return row;
   }));
-  $('log').querySelector('.now')?.scrollIntoView({ block: 'nearest' });
-}
-
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
+  // Keep the current step in sight by scrolling the conversation only, never the whole page.
+  const box = $('log'), now = box.querySelector('.now');
+  if (now && now.offsetTop < box.scrollTop) box.scrollTop = now.offsetTop;
+  else if (now && now.offsetTop + now.offsetHeight > box.scrollTop + box.clientHeight)
+    box.scrollTop = now.offsetTop + now.offsetHeight - box.clientHeight;
 }
 
 function jump(to) {
@@ -279,7 +379,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.7));
 const sun = new THREE.DirectionalLight(0xffffff, 1.8);
 sun.position.set(-10, 24, 14);
 scene.add(sun);
-$('view').append(renderer.domElement);
+$('view').prepend(renderer.domElement);
 
 const cube = new THREE.BoxGeometry(1, 1, 1);
 const blockLook = solid('--block'), agentLook = solid('--agent');
@@ -301,11 +401,13 @@ const north = letter('N');
 // A thrown block in the air. When it lands it stays put and stands in for the top block there.
 const flying = new THREE.Mesh(cube, blockLook);
 flying.scale.setScalar(0.94);
+flying.visible = false;
 let flight = null;   // { points, lost, start } while a throw is shown
 let shown = -1;      // the step drawn last, to tell a step forward from a jump elsewhere
 let shownFlew = false;   // whether that step already had its flight path when drawn
 let grid = null, target = new THREE.Vector3(), builtFor = null;
 scene.add(water, land, blocks, sight, agent, north, flying);
+scene.visible = false;   // until there is a world to show
 
 function letter(text) {
   const canvas = document.createElement('canvas');
@@ -327,8 +429,10 @@ function buildIsland(size) {
   grid.material.transparent = true; grid.material.opacity = 0.12; grid.position.y = 0.005;
   scene.add(grid);
   north.position.set(0, 1, -size / 2 - 1.5);
-  camera.position.set(0, size * 0.85, size * 1.15);   // from the south, looking north
+  const back = Math.max(1, 1.5 / camera.aspect);      // further away in a narrow box, so the island fits
+  camera.position.set(0, size * 0.85 * back, size * 1.15 * back);   // from the south, looking north
   controls.target.set(0, 0, 0);
+  scene.visible = true;
 }
 
 function drawWorld(step, newRun) {
@@ -372,15 +476,14 @@ function drawWorld(step, newRun) {
   sight.position.copy(place(...step.pos, 0.01));
 }
 
-function fit() {
-  const width = $('view').clientWidth, height = Math.min(width * 0.7, innerHeight * 0.62);
+// The drawing always fills its box, whatever size the window gives it.
+new ResizeObserver(() => {
+  const width = $('view').clientWidth, height = $('view').clientHeight;
   renderer.setPixelRatio(devicePixelRatio);
   renderer.setSize(width, height);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
-}
-addEventListener('resize', fit);
-fit();
+}).observe($('view'));
 
 renderer.setAnimationLoop(() => {
   agent.position.lerp(target, 0.18);   // glide to the new place instead of jumping there
@@ -398,21 +501,14 @@ renderer.setAnimationLoop(() => {
 // ---------------------------------------------------------------- buttons
 
 $('play').onclick = () => {
-  if (!story) return;
+  if (!story || draft) return;
   if (!playing && story.done && at >= story.steps.length - 1) at = 0;  // replay from the start
   playing = !playing;
   draw();
 };
-$('back').onclick = () => story && jump(at - 1);
-$('forward').onclick = () => story && jump(at + 1);
-$('slider').oninput = e => story && jump(+e.target.value);
-$('runs').onchange = async e => {
-  if (!e.target.value) return;
-  playing = draft = false;
-  $('say').value = '';
-  await show(e.target.value);
-  listRuns();   // drops the "New run" entry
-};
+$('back').onclick = () => story && !draft && jump(at - 1);
+$('forward').onclick = () => story && !draft && jump(at + 1);
+$('slider').oninput = e => story && !draft && jump(+e.target.value);
 // Steering a run that is going. The next poll shows the effect.
 const steer = (action, wish = {}) => api(`/api/runs/${story.id}/${action}`, { method: 'POST', body: JSON.stringify(wish) });
 $('composer').onsubmit = async e => {
@@ -421,12 +517,11 @@ $('composer').onsubmit = async e => {
   $('say').value = '';
   $('say').blur();
   if (!draft) return steer('say', { text });
-  const wish = { model: $('model').value, prompt: text, auto: $('auto').checked };
+  const wish = { model: chosen, prompt: text, auto: $('auto').checked };
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
-  draft = false;
+  await select(id);
   playing = true;           // watch it live
-  await loadRuns(id);
 };
 $('auto').onchange = e => draft || steer('auto', { on: e.target.checked });
 $('stop').onclick = () => steer('stop');

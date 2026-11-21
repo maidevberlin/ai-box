@@ -5,7 +5,8 @@ The agent is told PROMPT and acts until it stops. Then the run waits for the nex
 thing to tell it:
   - a message someone wrote (the viewer puts it in runs/<id>/inbox), or
   - the prompt again, by itself, as long as the file runs/<id>/auto exists.
-The run ends when nobody answers for WAIT seconds, on Ctrl+C, or when the viewer ends it.
+The run ends when nobody answers for WAIT seconds, on Ctrl+C, when the viewer ends it,
+or when the world stops (after WORLD_MAX_ACTIONS actions).
 
 Optional settings, as environment variables:
   WORLD_SIZE, WORLD_BLOCKS, WORLD_SEED, WORLD_VIEW, WORLD_JUMP, WORLD_MAX_ACTIONS
@@ -94,6 +95,8 @@ try:
     for line in agent.stdout:
         transcript.write(line)
         transcript.flush()
+        if os.path.exists(path("stopped")):  # the world has stopped (see mcp_server.py)
+            break
         if json.loads(line).get("type") == "result":  # the agent has stopped
             message = next_message()
             if not message:

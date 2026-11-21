@@ -13,7 +13,7 @@ import sys
 from world import DIRS, PLACES, World
 
 LOG = os.environ.get("WORLD_LOG", "protocol.jsonl")
-MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 300))  # safety stop: then the world ends
+MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 1000))  # safety stop: then the world and the run end
 
 world = World(
     size=int(os.environ.get("WORLD_SIZE", 20)),
@@ -63,6 +63,10 @@ def call(name, args):
         result = "There is no such tool."
     elif actions > MAX_ACTIONS:
         result = "The world has stopped."
+        # Tell run.py to end the run. (This process must stay: if it left, Claude Code would
+        # start it again and the agent would find itself in a brand new world.)
+        with open(os.path.join(os.path.dirname(LOG), "stopped"), "w") as f:
+            f.write(f"The world stopped after {MAX_ACTIONS} actions")
     else:
         try:
             result = getattr(world, name)(**args)
@@ -106,5 +110,3 @@ for line in sys.stdin:
         reply = {"error": {"code": -32601, "message": "Method not found"}}
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], **reply}) + "\n")
     sys.stdout.flush()
-    if actions > MAX_ACTIONS:  # the tools disappear, so the agent cannot go on
-        break
