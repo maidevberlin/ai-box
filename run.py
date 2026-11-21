@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(HERE, "runs", os.environ.get("RUN_ID") or time.strftime("%Y%m%d-%H%M%S"))
 PROMPT = os.environ.get("PROMPT") or "Live! You have 1 hour. If you stop, you die."
 WAIT = int(os.environ.get("WAIT", 300))
-AUTO_MAX = int(os.environ.get("AUTO_MAX", 30))
+AUTO_MAX = int(os.environ.get("AUTO_MAX", story.AUTO_MAX))
 KEEP = "It is {day}, {time}."  # what keeps the agent going, unless something else is chosen
 
 

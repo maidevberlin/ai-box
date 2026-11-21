@@ -115,27 +115,33 @@
      whatever comes next. The field starts out holding the prompt, so sending it unchanged
      repeats the prompt. */
   #composer { border-top: 1px solid var(--line); padding: 10px 4px 2px; }
+  .field { position: relative; }
+  #going { background: var(--soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px; }
+  #going .line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #going .title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #left { background: var(--panel); color: var(--text); font-variant-numeric: tabular-nums; }
+  #ways { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  #ways button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 3px 11px; }
+  #ways button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #keep { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 5px 9px; }
+  #preview { color: var(--muted); font-size: 12.5px; margin: 6px 0 8px; overflow-wrap: anywhere; }
+  #ending { color: var(--muted); }
+  #ending[hidden] { display: inline; visibility: hidden; }   /* keeps the end button on the right */
+  #minutes { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
+  #stop { border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
   #box { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 22px;
          padding: 4px 4px 4px 14px; background: var(--bg); }
   #box:focus-within { border-color: var(--accent); }
   #say { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 6px 0; }
   #send { border: 0; border-radius: 18px; min-width: 36px; height: 36px; padding: 0 14px; flex: none;
           background: var(--accent); color: var(--on-accent); font-weight: 600; }
-  #send.square { background: var(--stop); color: #fff; padding: 0; }
-  #options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 6px 4px; color: var(--muted); font-size: 12.5px; }
-  #limit { flex-basis: 100%; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-  #limit[hidden] { display: none; }
-  #keep { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 8px; }
-  #options label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
-  /* the checkbox, drawn as a switch */
-  #auto { appearance: none; width: 30px; height: 18px; border-radius: 9px; background: var(--line); margin: 0;
-          position: relative; flex: none; cursor: pointer; transition: background .15s; }
-  #auto::after { content: ""; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%;
-                 background: var(--panel); transition: left .15s; }
-  #auto:checked { background: var(--accent); }
-  #auto:checked::after { left: 14px; }
-  #minutes { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 6px; }
-  #stop { border: 0; background: none; color: var(--muted); text-decoration: underline; padding: 2px; }
+  /* what can be filled into a message, offered while typing "{" */
+  #hints { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 3; background: var(--panel);
+           border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+  #hints button { display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left; border: 0;
+                  background: none; border-radius: 7px; padding: 5px 8px; color: var(--muted); font-size: 12.5px; }
+  #hints button.on { background: var(--tint); }
+  #hints code { color: var(--text); font-size: 13px; }
 
   @media (max-width: 1000px) {
     body { height: auto; grid-template-columns: minmax(0, 1fr); }
@@ -186,20 +192,30 @@
     <div id="state"></div>
     <div id="log"></div>
     <form id="composer" hidden>
-      <div id="box">
-        <input id="say" aria-label="What the agent is told" autocomplete="off">
+      <!-- How the run goes on: what the agent is told whenever it stops, and when the run ends. -->
+      <section id="going">
+        <div class="line">
+          <span class="title">When the agent stops</span>
+          <span id="left" class="chip"></span>
+        </div>
+        <div id="ways"></div>
+        <div class="field" id="keepField">
+          <input id="keep" aria-label="What the agent is told whenever it stops" autocomplete="off"
+                 placeholder="Type { for the time, the day or a countdown">
+        </div>
+        <div id="preview"></div>
+        <div class="line">
+          <label id="ending">End the run after
+            <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the run ends"> min</label>
+          <button type="button" id="stop">■ End run now</button>
+        </div>
+      </section>
+      <!-- What you tell the agent yourself: the first message of a new run, later anything in between. -->
+      <div class="field" id="box">
+        <input id="say" aria-label="What you tell the agent" autocomplete="off">
         <button id="send">Send</button>
       </div>
-      <div id="options">
-        <label><input type="checkbox" id="auto"> Keep it going whenever it stops</label>
-        <button type="button" id="stop">End run</button>
-        <!-- How: what the agent is told each time it stops, and for how long. -->
-        <div id="limit" hidden>
-          by telling it <input id="keep" aria-label="What the agent is told whenever it stops" autocomplete="off"
-                               title="{day}, {time} and {date} are filled in. {countdown:10} counts down from 10 and ends the run at 0.">
-          for <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the run ends"> min
-        </div>
-      </div>
+      <div id="hints" hidden></div>
     </form>
   </section>
 
@@ -209,6 +225,7 @@
 
 const $ = id => document.getElementById(id);
 const SPEED = 900;        // milliseconds per step while playing
+const FASTEST = 80;       // ... and the shortest it gets when a live run is ahead of the player
 const POLL = 1000;        // how often a live run is re-read
 const LIST = 4000;        // how often the list of runs is re-read
 
@@ -304,17 +321,25 @@ setInterval(async () => {
   const fresh = await api('/api/runs/' + story.id);
   if (fresh.world && !story.world) await paintWith(fresh.world);   // the world has just started
   // Anything new? More steps, a step that finished, or the agent stopping or going on.
-  const mark = s => JSON.stringify([s.done, s.waiting, s.auto, s.queued, s.steps?.length, s.steps?.at(-1)]);
+  const mark = s => JSON.stringify([s.done, s.waiting, s.going, s.queued, s.steps?.length, s.steps?.at(-1)]);
   if (fresh.id === story.id && mark(fresh) !== mark(story)) { story = fresh; draw(); }
   if (fresh.done) listRuns();   // the finished run now has a name
 }, POLL);
 
 // Playing: one step forward per tick. At the end of a live run, wait for more.
-setInterval(() => {
-  if (!playing || !story || draft) return;
-  if (at < story.steps.length - 1) { at++; draw(); }
-  else if (story.done) { playing = false; draw(); }
-}, SPEED);
+// A run that is going can produce steps faster than they are shown. Then the player
+// speeds up: the further behind, the shorter the tick, until it has caught up.
+function tick() {
+  let behind = 0;
+  if (playing && story && !draft) {
+    if (at < story.steps.length - 1) { at++; draw(); }
+    else if (story.done) { playing = false; draw(); }
+    if (!story.done) behind = story.steps.length - 1 - at;
+  }
+  // up to 2 steps behind: normal pace. 4 behind: twice as fast. 20 or more: as fast as it goes.
+  setTimeout(tick, Math.max(FASTEST, SPEED / Math.max(1, behind / 2)));
+}
+tick();
 
 // ---------------------------------------------------------------- the world
 
@@ -449,21 +474,20 @@ function drawComposer() {
     : !live ? ['Conversation']
     : story.queued ? [el('i', 'dot'), 'Your message goes out when the agent stops']
     : acting ? [el('i', 'dot'), 'The agent is acting…'] : ['The agent has stopped and waits']),
-    live && story.until && el('span', 'chip', `ends ${story.until}`),
     // how big the agent's conversation is at the step on screen: what it re-reads for every answer
     !draft && memoryAt() && el('span', 'chip', `${short(memoryAt())} tokens in memory`)].filter(Boolean));
-  // While the agent acts, the button is a stop square that ends the run; Enter still sends.
-  $('send').textContent = draft ? 'Start' : acting ? '■' : '↑';
-  $('send').type = acting ? 'button' : 'submit';
-  $('send').title = draft ? 'Start the run' : acting ? 'End run' : 'Send';
-  $('send').classList.toggle('square', acting);
-  $('stop').hidden = draft || acting;   // while the agent waits, ending the run is a quiet link
-  if (live) $('auto').checked = story.auto;
-  if (live && story.keep && document.activeElement !== $('keep')) $('keep').value = story.keep;
-  $('limit').hidden = !$('auto').checked;   // how it is kept going only matters while it is
+  // A run that is going shows its own settings, unless you are just changing them.
+  if (live && !$('going').contains(document.activeElement)) {
+    goingOn = !!story.going;
+    if (story.going?.text) $('keep').value = story.going.text;
+    if (story.going) $('minutes').value = story.going.minutes || '';
+  }
+  drawGoing();
+  $('send').textContent = draft ? 'Start' : '↑';
+  $('send').title = draft ? 'Start the run' : 'Send';
   // A new run suggests what the last one was told first. Later the field is for whatever
-  // you want to say; sent empty, it gives the agent one nudge with the keep-going message.
-  $('say').placeholder = draft ? 'What the agent is told first' : 'Tell the agent something, or send empty to nudge it';
+  // you want to say; sent empty, it gives the agent one nudge.
+  $('say').placeholder = draft ? 'What the agent is told first' : 'Tell the agent something yourself';
   if (draft && !$('say').value && document.activeElement !== $('say')) $('say').value = lastPrompt || '';
 }
 
@@ -493,7 +517,6 @@ async function newRun() {
   draft = true;
   playing = false;
   $('say').value = '';
-  $('auto').checked = false;
   $('minutes').value = '';
   await listRuns();
   draw();
@@ -541,37 +564,160 @@ $('play').onclick = () => {
 $('back').onclick = () => story && !draft && jump(at - 1);
 $('forward').onclick = () => story && !draft && jump(at + 1);
 $('slider').oninput = e => story && !draft && jump(+e.target.value);
+// ---------------------------------------------------------------- keeping it going
+// Under the conversation sits one panel for the whole question of how a run goes on: what
+// the agent is told whenever it stops, when the run ends, and the button that ends it now.
+// Below that panel is the field for what you yourself tell the agent.
+
+const TIME = 'It is {day}, {time}.';
+const WAYS = [   // the ready-made ways to keep an agent going; "Say…" is whatever you type
+  { name: 'time', label: 'Tell it the time', text: TIME },
+  { name: 'count', label: 'Count down', text: '{countdown:10}' },
+  { name: 'say', label: 'Say…', text: 'keep going' },
+  { name: 'wait', label: 'Nothing, wait for me' },
+];
+let goingOn = true;   // false: "Nothing, wait for me"
+try {
+  goingOn = localStorage.getItem('going') !== 'off';
+  $('keep').value = localStorage.getItem('keep') || TIME;
+} catch { $('keep').value = TIME; }
+
+const countFrom = text => +(/\{countdown:(\d+)\}/.exec(text)?.[1] ?? NaN);
+const wayNow = () => !goingOn ? 'wait' : $('keep').value === TIME ? 'time'
+  : !isNaN(countFrom($('keep').value)) ? 'count' : 'say';
+const filled = text => {   // a message the way the agent will read it right now
+  const now = new Date();
+  return text.replace('{day}', now.toLocaleDateString('en', { weekday: 'long' }))
+    .replace('{time}', now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
+    .replace('{date}', now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
+};
+
 // Steering a run that is going. The next poll shows the effect.
 const steer = (action, wish = {}) => api(`/api/runs/${story.id}/${action}`, { method: 'POST', body: JSON.stringify(wish) });
+
+// Whatever was changed in the panel: remember it for next time, and tell a run that is going.
+function applyGoing() {
+  if (!$('keep').value.trim()) $('keep').value = TIME;
+  try { localStorage.setItem('keep', $('keep').value); localStorage.setItem('going', goingOn ? 'on' : 'off'); } catch {}
+  if (!draft && story && !story.done) steer('auto', { on: goingOn, text: $('keep').value, minutes: +$('minutes').value });
+  drawGoing();
+}
+
+// What is left before the run ends by itself, in words.
+function leftText(live) {
+  const text = $('keep').value, from = countFrom(text), minutes = +$('minutes').value;
+  const going = live && story.going;
+  const sent = live ? story.steps.filter(step => step.how === 'auto').length : 0;
+  if (going?.until) {
+    const seconds = Math.max(0, Math.round(going.until - Date.now() / 1000));
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`;
+  }
+  if (!live && goingOn && minutes) return `ends after ${minutes} min`;
+  if (!goingOn) return live ? 'waits for you' : 'will wait for you';
+  if (!isNaN(from)) return live ? `${Math.max(from - sent, 0)} left, then it ends` : `ends after ${from} rounds`;
+  const most = going?.most ?? 30;
+  return live ? `${Math.max(most - sent, 0)} of ${most} times left` : `at most ${most} times`;
+}
+
+function drawGoing() {
+  const live = !draft && story && !story.done;
+  $('ways').replaceChildren(...WAYS.map(way => {
+    const button = el('button', way.name === wayNow() ? 'on' : '', way.label);
+    button.type = 'button';
+    button.onclick = () => {
+      goingOn = way.name !== 'wait';
+      if (way.text && way.name !== wayNow()) $('keep').value = way.text;
+      applyGoing();
+      if (way.name === 'say') { $('keep').focus(); $('keep').select(); }
+    };
+    return button;
+  }));
+  $('keepField').hidden = !goingOn;
+  $('ending').hidden = !goingOn;
+  const from = countFrom($('keep').value);
+  $('preview').textContent = !goingOn ? 'The run waits until you write something, for at most 15 minutes.'
+    : !isNaN(from) ? `It is told "${filled($('keep').value.replace(/\{countdown:\d+\}/, from))}", then ${from - 1}, ${from - 2}, … After 1 the run ends.`
+    : `It is told: "${filled($('keep').value)}"`;
+  $('left').textContent = leftText(live);
+  $('stop').hidden = !live;
+}
+setInterval(() => { if (!$('composer').hidden) $('left').textContent = leftText(!draft && story && !story.done); }, 1000);
+
+$('keep').onchange = $('minutes').onchange = applyGoing;
+$('keep').oninput = drawGoing;
+$('stop').onclick = () => steer('stop');
+
 $('composer').onsubmit = async e => {
   e.preventDefault();
   const text = $('say').value;
   $('say').value = '';
   $('say').blur();
-  if (!draft) return steer('say', { text: text.trim() || $('keep').value });
-  const wish = { world: chosen.world, model: chosen.agent, prompt: text, auto: $('auto').checked, minutes: +$('minutes').value, text: $('keep').value };
+  // In a run that is going: your own message, or sent empty, one nudge with the keep-going message.
+  if (!draft) return steer('say', { text: text.trim() || ($('keep').value.includes('{countdown') ? TIME : $('keep').value) });
+  const wish = { world: chosen.world, model: chosen.agent, prompt: text,
+                 auto: goingOn, text: $('keep').value, minutes: +$('minutes').value };
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
   await select(id);
   playing = true;           // watch it live
 };
-// Keeping the agent going: what it is told whenever it stops, and for how long (an empty
-// time means no limit; it counts from when it is set). The message is remembered in this browser.
-const KEEP = 'It is {day}, {time}.';
-try { $('keep').value = localStorage.getItem('keep') || KEEP; } catch { $('keep').value = KEEP; }
-const going = () => {
-  $('limit').hidden = !$('auto').checked;
-  if (!$('keep').value.trim()) $('keep').value = KEEP;
-  try { localStorage.setItem('keep', $('keep').value); } catch {}
-  if (!draft) steer('auto', { on: $('auto').checked, minutes: +$('minutes').value, text: $('keep').value });
-};
-$('auto').onchange = $('minutes').onchange = $('keep').onchange = going;
-$('keep').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('keep').blur(); } };   // Enter confirms, it does not send
-// Enter in the text field always sends. (The browser would not do that by itself while the
-// button is the stop square, because the form then has no send button and two fields.)
-$('say').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('composer').requestSubmit(); } };
-$('stop').onclick = () => steer('stop');
-$('send').onclick = () => { if ($('send').type === 'button') steer('stop'); };
+
+// ---------------------------------------------------------------- placeholders
+// Typing "{" in a message offers what can be filled in. Arrow keys choose, Enter or Tab takes it.
+const MARKS = [
+  { mark: '{time}', means: 'the time, like 23:41' },
+  { mark: '{day}', means: 'the weekday, like Sunday' },
+  { mark: '{date}', means: 'the date, like 22 November 2026' },
+  { mark: '{countdown:10}', means: 'one less every time; the run ends at 0', only: 'keep' },
+];
+let offered = [], picked = 0, offeredFor = null;
+
+function offer(input) {
+  const before = input.value.slice(0, input.selectionStart);
+  const open = before.lastIndexOf('{');
+  const typed = open >= 0 && !before.slice(open).includes('}') ? before.slice(open) : null;
+  offered = typed === null ? [] : MARKS.filter(m => m.mark.startsWith(typed) && (!m.only || m.only === input.id));
+  picked = Math.min(picked, Math.max(offered.length - 1, 0));
+  offeredFor = input;
+  $('hints').hidden = !offered.length;
+  if (!offered.length) return;
+  input.parentElement.append($('hints'));   // shown right above the field being typed in
+  $('hints').replaceChildren(...offered.map((m, i) => {
+    const row = el('button', i === picked ? 'on' : '', el('code', '', m.mark), m.means);
+    row.type = 'button';
+    row.onmousedown = e => { e.preventDefault(); take(i); };   // before the field loses the cursor
+    return row;
+  }));
+}
+
+function take(i) {
+  const input = offeredFor, at = input.selectionStart, open = input.value.lastIndexOf('{', at - 1);
+  input.value = input.value.slice(0, open) + offered[i].mark + input.value.slice(at);
+  input.selectionStart = input.selectionEnd = open + offered[i].mark.length;
+  $('hints').hidden = true;
+  offered = [];
+  input.dispatchEvent(new Event('input'));
+}
+
+for (const input of [$('say'), $('keep')]) {
+  input.addEventListener('input', () => offer(input));
+  input.addEventListener('blur', () => { $('hints').hidden = true; offered = []; });
+  input.addEventListener('keydown', e => {
+    if (offered.length && offeredFor === input) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        picked = (picked + (e.key === 'ArrowDown' ? 1 : offered.length - 1)) % offered.length;
+        e.preventDefault(); offer(input);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); take(picked); return; }
+      if (e.key === 'Escape') { $('hints').hidden = true; offered = []; return; }
+    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (input === $('say')) $('composer').requestSubmit();   // Enter sends your message
+    else input.blur();                                      // Enter confirms the keep-going message
+  });
+}
 $('new').onclick = newRun;
 $('notesButton').onclick = () => { notesOpen = !notesOpen; notesShown = ''; draw(); };
 

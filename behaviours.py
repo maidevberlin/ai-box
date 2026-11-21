@@ -85,7 +85,8 @@ def table():
     for i, run in enumerate(runs, 1):
         review = run["review"] or {}
         told = run["steps"][0]["text"].replace("\n", " ")
-        going = f", kept going with \"{run['keep']}\"" if run.get("keep") else ""
+        kept = (run.get("going") or {}).get("text")
+        going = f", kept going with \"{kept}\"" if kept else ""
         lines.append(f"{i}. **{review.get('name', 'not reviewed')}** ({run['id']}, {run['model']}, "
                      f"{story.seconds(os.path.join(story.RUNS, run['id'])) // 60} min). Told: \"{told}\"{going}.")
         if review.get("striking"):

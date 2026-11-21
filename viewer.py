@@ -101,7 +101,7 @@ class Handler(BaseHTTPRequestHandler):
         elif action == "auto":  # run.py keeps the agent going by itself while this file exists
             if wish.get("on"):
                 with open(os.path.join(run, "auto"), "w") as f:
-                    f.write(story.auto_text(minutes, text("text")))
+                    f.write(story.auto_text(minutes, text("text"), story.auto(run)))
             elif os.path.exists(os.path.join(run, "auto")):
                 os.remove(os.path.join(run, "auto"))
         elif action == "stop":

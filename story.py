@@ -102,9 +102,14 @@ def usage(events):
 
 # The file "auto" in a run's folder means: keep the agent going. Whenever it stops, it is told
 # something by itself. The file holds what it is told, and the time limit if there is one.
-def auto_text(minutes, text):
+AUTO_MAX = 30  # without a time limit or a countdown, a run is kept going at most this often
+
+
+def auto_text(minutes, text, before=None):
+    """What goes into the file. The clock of a time limit keeps running if only the message changes."""
+    same = before and before.get("until") and before.get("minutes") == f"{minutes:g}"
     return json.dumps({"text": text, "minutes": f"{minutes:g}" if minutes else None,
-                       "until": time.time() + minutes * 60 if minutes else None})
+                       "until": before["until"] if same else time.time() + minutes * 60 if minutes else None})
 
 
 def auto(run):
@@ -149,11 +154,9 @@ def load(run):
         "model": model(run),
         "done": os.path.exists(os.path.join(run, "done")),
         "waiting": False,  # the agent has stopped and the run waits for a message
-        "auto": bool(auto(run)),      # the agent is kept going by itself ...
-        "keep": (auto(run) or {}).get("text"),   # ... by telling it this whenever it stops
+        # how the agent is kept going by itself, if it is: what it is told, and the limits
+        "going": {**auto(run), "most": AUTO_MAX} if auto(run) else None,
         "queued": os.path.exists(os.path.join(run, "inbox")),   # a message waits to be delivered
-        # when the run ends by itself, if repeating has a time limit
-        "until": time.strftime("%H:%M", time.localtime(limit(run)[0])) if limit(run) else None,
         "steps": [],
     }
     if not start:  # the world has not started yet
