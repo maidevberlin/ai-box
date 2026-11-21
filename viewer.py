@@ -8,8 +8,8 @@ Start it with  ./viewer.py  and open http://127.0.0.1:8765
   GET  /api/runs       the runs, newest first, and the worlds and models a new run can use
   GET  /api/runs/<id>  one run as a timeline (see story.py)
   POST /api/runs       start a new run with the world, model and prompt in the request, returns its id
-  POST /api/runs/<id>/say    tell the agent something when it next stops (empty: repeat its prompt)
-  POST /api/runs/<id>/auto   switch repeating the prompt by itself on or off, with a time limit if wanted
+  POST /api/runs/<id>/say    tell the agent something when it next stops
+  POST /api/runs/<id>/auto   switch keeping the agent going on or off: what it is told, and for how long
   POST /api/runs/<id>/stop   end a run that is still going
 """
 import json
@@ -88,20 +88,20 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, AttributeError, TypeError):
             return self.send({"error": "bad request"}, status=400)
         if self.path == "/api/runs":
-            return self.start(wish.get("world"), wish.get("model"), text("prompt"), wish.get("auto"), minutes)
+            return self.start(wish.get("world"), wish.get("model"), text("prompt"), wish.get("auto"), minutes, text("text"))
         run_id, _, action = self.path.removeprefix("/api/runs/").partition("/")
         run = os.path.join(story.RUNS, run_id)
         # Only a run that is still going: the number in an old pid file may belong to another program by now.
         if not RUN_ID.match(run_id) or not os.path.isdir(run) or os.path.exists(os.path.join(run, "done")):
             return self.send({"error": "not running"}, status=409)
-        if action == "say":  # run.py picks the message up when the agent stops; empty means "repeat the prompt"
+        if action == "say":  # run.py picks the message up when the agent stops
             with open(os.path.join(run, "inbox.part"), "w") as f:
                 f.write(text("text"))
             os.replace(os.path.join(run, "inbox.part"), os.path.join(run, "inbox"))
-        elif action == "auto":  # run.py repeats the prompt by itself while this file exists
+        elif action == "auto":  # run.py keeps the agent going by itself while this file exists
             if wish.get("on"):
                 with open(os.path.join(run, "auto"), "w") as f:
-                    f.write(story.auto_text(minutes))
+                    f.write(story.auto_text(minutes, text("text")))
             elif os.path.exists(os.path.join(run, "auto")):
                 os.remove(os.path.join(run, "auto"))
         elif action == "stop":
@@ -115,14 +115,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({"error": "not found"}, status=404)
         self.send({"ok": action})
 
-    def start(self, world, model, prompt, auto, minutes):
+    def start(self, world, model, prompt, auto, minutes, keep):
         env = {**os.environ, "MODEL": model if model in MODELS else MODELS[0], "WAIT": "900",
                "WORLD": world if world in worlds.names() else "island"}
         if prompt:  # without one, run.py uses its own
             env["PROMPT"] = prompt
-        if auto:  # repeat the prompt whenever the agent stops
-            env["AUTO"] = "1"
-            env["AUTO_MINUTES"] = str(minutes)
+        if auto:  # keep the agent going whenever it stops
+            env.update(AUTO="1", AUTO_MINUTES=str(minutes), AUTO_TEXT=keep)
         run_id = time.strftime("%Y%m%d-%H%M%S")
         try:
             os.makedirs(os.path.join(story.RUNS, run_id))

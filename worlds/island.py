@@ -32,7 +32,7 @@ The agent is not told any of this. It has to find out by looking and trying.
 
 - Walking goes level or down. A higher stack is in the way.
 - Walking or jumping off the island means drowning. Looking around shows the water once
-  the edge is within sight, as the number of steps that would end in it.
+  the edge is within sight, as the number of steps of land that are left before it.
 - When the agent dies, a new agent wakes up in the middle of the island. It knows nothing
   of the one before: it starts with an empty memory and is told the same prompt. The world
   is as it was left, with every block and note where it was. What the dead agent carried
@@ -167,17 +167,19 @@ class World:
                 for (sx, sy), things in sorted(self.stacks.items())
                 if (sx, sy) != self.pos
                 and abs(sx - x) <= self.sight() and abs(sy - y) <= self.sight()]
-        # How many steps in each direction would end in the water, if that is within sight.
-        edge = {"north": y + 1, "south": self.size - y, "east": self.size - x, "west": x + 1}
-        water = [f"{steps} step(s) to the {direction}" for direction, steps in edge.items()
-                 if steps <= self.sight()]
+        # How much land is left in each direction before the water, if the water is within sight.
+        # (Said as land left, not as distance to the water: agents walked exactly the distance, and drowned.)
+        land = {"north": y, "south": self.size - 1 - y, "east": self.size - 1 - x, "west": x}
+        water = [f"{direction}: {steps} step(s) of land left, then water" if steps
+                 else f"{direction}: no land left, the next step is water"
+                 for direction, steps in land.items() if steps < self.sight()]
         feet = " A note lies at your feet." if self.top(self.pos) not in (None, BLOCK) else ""
         return "\n".join([
             self.where() + feet,
             f"You carry: {'a ' + name(self.carrying) if self.carrying else 'nothing'}.",
             f"Stacks in sight (up to {self.sight()} away), as position: height: "
             f"{', '.join(seen) or 'none'}.",
-            f"Water in sight: {', '.join(water) or 'none'}.",
+            f"Water in sight: {'; '.join(water) or 'none'}.",
         ])
 
     def look_at(self, cell):
@@ -317,7 +319,9 @@ class World:
                         x, y = x + dx * forward * 0.05, y + dy * forward * 0.05
                     self.detail["flight"]["lost"] = True
                     return threw + "It fell into the water and is gone."
-                if z < self.height(ahead):  # flew into the side of a stack: drops in front of it
+                # Flew into the side of a stack: drops in front of it. (Only a real stack has a side.
+                # Bare ground reached exactly at a cell's edge is a normal landing, handled below.)
+                if self.height(ahead) and z < self.height(ahead):
                     hit = f"It hit the side of the stack at ({ahead[0]}, {ahead[1]}) and dropped. "
                     return threw + hit + self.land(over, thing)
                 over = ahead

@@ -4,7 +4,11 @@
 The agent is told PROMPT and acts until it stops. Then the run waits for the next
 thing to tell it:
   - a message someone wrote (the viewer puts it in runs/<id>/inbox), or
-  - the prompt again, by itself, as long as the file runs/<id>/auto exists.
+  - by itself, a short message that keeps it going, as long as the file runs/<id>/auto
+    exists. Usually that is just the day and the time.
+In everything the agent is told, {day}, {time} and {date} are filled in.
+A keep-going message can also count down: with {countdown:10} in it, the agent is told
+10 the first time it stops, then 9, and so on. When 0 would be next, the run ends.
 If the agent dies in its world, it is replaced: a new agent with an empty memory is told
 the prompt, in the world as the dead one left it.
 
@@ -16,14 +20,16 @@ Optional settings, as environment variables:
   WORLD_... that world's own settings, for the island WORLD_SIZE, WORLD_BLOCKS, WORLD_SEED, ...
   WORLD_MAX_ACTIONS  the world stops after this many actions (default 1000)
   PROMPT, MODEL, SYSTEM_PROMPT, RUN_ID (folder name under runs/, default: timestamp)
-  AUTO=1    repeat the prompt whenever the agent stops (at most AUTO_MAX times, default 30)
-  AUTO_MINUTES  repeat the prompt, and end the run after this many minutes
+  AUTO=1    keep the agent going whenever it stops (at most AUTO_MAX times, default 30)
+  AUTO_TEXT     what it is told then (default: "It is {day}, {time}.")
+  AUTO_MINUTES  keep it going, and end the run after this many minutes
   WAIT      seconds to wait for a message before the run ends (default 300)
   AUTOCOMPACT  when the agent's memory holds this many tokens, Claude Code shortens it to a
             summary (default and smallest possible value: 100000)
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -36,6 +42,7 @@ RUN = os.path.join(HERE, "runs", os.environ.get("RUN_ID") or time.strftime("%Y%m
 PROMPT = os.environ.get("PROMPT") or "Live! You have 1 hour. If you stop, you die."
 WAIT = int(os.environ.get("WAIT", 300))
 AUTO_MAX = int(os.environ.get("AUTO_MAX", 30))
+KEEP = "It is {day}, {time}."  # what keeps the agent going, unless something else is chosen
 
 
 def path(name):
@@ -52,7 +59,7 @@ os.makedirs("/tmp/w", exist_ok=True)  # a neutral working directory: the path te
 write("prompt.txt", PROMPT + "\n")
 write("pid", str(os.getpid()))  # so the viewer can end this run
 if os.environ.get("AUTO") or os.environ.get("AUTO_MINUTES"):
-    write("auto", story.auto_text(float(os.environ.get("AUTO_MINUTES") or 0)))
+    write("auto", story.auto_text(float(os.environ.get("AUTO_MINUTES") or 0), os.environ.get("AUTO_TEXT") or KEEP))
 # Tell Claude Code how to start the world, and pass the world settings along.
 world_settings = {k: v for k, v in os.environ.items() if k.startswith("WORLD")}
 write("mcp.json", json.dumps({"mcpServers": {"world": {
@@ -79,6 +86,13 @@ def new_agent():
 agent = new_agent()
 transcript = open(path("transcript.jsonl"), "w")
 repeats = 0
+
+
+def filled(text):
+    """A message with the day, time and date of this moment filled in."""
+    for mark, form in (("{day}", "%A"), ("{time}", "%H:%M"), ("{date}", "%d %B %Y")):
+        text = text.replace(mark, time.strftime(form))
+    return text
 
 
 def tell(text):
@@ -109,17 +123,26 @@ def next_message():
             with open(path("inbox")) as f:
                 text = f.read().strip()
             os.remove(path("inbox"))
-            return {"text": text or PROMPT, "how": "by hand"}
-        # Without a time limit, the number of repeats is capped instead.
-        if os.path.exists(path("auto")) and (story.limit(RUN) or repeats < AUTO_MAX):
+            return {"text": filled(text or KEEP), "how": "by hand"}
+        # Kept going by itself. Without a time limit, how often is capped instead.
+        going = story.auto(RUN)
+        text = going and (going["text"] or KEEP)
+        count = going and re.search(r"\{countdown:(\d+)\}", text)
+        if count:  # one less every time; the run ends instead of saying 0
+            left = int(count[1]) - repeats
+            if left <= 0:
+                write("stopped", "The countdown reached 0")
+                return None
+            text = text.replace(count[0], str(left))
+        if going and (going["until"] or count or repeats < AUTO_MAX):
             repeats += 1
-            return {"text": PROMPT, "how": "repeat"}
+            return {"text": filled(text), "how": "auto"}
         time.sleep(0.3)
 
 
 signal.signal(signal.SIGTERM, lambda *_: sys.exit())  # the viewer's "End run"
 try:
-    tell(PROMPT)
+    tell(filled(PROMPT))
     while line := agent.stdout.readline():
         transcript.write(line)
         transcript.flush()
@@ -129,8 +152,8 @@ try:
             agent.wait()
             agent = new_agent()  # a new one, with an empty memory, in the world as it was left
             record({"type": "died"})
-            record({"type": "told", "text": PROMPT, "how": "new life"})
-            tell(PROMPT)
+            record({"type": "told", "text": filled(PROMPT), "how": "new life"})
+            tell(filled(PROMPT))
             continue
         if time_is_up() or os.path.exists(path("stopped")):  # ... or the world has stopped (see mcp_server.py)
             break

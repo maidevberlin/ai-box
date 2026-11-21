@@ -122,7 +122,10 @@
   #send { border: 0; border-radius: 18px; min-width: 36px; height: 36px; padding: 0 14px; flex: none;
           background: var(--accent); color: var(--on-accent); font-weight: 600; }
   #send.square { background: var(--stop); color: #fff; padding: 0; }
-  #options { display: flex; align-items: center; gap: 10px; padding: 8px 6px 4px; color: var(--muted); font-size: 12.5px; }
+  #options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 6px 4px; color: var(--muted); font-size: 12.5px; }
+  #limit { flex-basis: 100%; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #limit[hidden] { display: none; }
+  #keep { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 8px; }
   #options label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
   /* the checkbox, drawn as a switch */
   #auto { appearance: none; width: 30px; height: 18px; border-radius: 9px; background: var(--line); margin: 0;
@@ -188,9 +191,14 @@
         <button id="send">Send</button>
       </div>
       <div id="options">
-        <label><input type="checkbox" id="auto"> Repeat the prompt when the agent stops</label>
-        <span id="limit" hidden>for <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the run ends"> min</span>
+        <label><input type="checkbox" id="auto"> Keep it going whenever it stops</label>
         <button type="button" id="stop">End run</button>
+        <!-- How: what the agent is told each time it stops, and for how long. -->
+        <div id="limit" hidden>
+          by telling it <input id="keep" aria-label="What the agent is told whenever it stops" autocomplete="off"
+                               title="{day}, {time} and {date} are filled in. {countdown:10} counts down from 10 and ends the run at 0.">
+          for <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the run ends"> min
+        </div>
       </div>
     </form>
   </section>
@@ -451,19 +459,21 @@ function drawComposer() {
   $('send').classList.toggle('square', acting);
   $('stop').hidden = draft || acting;   // while the agent waits, ending the run is a quiet link
   if (live) $('auto').checked = story.auto;
-  $('limit').hidden = !$('auto').checked;   // a time limit only makes sense while repeating
-  // An untouched field holds the prompt, so sending it as it is tells the agent the same again.
-  if (!$('say').value && document.activeElement !== $('say'))
-    $('say').value = (draft ? lastPrompt : story?.steps[0]?.text) || '';
+  if (live && story.keep && document.activeElement !== $('keep')) $('keep').value = story.keep;
+  $('limit').hidden = !$('auto').checked;   // how it is kept going only matters while it is
+  // A new run suggests what the last one was told first. Later the field is for whatever
+  // you want to say; sent empty, it gives the agent one nudge with the keep-going message.
+  $('say').placeholder = draft ? 'What the agent is told first' : 'Tell the agent something, or send empty to nudge it';
+  if (draft && !$('say').value && document.activeElement !== $('say')) $('say').value = lastPrompt || '';
 }
 
 // The size of the agent's conversation at the step on screen (the last one known up to there).
 function memoryAt() {
-  for (let i = Math.min(at, (story?.steps.length || 0) - 1); i >= 0; i--) {
-    if (story.steps[i].kind === 'death') return 0;
-    if (story.steps[i].memory) return story.steps[i].memory;
-  }
-  return 0;
+  const steps = story?.steps || [];
+  for (let i = Math.min(at, steps.length - 1); i >= 0 && steps[i].kind !== 'death'; i--)
+    if (steps[i].memory) return steps[i].memory;
+  // At the very start of a life nothing is known yet: take what the agent read for its first answer.
+  return steps.slice(at).find(step => step.memory)?.memory || 0;
 }
 
 // An empty conversation has room for the two choices a new run needs: which world, which agent.
@@ -496,7 +506,7 @@ function drawLog(steps) {
   let round = 0;
   $('log').replaceChildren(...steps.map((step, i) => {
     const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
-    const told = { 'by hand': 'You tell the agent', repeat: 'Prompt repeated', 'new life': 'New agent is told' }[step.how];
+    const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated', 'new life': 'New agent is told' }[step.how];
     const count = step.kind === 'prompt' ? `Round ${++round} · ` : '';   // every message to the agent opens a round
     if (labels[step.kind]) row.append(el('div', 'label', count + (told || labels[step.kind])));
     if (step.kind === 'act') {
@@ -538,19 +548,25 @@ $('composer').onsubmit = async e => {
   const text = $('say').value;
   $('say').value = '';
   $('say').blur();
-  if (!draft) return steer('say', { text });
-  const wish = { world: chosen.world, model: chosen.agent, prompt: text, auto: $('auto').checked, minutes: +$('minutes').value };
+  if (!draft) return steer('say', { text: text.trim() || $('keep').value });
+  const wish = { world: chosen.world, model: chosen.agent, prompt: text, auto: $('auto').checked, minutes: +$('minutes').value, text: $('keep').value };
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
   await select(id);
   playing = true;           // watch it live
 };
-// Repeating, and for how long: an empty time means no limit. The time counts from when it is set.
-const repeat = () => {
+// Keeping the agent going: what it is told whenever it stops, and for how long (an empty
+// time means no limit; it counts from when it is set). The message is remembered in this browser.
+const KEEP = 'It is {day}, {time}.';
+try { $('keep').value = localStorage.getItem('keep') || KEEP; } catch { $('keep').value = KEEP; }
+const going = () => {
   $('limit').hidden = !$('auto').checked;
-  if (!draft) steer('auto', { on: $('auto').checked, minutes: +$('minutes').value });
+  if (!$('keep').value.trim()) $('keep').value = KEEP;
+  try { localStorage.setItem('keep', $('keep').value); } catch {}
+  if (!draft) steer('auto', { on: $('auto').checked, minutes: +$('minutes').value, text: $('keep').value });
 };
-$('auto').onchange = $('minutes').onchange = repeat;
+$('auto').onchange = $('minutes').onchange = $('keep').onchange = going;
+$('keep').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('keep').blur(); } };   // Enter confirms, it does not send
 // Enter in the text field always sends. (The browser would not do that by itself while the
 // button is the stop square, because the form then has no send button and two fields.)
 $('say').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('composer').requestSubmit(); } };

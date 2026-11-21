@@ -100,20 +100,28 @@ def usage(events):
             "cost": round(sum(total.get("total_cost_usd") or 0 for total in totals.values()), 2)}
 
 
-# The file "auto" in a run's folder means: repeat the prompt whenever the agent stops.
-# With a time limit, it holds the moment the time is up and how many minutes that was.
-def auto_text(minutes):
-    return f"{time.time() + minutes * 60} {minutes:g}" if minutes else ""
+# The file "auto" in a run's folder means: keep the agent going. Whenever it stops, it is told
+# something by itself. The file holds what it is told, and the time limit if there is one.
+def auto_text(minutes, text):
+    return json.dumps({"text": text, "minutes": f"{minutes:g}" if minutes else None,
+                       "until": time.time() + minutes * 60 if minutes else None})
+
+
+def auto(run):
+    """How a run keeps its agent going: {"text", "minutes", "until"}. Nothing if it does not."""
+    try:
+        with open(os.path.join(run, "auto")) as f:
+            return json.load(f)
+    except OSError:
+        return None
+    except ValueError:  # from before this file held anything
+        return {"text": "", "minutes": None, "until": None}
 
 
 def limit(run):
-    """The time limit of a run that repeats its prompt: (when it is up, minutes), if it has one."""
-    try:
-        with open(os.path.join(run, "auto")) as f:
-            until, minutes = f.read().split()
-        return float(until), minutes
-    except (OSError, ValueError):
-        return None
+    """The time limit of a run that keeps going: (when it is up, minutes), if it has one."""
+    going = auto(run)
+    return (going["until"], going["minutes"]) if going and going.get("until") else None
 
 
 # Runs recorded before worlds became separate files kept the island's facts loose in each entry.
@@ -141,7 +149,8 @@ def load(run):
         "model": model(run),
         "done": os.path.exists(os.path.join(run, "done")),
         "waiting": False,  # the agent has stopped and the run waits for a message
-        "auto": os.path.exists(os.path.join(run, "auto")),      # the prompt is repeated by itself
+        "auto": bool(auto(run)),      # the agent is kept going by itself ...
+        "keep": (auto(run) or {}).get("text"),   # ... by telling it this whenever it stops
         "queued": os.path.exists(os.path.join(run, "inbox")),   # a message waits to be delivered
         # when the run ends by itself, if repeating has a time limit
         "until": time.strftime("%H:%M", time.localtime(limit(run)[0])) if limit(run) else None,
