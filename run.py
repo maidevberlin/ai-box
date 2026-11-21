@@ -19,6 +19,8 @@ Optional settings, as environment variables:
   AUTO=1    repeat the prompt whenever the agent stops (at most AUTO_MAX times, default 30)
   AUTO_MINUTES  repeat the prompt, and end the run after this many minutes
   WAIT      seconds to wait for a message before the run ends (default 300)
+  AUTOCOMPACT  when the agent's memory holds this many tokens, Claude Code shortens it to a
+            summary (default and smallest possible value: 100000)
 """
 import json
 import os
@@ -68,7 +70,8 @@ def new_agent():
          "--mcp-config", path("mcp.json"), "--strict-mcp-config",
          "--tools", "", "--allowedTools", "mcp__world",
          "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence",
-         "--thinking-display", "summarized"],
+         "--thinking-display", "summarized",
+         "--autocompact", os.environ.get("AUTOCOMPACT", "100000")],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(path("errors.txt"), "a"),
         text=True, cwd="/tmp/w")
 

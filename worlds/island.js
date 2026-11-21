@@ -4,6 +4,7 @@
 // back has three things:
 //   show(story, step, index, fresh)  draw one step (fresh: this run is on screen for the first time)
 //   facts(step)                      short labels about the step, shown on top of the drawing
+//   notes(step)                      optional: the texts lying around in the world, for the notes panel
 //   remove()                         clean up when another world takes over
 //
 // One unit is one block. World x runs east, world y runs south, height runs up.
@@ -141,8 +142,20 @@ export function create(box) {
     sight.position.copy(place(...state.pos, 0.01));
   }
 
-  const facts = ({ state }) => [`at (${state.pos[0]}, ${state.pos[1]})`,
-    state.carrying?.note ? `carrying a note: “${state.carrying.note}”` : state.carrying && 'carrying a block'];
+  const facts = ({ state }) => [state.carrying && (state.carrying.note ? 'carrying a note' : 'carrying a block')];
+
+  // Every note in the world at this step: where it is, and what it says.
+  function notes({ state }) {
+    const found = state.carrying?.note ? [{ where: 'In the agent’s hand', text: state.carrying.note }] : [];
+    for (const [x, y, things] of stacksOf(state)) {
+      things.forEach((thing, i) => {
+        if (thing === 'block') return;
+        const above = things.length - 1 - i;   // what lies on top of it hides it from the agent
+        found.push({ where: `At (${x}, ${y})` + (above ? `, under ${above} other thing${above > 1 ? 's' : ''}` : ''), text: thing.note });
+      });
+    }
+    return found;
+  }
 
   // The drawing always fills its box, whatever size the window gives it.
   const resizing = new ResizeObserver(() => {
@@ -173,5 +186,5 @@ export function create(box) {
     renderer.domElement.remove();
   }
 
-  return { show, facts, remove };
+  return { show, facts, notes, remove };
 }

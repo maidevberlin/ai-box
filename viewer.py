@@ -68,6 +68,7 @@ class Handler(BaseHTTPRequestHandler):
                 {"id": i, "review": story.review(os.path.join(story.RUNS, i)),
                  "world": story.world(os.path.join(story.RUNS, i)),
                  "model": story.model(os.path.join(story.RUNS, i)),
+                 "seconds": story.seconds(os.path.join(story.RUNS, i)),
                  "done": os.path.exists(os.path.join(story.RUNS, i, "done"))} for i in ids]})
         run_id = self.path.removeprefix("/api/runs/")
         if RUN_ID.match(run_id) and os.path.isdir(os.path.join(story.RUNS, run_id)):

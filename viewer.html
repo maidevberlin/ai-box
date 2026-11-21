@@ -50,6 +50,8 @@
   #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
   #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
+  #usage { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  #usage:empty { display: none; }
   #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
   #scene, #scene canvas { position: absolute; inset: 0; }
   #scene pre { margin: 0; padding: 16px; height: 100%; overflow: auto; font-size: 12px; }
@@ -57,6 +59,16 @@
   #status .chip, #hint { background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
   #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75; }
   #hint:empty { display: none; }
+  /* The notes lying in the world: a button on the drawing, and a panel that opens from it. */
+  #notesButton { position: absolute; left: 10px; top: 10px; padding: 4px 10px; text-decoration: none; cursor: pointer;
+                 background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
+  #notes { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
+           overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+           padding: 6px 14px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+  #notes .note { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  #notes .note:last-child { border: 0; }
+  #notes .where { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #notes .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   /* What a world is and how it works: covers the drawing while it is open. */
   #about { position: absolute; inset: 0; overflow-y: auto; background: var(--panel); padding: 22px 26px;
            border: 1px solid var(--line); border-radius: 12px; }
@@ -96,7 +108,7 @@
   .step.act { padding-top: 5px; padding-bottom: 5px; }
   .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
   .step.act .text { color: var(--muted); font-size: 12.5px; }
-  .step.stop { text-align: center; color: var(--muted); font-size: 12.5px; }
+  .step.stop, .step.memory { text-align: center; color: var(--muted); font-size: 12.5px; }
   .step.death { text-align: center; color: var(--stop); font-weight: 600; border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 8px; }
 
   /* The one place to tell the agent something: its first prompt when a run is new, later
@@ -148,11 +160,14 @@
     <header>
       <h1 id="title"></h1>
       <p id="summary"></p>
+      <div id="usage"></div>
     </header>
     <div id="view">
       <div id="scene"></div>
       <div id="status"></div>
       <div id="hint" class="chip"></div>
+      <button id="notesButton" class="chip" hidden></button>
+      <div id="notes" hidden></div>
       <div id="about" hidden></div>
     </div>
     <div id="controls">
@@ -198,6 +213,7 @@ let worlds = [];          // every world there is, with its description and tool
 let agents = [];          // the models a new run can use
 let chosen = { world: '', agent: '' };   // picked for the new run
 let aboutOpen = false;    // the "about this world" panel is open over a run
+let notesOpen = false;    // the panel with the notes lying in the world is open
 let painter = null;       // what draws the current world (from /worlds/<name>.js)
 let paints = null;        // ... and the name of the world it draws
 
@@ -223,6 +239,8 @@ function started(id) {
 }
 
 const worldInfo = name => worlds.find(world => world.name === name);
+const short = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n);
+const lasted = s => s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
 
 // ---------------------------------------------------------------- data
 
@@ -232,12 +250,13 @@ async function listRuns() {
   ({ worlds, models: agents, prompt: lastPrompt } = answer);
   chosen.world ||= worlds[0]?.name;
   chosen.agent ||= agents[0];
-  const cards = answer.runs.map(({ id, review, model, world, done }) => {
+  const cards = answer.runs.map(({ id, review, model, world, done, seconds }) => {
     const name = el('div', 'name', !done && el('i', 'dot'),
                     el('span', '', review ? review.name : done ? 'Not reviewed yet' : 'Running'));
     const facts = el('div', 'facts', review && stars(review.rating),
                      worlds.length > 1 && el('span', 'chip', worldInfo(world)?.title || world),
-                     model && el('span', 'chip', model), el('span', 'when', started(id)));
+                     model && el('span', 'chip', model.split('-')[0]),   // "opus" is enough here
+                     el('span', 'when', `${started(id)} · ${lasted(seconds)}`));
     const card = el('button', 'run' + (!draft && story?.id === id ? ' on' : ''), name, facts);
     card.onclick = () => select(id);
     return card;
@@ -355,6 +374,7 @@ function draw(newRun = false) {
     $('title').replaceChildren('New run');
     $('summary').textContent = 'A fresh world with a new agent in it.';
     $('status').replaceChildren();
+    $('usage').replaceChildren();
     $('count').textContent = '';
     $('log').replaceChildren(choices());
     return;
@@ -366,16 +386,49 @@ function draw(newRun = false) {
     r && stars(r.rating), story.model && el('span', 'chip', story.model),
     el('span', 'chip', started(story.id)), about].filter(Boolean));
   $('summary').textContent = r ? r.summary : story.done ? '' : 'This run gets a name and a summary when it ends.';
+  $('usage').replaceChildren(...usageChips(story.usage));
   $('slider').max = Math.max(steps.length - 1, 0);
   $('slider').value = at;
   $('play').textContent = playing ? '❚❚' : '▶';
   $('play').ariaLabel = playing ? 'Pause' : 'Play';
   $('count').textContent = steps.length ? `${at + 1} / ${steps.length}` : '';
   if (step?.state && painter) painter.show(story, step, at, newRun);
+  // A round is one message to the agent and everything it does in answer.
+  const round = upTo => steps.slice(0, upTo + 1).filter(s => s.kind === 'prompt').length;
   $('status').replaceChildren(...(!step ? ['Waiting for the world to start…']
-    : [step.time, ...(step.state && painter ? painter.facts(step) : [])])
+    : [`round ${round(at)} of ${round(steps.length)}`, step.time, ...(step.state && painter ? painter.facts(step) : [])])
     .filter(Boolean).map(text => el('span', 'chip', text)));
+  drawNotes(step);
   drawLog(steps);
+}
+
+// What the run has used: tokens, what they would cost through the API, and how full the
+// subscription's limits were at the start and the end of the run.
+function usageChips(usage) {
+  if (!usage) return [];
+  const { fresh, cached, stored, output } = usage.tokens, all = fresh + cached + stored + output;
+  if (!all) return [];
+  const percent = share => Math.round(share * 100) + '%';
+  const limit = (label, range) => range && `${label} ${range[0] === range[1] ? percent(range[0]) : percent(range[0]) + ' → ' + percent(range[1])}`;
+  return [`${short(all)} tokens, ${percent(cached / all)} from cache`, `${short(output)} written by the agent`,
+          usage.cost && `about $${usage.cost.toFixed(2)} at API prices`,
+          limit('5-hour limit', usage.five_hour), limit('weekly limit', usage.seven_day)]
+    .filter(Boolean).map(text => el('span', 'chip', text));
+}
+
+// Worlds that have notes lying around get a button on the drawing; it opens a panel to read them.
+let notesShown = '';   // so the panel is only rebuilt (and scrolled up) when the notes change
+function drawNotes(step) {
+  const notes = step?.state && painter?.notes ? painter.notes(step) : null;
+  $('notesButton').hidden = !notes;
+  $('notes').hidden = !notes || !notesOpen;
+  if (!notes) return;
+  $('notesButton').textContent = `${notesOpen ? '✕' : '✎'} ${notes.length} note${notes.length === 1 ? '' : 's'}`;
+  if (!notesOpen || notesShown === JSON.stringify(notes)) return;
+  notesShown = JSON.stringify(notes);
+  $('notes').replaceChildren(...(notes.length ? notes.map(note =>
+    el('div', 'note', el('div', 'where', note.where), el('div', 'text', note.text)))
+    : [el('div', 'note', 'No notes in the world at this step.')]));
 }
 
 // The box under the conversation. For a new run it starts the run; for a run that is
@@ -388,7 +441,9 @@ function drawComposer() {
     : !live ? ['Conversation']
     : story.queued ? [el('i', 'dot'), 'Your message goes out when the agent stops']
     : acting ? [el('i', 'dot'), 'The agent is acting…'] : ['The agent has stopped and waits']),
-    live && story.until && el('span', 'chip', `ends ${story.until}`)].filter(Boolean));
+    live && story.until && el('span', 'chip', `ends ${story.until}`),
+    // how big the agent's conversation is at the step on screen: what it re-reads for every answer
+    !draft && memoryAt() && el('span', 'chip', `${short(memoryAt())} tokens in memory`)].filter(Boolean));
   // While the agent acts, the button is a stop square that ends the run; Enter still sends.
   $('send').textContent = draft ? 'Start' : acting ? '■' : '↑';
   $('send').type = acting ? 'button' : 'submit';
@@ -400,6 +455,15 @@ function drawComposer() {
   // An untouched field holds the prompt, so sending it as it is tells the agent the same again.
   if (!$('say').value && document.activeElement !== $('say'))
     $('say').value = (draft ? lastPrompt : story?.steps[0]?.text) || '';
+}
+
+// The size of the agent's conversation at the step on screen (the last one known up to there).
+function memoryAt() {
+  for (let i = Math.min(at, (story?.steps.length || 0) - 1); i >= 0; i--) {
+    if (story.steps[i].kind === 'death') return 0;
+    if (story.steps[i].memory) return story.steps[i].memory;
+  }
+  return 0;
 }
 
 // An empty conversation has room for the two choices a new run needs: which world, which agent.
@@ -429,10 +493,12 @@ async function newRun() {
 
 function drawLog(steps) {
   const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does' };
+  let round = 0;
   $('log').replaceChildren(...steps.map((step, i) => {
     const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
     const told = { 'by hand': 'You tell the agent', repeat: 'Prompt repeated', 'new life': 'New agent is told' }[step.how];
-    if (labels[step.kind]) row.append(el('div', 'label', told || labels[step.kind]));
+    const count = step.kind === 'prompt' ? `Round ${++round} · ` : '';   // every message to the agent opens a round
+    if (labels[step.kind]) row.append(el('div', 'label', count + (told || labels[step.kind])));
     if (step.kind === 'act') {
       const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
       row.append(el('div', 'call', `${step.tool}(${args})`));
@@ -485,18 +551,24 @@ const repeat = () => {
   if (!draft) steer('auto', { on: $('auto').checked, minutes: +$('minutes').value });
 };
 $('auto').onchange = $('minutes').onchange = repeat;
+// Enter in the text field always sends. (The browser would not do that by itself while the
+// button is the stop square, because the form then has no send button and two fields.)
+$('say').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('composer').requestSubmit(); } };
 $('stop').onclick = () => steer('stop');
 $('send').onclick = () => { if ($('send').type === 'button') steer('stop'); };
 $('new').onclick = newRun;
+$('notesButton').onclick = () => { notesOpen = !notesOpen; notesShown = ''; draw(); };
 
 // Open on the newest run, or on the one named in the address: #<run id>/<step number>/play
-// (#new opens the box for a new run, #<run id>/<step>/about the description of its world.)
+// (#new opens the box for a new run, #<run id>/<step>/about the description of its world,
+//  #<run id>/<step>/notes the notes lying in it.)
 const [run, step, extra] = location.hash.slice(1).split('/');
 if (run === 'new') listRuns().then(newRun);
 else loadRuns(run).then(() => {
   if (run && step) jump(step - 1);
   if (extra === 'play') playing = true;
   if (extra === 'about') aboutOpen = true;
+  if (extra === 'notes') notesOpen = true;
   if (extra) draw();
 });
 </script>
