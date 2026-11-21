@@ -10,20 +10,21 @@ import json
 import os
 import sys
 
-from world import DIRS, World
+from world import DIRS, PLACES, World
 
 LOG = os.environ.get("WORLD_LOG", "protocol.jsonl")
 MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 300))  # safety stop: then the world ends
 
 world = World(
     size=int(os.environ.get("WORLD_SIZE", 20)),
-    stones=int(os.environ.get("WORLD_STONES", 6)),
+    blocks=int(os.environ.get("WORLD_BLOCKS", 30)),
     view=int(os.environ.get("WORLD_VIEW", 3)),
-    throw_range=int(os.environ.get("WORLD_THROW", 3)),
+    jump=int(os.environ.get("WORLD_JUMP", 2)),
     seed=os.environ.get("WORLD_SEED") or None,
 )
 
 DIRECTION = {"type": "string", "enum": list(DIRS)}
+PLACE = {"type": "string", "enum": PLACES}
 TOOLS = {  # name: (description, parameters, required parameters)
     "look": ("Look around.", {}, []),
     "clock": ("Look at your watch.", {}, []),
@@ -33,9 +34,17 @@ TOOLS = {  # name: (description, parameters, required parameters)
     "walk": ("Walk in a direction.",
              {"direction": DIRECTION, "steps": {"type": "integer", "minimum": 1}},
              ["direction"]),
-    "take": ("Take a stone from where you stand.", {}, []),
-    "put": ("Put down the stone you carry.", {}, []),
-    "throw": ("Throw the stone you carry in a direction.", {"direction": DIRECTION}, ["direction"]),
+    "jump": ("Jump in a direction. More strength gets you higher.",
+             {"direction": DIRECTION,
+              "strength": {"type": "integer", "minimum": 1, "maximum": world.max_jump}},
+             ["direction", "strength"]),
+    "take": ("Take a block.", {"where": PLACE}, ["where"]),
+    "put": ("Put down the block you carry.", {"where": PLACE}, ["where"]),
+    "throw": ("Throw the block you carry.",
+              {"direction": {"type": "number", "description": "compass degrees: 0 is north, 90 is east"},
+               "angle": {"type": "number", "description": "degrees above the ground, 0 to 90"},
+               "power": {"type": "number", "description": "1 to 10"}},
+              ["direction", "angle", "power"]),
 }
 
 actions = 0
@@ -49,6 +58,7 @@ def log(entry):
 def call(name, args):
     global actions
     actions += 1
+    world.flight = None
     if not isinstance(name, str) or name not in TOOLS:
         result = "There is no such tool."
     elif actions > MAX_ACTIONS:
@@ -58,7 +68,8 @@ def call(name, args):
             result = getattr(world, name)(**args)
         except TypeError:  # wrong or missing arguments
             result = "That did not work. Check the arguments."
-    log({"n": actions, "tool": name, "args": args, "result": result})
+    flight = {"flight": world.flight} if world.flight else {}  # only a throw has one
+    log({"n": actions, "tool": name, "args": args, "result": result, **flight})
     return result
 
 

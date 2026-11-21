@@ -8,13 +8,13 @@
   :root {
     color-scheme: light dark;
     --bg: #f4f1ea; --panel: #ffffff; --text: #22252a; --muted: #6b7280; --line: #ddd8cc;
-    --water: #bcd9e6; --land: #e9dfc3; --seen: #f3ebd3; --stone: #6f7680;
+    --sky: #dbe9f0; --water: #7fb4cc; --land: #e3d6ac; --block: #8a919c;
     --agent: #d9482b; --accent: #1f6feb;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #15181c; --panel: #1e2227; --text: #e6e8eb; --muted: #9099a5; --line: #30363d;
-      --water: #1d3a4a; --land: #4a4433; --seen: #5d563f; --stone: #aab2bd;
+      --sky: #10161b; --water: #1d4257; --land: #6b6247; --block: #aab2bd;
       --agent: #ff6b4a; --accent: #6ea8fe;
     }
   }
@@ -22,37 +22,36 @@
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.45 system-ui, sans-serif; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-         gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+         gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }
   @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
   header { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  h1 { font-size: 18px; margin: 0 auto 0 0; }
-  select, button { font: inherit; color: var(--text); background: var(--panel);
-                   border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  select, button, input { font: inherit; color: var(--text); background: var(--panel);
+                          border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
   button { cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #runs { flex: 1; min-width: 200px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 
-  #sea { background: var(--water); border-radius: 8px; padding: 6%;
-         max-width: 72vh; margin: 0 auto; }
-  #grid { display: grid; gap: 2px; aspect-ratio: 1; }
-  .cell { background: var(--land); border-radius: 3px; position: relative; min-height: 0;
-          display: flex; align-items: center; justify-content: center; }
-  .cell.seen { background: var(--seen); }
-  .cell .xy { position: absolute; left: 3px; top: 1px; font-size: 9px; color: var(--muted); }
-  .stone { width: 46%; aspect-ratio: 1; border-radius: 40%; background: var(--stone);
-           color: var(--bg); font-size: 11px; font-weight: 700;
-           display: flex; align-items: center; justify-content: center; }
-  .agent { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%;
-           border: 3px solid var(--agent); }
-  .agent.carrying { background: var(--agent); opacity: .85; }
-
-  #controls { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
-  #slider { flex: 1; }
+  #view { border-radius: 8px; overflow: hidden; background: var(--sky); }
+  #view canvas { display: block; }
+  #hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  #controls { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  #slider { flex: 1; padding: 0; }
   #status { color: var(--muted); font-size: 13px; margin-top: 8px; }
   #review { margin-top: 10px; }
   #review b { display: block; }
 
-  #log { max-height: 78vh; overflow-y: auto; padding: 6px; }
+  #side { display: flex; flex-direction: column; max-height: 84vh; padding: 6px; }
+  #log { overflow-y: auto; flex: 1; }
+  #composer { border-top: 1px solid var(--line); margin-top: 6px; padding: 10px 8px 4px; }
+  #composer .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  #composer label { flex: 1; color: var(--muted); font-size: 13px; }
+  #waiting { font-size: 13px; font-weight: 600; }
+  #send.square { background: var(--agent); border-color: var(--agent); width: 38px; padding: 6px 0; }
+  button.quiet { border: none; background: none; color: var(--muted); text-decoration: underline; padding: 6px 2px; }
+  .empty { color: var(--muted); padding: 16px 10px; }
+  #say { flex: 1; min-width: 0; }
   .step { padding: 8px 10px; border-radius: 6px; cursor: pointer; border-left: 3px solid transparent; }
   .step.now { background: var(--bg); border-left-color: var(--accent); }
   .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
@@ -62,19 +61,24 @@
   .step.think .text { color: var(--muted); font-style: italic; }
   .step.stop .text { color: var(--agent); }
 </style>
+<!-- The 3D drawing uses three.js, loaded from the internet. -->
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
 </head>
 <body>
 <main>
   <header>
     <h1>Island</h1>
     <select id="runs" aria-label="Run"></select>
-    <button id="stop" hidden>Stop agent</button>
-    <select id="model" aria-label="Agent for the new run"></select>
-    <button id="new" class="primary">Start new run</button>
+    <button id="new">New run</button>
   </header>
 
   <section class="panel">
-    <div id="sea"><div id="grid"></div></div>
+    <div id="view"></div>
+    <div id="hint">Drag to turn, scroll to zoom, right-drag to move. N marks north.</div>
     <div id="controls">
       <button id="play">Play</button>
       <button id="back" aria-label="Step back">&lsaquo;</button>
@@ -85,37 +89,65 @@
     <div id="review"></div>
   </section>
 
-  <section class="panel" id="log"></section>
+  <section class="panel" id="side">
+    <div id="log"></div>
+    <!-- The one place to tell the agent something: its first prompt when a run is new,
+         later whatever comes next. The field starts out holding the prompt, so sending
+         it unchanged repeats the prompt. -->
+    <form id="composer" hidden>
+      <div id="waiting"></div>
+      <div class="row">
+        <input id="say" aria-label="What the agent is told" autocomplete="off">
+        <button id="send" class="primary">Send</button>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="auto"> Repeat the prompt by itself whenever the agent stops</label>
+        <select id="model" aria-label="Agent"></select>
+        <button type="button" id="stop" class="quiet">End run</button>
+      </div>
+    </form>
+  </section>
 </main>
 
-<script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
 const $ = id => document.getElementById(id);
 const SPEED = 900;        // milliseconds per step while playing
+const FLIGHT = 700;       // milliseconds a thrown block is in the air
 const POLL = 1000;        // how often a live run is re-read
 
 let story = null;         // the run on screen, as delivered by /api/runs/<id>
 let at = 0;               // index of the step on screen
 let playing = false;
+let draft = false;        // a new run is being written and has not started
+let lastPrompt = '';      // what the newest run was told: the suggestion for a new one
 
 const api = (path, options) => fetch(path, options).then(r => r.json());
+const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);   // the reviewer rates from 1 to 5
+
+// ---------------------------------------------------------------- data
 
 // The run dropdown: name and rating (once reviewed), which agent it was, and the start time.
 async function listRuns() {
-  const { runs, models } = await api('/api/runs');
+  const { runs, models, prompt } = await api('/api/runs');
   if (!$('model').options.length) $('model').replaceChildren(...models.map(m => new Option(m, m)));
+  lastPrompt = prompt;
   $('runs').replaceChildren(...runs.map(({ id, review, model }) => {
     const started = id.slice(9).replace(/(..)(..)(..)/, '$1:$2');
-    const name = review ? `${review.name} ${'★'.repeat(review.rating)}` : 'Not reviewed yet';
+    const name = review ? `${review.name} ${stars(review.rating)}` : 'Not reviewed yet';
     return new Option([name, model, started].filter(Boolean).join(' · '), id);
   }));
-  if (story) $('runs').value = story.id;
+  if (draft) $('runs').prepend(new Option('New run', ''));
+  $('runs').value = draft ? '' : story?.id;
   return runs;
 }
 
 async function loadRuns(select) {
   const runs = await listRuns();
   if (select || runs[0]) await show(select || runs[0].id);
-  else $('status').textContent = 'No runs yet. Start one.';
+  else newRun();
 }
 
 async function show(id, step = 0) {
@@ -124,16 +156,16 @@ async function show(id, step = 0) {
   if (!fresh.steps) return;   // no such run
   story = fresh;
   at = Math.min(step, Math.max(story.steps.length - 1, 0));
-  draw();
+  draw(true);
 }
 
 // Live runs grow: re-read the run on screen until it is done.
 setInterval(async () => {
   if (!story || story.done) return;
   const fresh = await api('/api/runs/' + story.id);
-  const last = s => JSON.stringify(s.steps?.at(-1));   // a step in progress changes when it finishes
-  const changed = fresh.done || fresh.steps?.length !== story.steps.length || last(fresh) !== last(story);
-  if (fresh.id === story.id && changed) { story = fresh; draw(); }
+  // Anything new? More steps, a step that finished, or the agent stopping or going on.
+  const mark = s => JSON.stringify([s.done, s.waiting, s.auto, s.queued, s.steps?.length, s.steps?.at(-1)]);
+  if (fresh.id === story.id && mark(fresh) !== mark(story)) { story = fresh; draw(); }
   if (fresh.done) listRuns();   // the finished run now has a name
 }, POLL);
 
@@ -144,52 +176,69 @@ setInterval(() => {
   else if (story.done) { playing = false; draw(); }
 }, SPEED);
 
-function draw() {
+// ---------------------------------------------------------------- page
+
+function draw(newRun = false) {
+  drawComposer();
+  if (draft) {
+    $('status').textContent = '';
+    $('review').replaceChildren();
+    $('log').replaceChildren(el('div', 'empty', 'A new run starts in a fresh world. Write below what the agent is told.'));
+    return;
+  }
   const steps = story.steps, step = steps[at];
   $('slider').max = Math.max(steps.length - 1, 0);
   $('slider').value = at;
   $('play').textContent = playing ? 'Pause' : 'Play';
-  $('stop').hidden = story.done;
   $('status').textContent = !step ? 'Waiting for the world to start…'
-    : `Step ${at + 1} of ${steps.length}` + (story.done ? '' : ' · run is live')
+    : `Step ${at + 1} of ${steps.length}` + (story.done ? '' : story.waiting ? ' · agent waits' : ' · agent is acting')
       + (story.model ? ` · ${story.model}` : '')
       + (step.time ? ` · ${step.time}` : '')
       + ` · agent at (${step.pos[0]}, ${step.pos[1]})`
-      + (step.carrying ? ' · carrying a stone' : '');
+      + (step.carrying ? ' · carrying a block' : '');
   const r = story.review;
-  $('review').replaceChildren(...(r ? [el('b', '', `${r.name} ${'★'.repeat(r.rating)}`), r.summary] : []));
-  drawWorld(step);
+  $('review').replaceChildren(...(r ? [el('b', '', `${r.name} ${stars(r.rating)}`), r.summary] : []));
+  if (step) drawWorld(step, newRun);
   drawLog(steps);
 }
 
-function drawWorld(step) {
-  const grid = $('grid');
-  grid.replaceChildren();
-  if (!step) return;
-  const size = story.size, [ax, ay] = step.pos;
-  const stones = new Map(step.stones.map(([x, y, n]) => [x + ',' + y, n]));
-  grid.style.gridTemplateColumns = grid.style.gridTemplateRows = `repeat(${size}, 1fr)`;
-  const rows = [...Array(size).keys()];       // north is up; older runs counted y the other way
-  if (story.north > 0) rows.reverse();
-  for (const y of rows) {
-    for (let x = 0; x < size; x++) {
-      const cell = el('div', 'cell');
-      if (Math.abs(x - ax) <= story.view && Math.abs(y - ay) <= story.view) cell.classList.add('seen');
-      cell.title = `${x}, ${y}`;
-      if (size <= 12) cell.append(el('span', 'xy', `${x},${y}`));  // no room on big islands
-      const n = stones.get(x + ',' + y);
-      if (n) cell.append(el('div', 'stone', n > 1 ? n : ''));
-      if (x === ax && y === ay) cell.append(el('div', 'agent' + (step.carrying ? ' carrying' : '')));
-      grid.append(cell);
-    }
-  }
+// The box under the log. For a new run it starts the run; for a run that is going it
+// sends the next message. A finished run has none.
+function drawComposer() {
+  $('composer').hidden = !draft && (!story || story.done);
+  // While the agent acts, the button is a stop square that ends the run; Enter still sends.
+  const acting = !draft && story && !story.done && !story.waiting;
+  $('send').textContent = draft ? 'Start' : acting ? '■' : 'Send';
+  $('send').type = acting ? 'button' : 'submit';
+  $('send').title = acting ? 'End run' : '';
+  $('send').classList.toggle('square', acting);
+  $('model').hidden = !draft;
+  $('stop').hidden = draft || acting;   // while the agent waits, ending the run is a quiet link
+  $('waiting').textContent = draft ? 'New run' : story?.queued ? 'Delivered as soon as the agent stops.'
+    : story?.waiting ? 'The agent has stopped and waits.' : 'The agent is acting…';
+  if (!draft && story) $('auto').checked = story.auto;
+  // An untouched field holds the prompt, so sending it as it is tells the agent the same again.
+  if (!$('say').value && document.activeElement !== $('say'))
+    $('say').value = (draft ? lastPrompt : story?.steps[0]?.text) || '';
+}
+
+async function newRun() {
+  draft = true;
+  playing = false;
+  $('say').value = '';
+  $('auto').checked = false;
+  await listRuns();
+  draw();
+  $('say').focus();
+  $('say').select();
 }
 
 function drawLog(steps) {
   const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does', stop: 'Run ended' };
   $('log').replaceChildren(...steps.map((step, i) => {
     const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
-    row.append(el('div', 'label', labels[step.kind]));
+    const told = { 'by hand': 'You tell the agent', repeat: 'Prompt repeated' }[step.how];
+    row.append(el('div', 'label', told || labels[step.kind]));
     if (step.kind === 'act') {
       const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
       row.append(el('div', 'call', `${step.tool}(${args})`));
@@ -214,6 +263,140 @@ function jump(to) {
   draw();
 }
 
+// ---------------------------------------------------------------- 3D world
+// One unit is one block. World x runs east, world y runs south, height runs up.
+
+const color = name => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
+const solid = name => new THREE.MeshLambertMaterial({ color: color(name) });
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.maxPolarAngle = Math.PI / 2 - 0.05;   // never look from below the ground
+scene.background = color('--sky');
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.7));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+sun.position.set(-10, 24, 14);
+scene.add(sun);
+$('view').append(renderer.domElement);
+
+const cube = new THREE.BoxGeometry(1, 1, 1);
+const blockLook = solid('--block'), agentLook = solid('--agent');
+
+const water = new THREE.Mesh(cube, solid('--water'));
+const land = new THREE.Mesh(cube, solid('--land'));
+const blocks = new THREE.Group();
+// What the agent can see: a lighter patch on the ground around it.
+const sight = new THREE.Mesh(cube, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14 }));
+// The agent: a body, a head, and the block it carries above its head.
+const agent = new THREE.Group();
+const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.1, 20), agentLook);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 14), agentLook);
+const carried = new THREE.Mesh(cube, blockLook);
+body.position.y = 0.55; head.position.y = 1.38;
+carried.position.y = 2.05; carried.scale.setScalar(0.6);
+agent.add(body, head, carried);
+const north = letter('N');
+// A thrown block in the air. When it lands it stays put and stands in for the top block there.
+const flying = new THREE.Mesh(cube, blockLook);
+flying.scale.setScalar(0.94);
+let flight = null;   // { points, lost, start } while a throw is shown
+let shown = -1;      // the step drawn last, to tell a step forward from a jump elsewhere
+let shownFlew = false;   // whether that step already had its flight path when drawn
+let grid = null, target = new THREE.Vector3(), builtFor = null;
+scene.add(water, land, blocks, sight, agent, north, flying);
+
+function letter(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const pen = canvas.getContext('2d');
+  pen.font = 'bold 96px system-ui'; pen.textAlign = 'center'; pen.textBaseline = 'middle';
+  pen.fillStyle = '#fff'; pen.fillText(text, 64, 68);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+  sprite.scale.setScalar(2);
+  return sprite;
+}
+
+// The parts that depend only on the island's size: built once per run.
+function buildIsland(size) {
+  water.scale.set(size * 12, 0.2, size * 12); water.position.y = -0.5;
+  land.scale.set(size, 0.4, size); land.position.y = -0.2;
+  if (grid) scene.remove(grid);
+  grid = new THREE.GridHelper(size, size, 0x000000, 0x000000);
+  grid.material.transparent = true; grid.material.opacity = 0.12; grid.position.y = 0.005;
+  scene.add(grid);
+  north.position.set(0, 1, -size / 2 - 1.5);
+  camera.position.set(0, size * 0.85, size * 1.15);   // from the south, looking north
+  controls.target.set(0, 0, 0);
+}
+
+function drawWorld(step, newRun) {
+  const size = story.size;
+  if (builtFor !== story.id) { buildIsland(size); builtFor = story.id; }
+  // Where the middle of a cell is. Older runs counted y from the south.
+  const place = (x, y, up) =>
+    new THREE.Vector3(x - size / 2 + 0.5, up, (story.north > 0 ? size - 1 - y : y) - size / 2 + 0.5);
+
+  // A throw is played when stepping forward onto it, not when jumping around in the run.
+  const again = at === shown && flight && !newRun;   // redrawn while it is already playing
+  // In a live run a throw first shows as "in progress" and gets its path a moment later.
+  const justLanded = at === shown && !shownFlew;
+  const play = step.flight && !newRun && (at === shown + 1 || again || justLanded);
+  shown = at;
+  shownFlew = !!step.flight;
+  if (!again) {
+    flight = play && { points: step.flight.path.map(([x, y, up]) => place(x - 0.5, y - 0.5, up)),
+                       lost: step.flight.lost, start: performance.now() };
+    flying.visible = false;
+  }
+  const rest = flight && !flight.lost && step.flight.path.at(-1);   // where the flying block comes to rest
+
+  blocks.clear();
+  let under = 0;   // how many blocks the agent stands on
+  for (const [x, y, n] of step.blocks) {
+    if (x === step.pos[0] && y === step.pos[1]) under = n;
+    const flyingIn = rest && Math.floor(rest[0]) === x && Math.floor(rest[1]) === y;   // its top block is still in the air
+    for (let level = 0; level < n - (flyingIn ? 1 : 0); level++) {
+      const block = new THREE.Mesh(cube, blockLook);
+      block.position.copy(place(x, y, level + 0.5));
+      block.scale.setScalar(0.94);   // a small gap, so single blocks in a stack stay visible
+      blocks.add(block);
+    }
+  }
+  target = place(...step.pos, under);
+  if (newRun) agent.position.copy(target);
+  carried.visible = step.carrying;
+  const reach = step.view * 2 + 1;   // wider when the agent stands higher
+  sight.scale.set(reach, 0.02, reach);
+  sight.position.copy(place(...step.pos, 0.01));
+}
+
+function fit() {
+  const width = $('view').clientWidth, height = Math.min(width * 0.7, innerHeight * 0.62);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(width, height);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', fit);
+fit();
+
+renderer.setAnimationLoop(() => {
+  agent.position.lerp(target, 0.18);   // glide to the new place instead of jumping there
+  if (flight) {                         // move the thrown block along its recorded path
+    const last = flight.points.length - 1;
+    const along = Math.min((performance.now() - flight.start) / FLIGHT, 1) * last;
+    const i = Math.min(Math.floor(along), last - 1);
+    flying.position.lerpVectors(flight.points[i], flight.points[i + 1], along - i);
+    flying.visible = !(flight.lost && along >= last);   // one that fell into the water disappears
+  }
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+// ---------------------------------------------------------------- buttons
+
 $('play').onclick = () => {
   if (!story) return;
   if (!playing && story.done && at >= story.steps.length - 1) at = 0;  // replay from the start
@@ -223,18 +406,41 @@ $('play').onclick = () => {
 $('back').onclick = () => story && jump(at - 1);
 $('forward').onclick = () => story && jump(at + 1);
 $('slider').oninput = e => story && jump(+e.target.value);
-$('runs').onchange = e => { playing = false; show(e.target.value); };
-$('stop').onclick = () => api(`/api/runs/${story.id}/stop`, { method: 'POST' });  // the next poll shows it ended
-$('new').onclick = async () => {
-  const { id } = await api('/api/runs', { method: 'POST', body: $('model').value });
+$('runs').onchange = async e => {
+  if (!e.target.value) return;
+  playing = draft = false;
+  $('say').value = '';
+  await show(e.target.value);
+  listRuns();   // drops the "New run" entry
+};
+// Steering a run that is going. The next poll shows the effect.
+const steer = (action, wish = {}) => api(`/api/runs/${story.id}/${action}`, { method: 'POST', body: JSON.stringify(wish) });
+$('composer').onsubmit = async e => {
+  e.preventDefault();
+  const text = $('say').value;
+  $('say').value = '';
+  $('say').blur();
+  if (!draft) return steer('say', { text });
+  const wish = { model: $('model').value, prompt: text, auto: $('auto').checked };
+  const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
+  draft = false;
   playing = true;           // watch it live
   await loadRuns(id);
 };
+$('auto').onchange = e => draft || steer('auto', { on: e.target.checked });
+$('stop').onclick = () => steer('stop');
+$('send').onclick = () => { if ($('send').type === 'button') steer('stop'); };
+$('new').onclick = newRun;
 
-// Open on the newest run, or on the one named in the address: #<run id>/<step number>
-const [run, step] = location.hash.slice(1).split('/');
-loadRuns(run).then(() => { if (run && step) jump(step - 1); });
+// Open on the newest run, or on the one named in the address: #<run id>/<step number>/play
+// (#new opens the box for a new run.)
+const [run, step, autoplay] = location.hash.slice(1).split('/');
+if (run === 'new') listRuns().then(newRun);
+else loadRuns(run).then(() => {
+  if (run && step) jump(step - 1);
+  if (autoplay) { playing = true; draw(); }
+});
 </script>
 </body>
 </html>

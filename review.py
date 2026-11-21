@@ -2,7 +2,7 @@
 """After a run: a second agent reads what happened and names, summarizes and rates it.
 
 The result goes to runs/<id>/review.json and is shown in the viewer.
-run.sh calls this at the end of every run. By hand:  ./review.py [runs/<id>]
+run.py calls this at the end of every run. By hand:  ./review.py [runs/<id>]
 """
 import json
 import subprocess
