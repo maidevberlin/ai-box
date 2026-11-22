@@ -201,9 +201,9 @@ class World(Grid):
         on_top = [note for note in self.notes if (note[0], note[1]) == cell and note[2] == self.height(cell)]
         return on_top[-1] if on_top else None
 
-    def note_on(self, cell):
-        note = self.top_note(cell)
-        return note[3] if note else None
+    def notes_on(self, cell):
+        """The notes lying on top of a cell, the topmost last."""
+        return [note[3] for note in self.notes if (note[0], note[1]) == cell and note[2] == self.height(cell)]
 
     def occupied(self):
         return {place[:2] for place in self.blocks} | {(note[0], note[1]) for note in self.notes}

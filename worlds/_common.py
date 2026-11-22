@@ -8,7 +8,7 @@ rules are; everything that is the same in every world is here, so that it is cha
 A world built on Grid has to provide:
   height(cell)       how high the cell is: where something on it stands
   standable(cell)    can something rest there (False: open water)
-  note_on(cell)      the text of the note lying on top there, or nothing
+  notes_on(cell)     the texts of the notes lying on top there, the topmost last
   occupied()         the cells that hold anything at all
   describe(cell)     what looking around shows of a cell, after "(x, y): "
   look_at(cell)      what looking straight at a cell shows
@@ -113,7 +113,7 @@ class Grid:
     def look(self, at="around"):
         """Look around, or at one thing: what is in the hand, or the cell here or next to here.
 
-        Looking around shows that a note lies somewhere and how it begins. To read it, or to
+        Looking around shows where notes lie, how many, and how the top one begins. To read it, or to
         see what a stack is made of, the agent has to look at it.
         """
         if at not in SIGHTS:
@@ -127,9 +127,8 @@ class Grid:
             return self.look_at(self.next_to(at))
         x, y = self.pos
         reach = self.sight()
-        begins = lambda cell: f' ("{beginning(self.note_on(cell))}")' if self.note_on(cell) else ""
         seen = [f"({cx}, {cy}): {self.describe((cx, cy))}"
-                + (f" with a note on top{begins((cx, cy))}" if self.note_on((cx, cy)) else "")
+                + (f" with {self.pile((cx, cy))} on top" if self.note_on((cx, cy)) else "")
                 for cx, cy in sorted(self.occupied())
                 if (cx, cy) != self.pos and abs(cx - x) <= reach and abs(cy - y) <= reach]
         # How much there is to stand on in each direction before the water, if the water is in sight.
@@ -141,7 +140,8 @@ class Grid:
             if steps < reach:
                 water.append(f"{direction}: {steps} step(s) of ground left, then water" if steps
                              else f"{direction}: no ground left, the next step is water")
-        feet = f" A note lies at your feet{begins(self.pos)}." if self.note_on(self.pos) else ""
+        lie = "lies" if len(self.notes_on(self.pos)) == 1 else "lie"
+        feet = f" {self.pile(self.pos).capitalize()} {lie} at your feet." if self.note_on(self.pos) else ""
         return "\n".join([
             self.where() + feet,
             f"You carry: {'a ' + name(self.carrying) if self.carrying else 'nothing'}.",
@@ -160,6 +160,18 @@ class Grid:
             return "Seconds must be a whole number of at least 1."
         time.sleep(seconds)
         return f"You waited {seconds} second(s)."
+
+    def note_on(self, cell):
+        """The text of the note lying on top of a cell, or nothing."""
+        notes = self.notes_on(cell)
+        return notes[-1] if notes else None
+
+    def pile(self, cell):
+        """The notes on top of a cell as they look from a distance: how many, and how the top one begins."""
+        notes = self.notes_on(cell)
+        if len(notes) == 1:
+            return f'a note ("{beginning(notes[0])}")'
+        return f'{len(notes)} notes (the top one: "{beginning(notes[-1])}")'
 
     def note(self, text):
         """Writing a note puts it in the agent's hand. From there it is a thing like a block."""

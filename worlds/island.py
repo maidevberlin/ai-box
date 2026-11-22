@@ -41,8 +41,8 @@ The agent is not told any of this. It has to find out by looking and trying.
 - A note is a thing like a block, but flat: it has no height. Writing one puts it in the
   agent's hand. From there it can be put down, taken again and thrown, and it can lie on
   the ground, on a stack, or between blocks. It never makes a stack higher.
-- Looking around shows where stacks are, how high, and whether a note lies on top. Of such
-  a note it shows the first three words, not the rest, and not what a stack is made of.
+- Looking around shows where stacks are, how high, and how many notes lie on top. Of the
+  top note it shows the first three words, not the rest, and not what a stack is made of.
 - For that the agent has to look at something: at what is in its hand, or at the stack in
   its own cell or the cell next to it. It then sees every thing in the stack, and reads
   the note if one is on top. A note with something on top of it cannot be read.
@@ -100,9 +100,11 @@ class World(Grid):
         """The thing on top of a stack, or nothing."""
         return self.stacks[cell][-1] if cell in self.stacks else None
 
-    def note_on(self, cell):
-        top = self.top(cell)
-        return top["note"] if top not in (None, BLOCK) else None
+    def notes_on(self, cell):
+        """The notes lying on top of a stack, down to the first block, the topmost last."""
+        things = self.stacks.get(cell, [])
+        above = len(things) - 1 - things[::-1].index(BLOCK) if BLOCK in things else -1
+        return [thing["note"] for thing in things[above + 1:]]
 
     def occupied(self):
         return self.stacks.keys()
