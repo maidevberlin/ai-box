@@ -36,8 +36,8 @@ The tricks:
 - A blue block floats. Put or thrown into the water, it lies in the surface, level with the
   ground, and can be walked on like ground. Other blocks can be stacked on it.
 - Any other block that ends up in the water sinks and is gone.
-- The island never runs out: when the last block is lost, a new grey block appears next
-  to the agent.
+- Agents are never without a block: when no block is left that an agent could pick up
+  (all sunk, or floating out of reach), a new grey block appears next to the agent.
 
 What holds a block up: the ground, a block beneath it, the water if it is blue, or a green
 block beside it (a green block also holds on to whatever is beside it). A block that nothing
@@ -162,11 +162,28 @@ class World(Grid):
             said += " There is nothing under you any more. " + self.drown()
         return said + self.restock()
 
+    def on_foot(self):
+        """Every cell an agent can walk to from where agents wake up. (Not what only a jump
+        reaches: landing on a floating block changes its colour, and it sinks.)"""
+        found, frontier = {self.home}, [self.home]
+        while frontier:
+            x, y = frontier.pop()
+            for dx, dy in DIRS.values():
+                cell = (x + dx, y + dy)
+                if cell not in found and self.standable(cell):
+                    found.add(cell)
+                    frontier.append(cell)
+        return found
+
     def restock(self):
-        """Trick: the island never runs out of blocks. When the last one is gone (the golden one
-        across the water does not count), a new grey block appears next to the agent."""
-        have = any(colour != "gold" for colour in self.blocks.values()) or "block" in (self.carrying or {})
-        if have or self.dead:
+        """Trick: agents are never without a block. When no block is left that an agent could
+        pick up (the golden one does not count), a new grey block appears next to the agent.
+        A block can be picked up if the agent can walk to it or to the cell next to it."""
+        if self.dead or "block" in (self.carrying or {}):
+            return ""
+        walkable = self.on_foot()
+        near = lambda x, y: any((x + dx, y + dy) in walkable for dx, dy in [(0, 0), *DIRS.values()])
+        if any(colour != "gold" and near(x, y) for (x, y, _), colour in self.blocks.items()):
             return ""
         free = [cell for cell in (self.next_to(place) for place in DIRS) if self.land(cell) and not self.column(cell)]
         if not free:  # the agent stands out on the water: the block appears where agents wake up
@@ -317,4 +334,4 @@ class World(Grid):
             said += " It floats in the water, level with the ground."
         if self.height(cell):
             said += f" The stack there is {self.height(cell)} high."
-        return said + (f" {self.where()}" if cell == self.pos else "")
+        return said + (f" {self.where()}" if cell == self.pos else "") + self.restock()
