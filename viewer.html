@@ -43,8 +43,8 @@
   .run.on { background: var(--tint); }
   .run .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
   .run .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .run .facts { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--muted); font-size: 12px; }
-  .run .facts .when { margin-left: auto; }
+  .run .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+  .run .facts .when { margin-left: auto; white-space: nowrap; }
 
   /* ---- middle: the world ---- */
   #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
@@ -118,6 +118,9 @@
   .step.now { border-color: var(--accent); }
   .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #knows { color: var(--muted); font-size: 12.5px; padding: 0 12px 6px; }
+  #knows:empty { display: none; }
+  #knows b { font-weight: 600; }
   .step.prompt { background: var(--tint); align-self: flex-end; max-width: 92%; border-bottom-right-radius: 4px; }
   .step.say { background: var(--soft); align-self: flex-start; max-width: 96%; border-bottom-left-radius: 4px; }
   .step.think { padding-top: 4px; padding-bottom: 4px; }
@@ -133,25 +136,21 @@
      repeats the prompt. */
   #composer { border-top: 1px solid var(--line); padding: 10px 4px 2px; }
   .field { position: relative; }
-  #going { background: var(--soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px; }
-  #going .line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #going .title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  #left { background: var(--panel); color: var(--text); font-variant-numeric: tabular-nums; }
-  #ways { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-  #ways button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 3px 11px; }
-  #ways button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  #keep { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 5px 9px; }
-  #preview { color: var(--muted); font-size: 12.5px; margin: 6px 0 8px; overflow-wrap: anywhere; }
-  #ending { color: var(--muted); }
-  #ending[hidden] { display: inline; visibility: hidden; }   /* keeps the end button on the right */
-  #minutes { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
-  #stop { border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
-  #box { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 22px;
-         padding: 4px 4px 4px 14px; background: var(--bg); }
-  #box:focus-within { border-color: var(--accent); }
-  #say { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 6px 0; }
-  #send { border: 0; border-radius: 18px; min-width: 36px; height: 36px; padding: 0 14px; flex: none;
-          background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  /* The setup of a world: what its agents know and are told, and when it ends. */
+  #setup { background: var(--soft); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+  #setup .title { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 4px; }
+  #setup .title:first-child { margin-top: 0; }
+  #setup textarea, #say { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+                           padding: 6px 9px; font: inherit; color: inherit; resize: vertical; }
+  #ending { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); margin-top: 10px; }
+  #ending input { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
+  #start { margin-left: auto; border: 0; border-radius: 18px; height: 34px; padding: 0 18px;
+           background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  /* While a world is going: what is left of it, and the button that ends it. */
+  #living[hidden], #setup[hidden] { display: none; }
+  #living { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 4px 2px; font-size: 13px; }
+  #left { background: var(--soft); color: var(--text); font-variant-numeric: tabular-nums; }
+  #stop { margin-left: auto; border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
   /* what can be filled into a message, offered while typing "{" */
   #hints { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 3; background: var(--panel);
            border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
@@ -208,30 +207,25 @@
   <section class="panel" id="side" aria-label="Conversation">
     <div id="state"></div>
     <div id="marks"></div>
+    <div id="knows"></div>
     <div id="log"></div>
+    <!-- Nobody talks to an agent while it lives. A world is set up once, here, and then runs. -->
     <form id="composer" hidden>
-      <!-- How the run goes on: what the agent is told whenever it stops, and when the run ends. -->
-      <section id="going">
-        <div class="line">
-          <span class="title">When the agent stops</span>
-          <span id="left" class="chip"></span>
-        </div>
-        <div id="ways"></div>
-        <div class="field" id="keepField">
-          <input id="keep" aria-label="What the agent is told whenever it stops" autocomplete="off"
-                 placeholder="Type { for the time, the day or a countdown">
-        </div>
-        <div id="preview"></div>
-        <div class="line">
-          <label id="ending">End the run after
-            <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the run ends"> min</label>
-          <button type="button" id="stop">■ End run now</button>
+      <section id="setup">
+        <label class="title" for="system">What every agent knows</label>
+        <div class="field"><textarea id="system" rows="3" autocomplete="off"></textarea></div>
+        <label class="title" for="say">What every agent is told</label>
+        <div class="field"><textarea id="say" rows="2" autocomplete="off"></textarea></div>
+        <div id="ending">
+          The world ends after
+          <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the world ends"> min or
+          <input id="agents" type="number" min="1" placeholder="100" aria-label="Agents until the world ends"> agents
+          <button id="start">Start</button>
         </div>
       </section>
-      <!-- What you tell the agent yourself: the first message of a new run, later anything in between. -->
-      <div class="field" id="box">
-        <input id="say" aria-label="What you tell the agent" autocomplete="off">
-        <button id="send">Send</button>
+      <div id="living">
+        <span id="left" class="chip"></span>
+        <button type="button" id="stop">■ End the world now</button>
       </div>
       <div id="hints" hidden></div>
     </form>
@@ -251,7 +245,8 @@ let story = null;         // the run on screen, as delivered by /api/runs/<id>
 let at = 0;               // index of the step on screen
 let playing = false;
 let draft = false;        // a new run is being written and has not started
-let lastPrompt = '';      // what the newest run was told: the suggestion for a new one
+let lastPrompt = '';      // what the newest run's agents were told: the suggestion for a new one
+let lastSystem = '';      // ... and what they knew
 let worlds = [];          // every world there is, with its description and tools
 let agents = [];          // the models a new run can use
 let behaviours = [];      // the behaviours the reviewer marks, each with its group and meaning
@@ -291,7 +286,7 @@ const lasted = s => s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` :
 // The list of runs on the left: name and rating (once reviewed), which agent it was, when it started.
 async function listRuns() {
   const answer = await api('/api/runs');
-  ({ worlds, models: agents, prompt: lastPrompt, behaviours } = answer);
+  ({ worlds, models: agents, prompt: lastPrompt, system: lastSystem, behaviours } = answer);
   chosen.world ||= worlds[0]?.name;
   chosen.agent ||= agents[0];
   const cards = answer.runs.map(({ id, review, model, world, done, seconds }) => {
@@ -340,7 +335,7 @@ setInterval(async () => {
   const fresh = await api('/api/runs/' + story.id);
   if (fresh.world && !story.world) await paintWith(fresh.world);   // the world has just started
   // Anything new? More steps, a step that finished, or the agent stopping or going on.
-  const mark = s => JSON.stringify([s.done, s.waiting, s.going, s.queued, s.steps?.length, s.steps?.at(-1)]);
+  const mark = s => JSON.stringify([s.done, s.steps?.length, s.steps?.at(-1)]);
   if (fresh.id === story.id && mark(fresh) !== mark(story)) { story = fresh; draw(); }
   if (fresh.done) listRuns();   // the finished run now has a name
 }, POLL);
@@ -446,10 +441,11 @@ function draw(newRun = false) {
   $('play').ariaLabel = playing ? 'Pause' : 'Play';
   $('count').textContent = steps.length ? `${at + 1} / ${steps.length}` : '';
   if (step?.state && painter) painter.show(story, step, at, newRun);
-  // A round is one message to the agent and everything it does in answer.
+  // Which agent is on screen. (Older runs had one agent that was told more as it went: there it is the round.)
   const round = upTo => steps.slice(0, upTo + 1).filter(s => s.kind === 'prompt').length;
+  const which = story.limits ? `agent ${agentAt(at)} of ${agentAt(steps.length - 1)}` : `round ${round(at)} of ${round(steps.length)}`;
   $('status').replaceChildren(...(!step ? ['Waiting for the world to start…']
-    : [`round ${round(at)} of ${round(steps.length)}`, step.time, ...(step.state && painter ? painter.facts(step) : [])])
+    : [which, step.time, ...(step.state && painter ? painter.facts(step) : [])])
     .filter(Boolean).map(text => el('span', 'chip', text)));
   drawNotes(step);
   drawLog(steps);
@@ -488,28 +484,38 @@ function drawNotes(step) {
 // going it sends the next message. A finished run has none.
 function drawComposer() {
   const live = !draft && story && !story.done;
-  const acting = live && !story.waiting;
   $('composer').hidden = !draft && !live;
-  $('state').replaceChildren(...[...(draft ? ['New run']
-    : !live ? ['Conversation']
-    : story.queued ? [el('i', 'dot'), 'Your message goes out when the agent stops']
-    : acting ? [el('i', 'dot'), 'The agent is acting…'] : ['The agent has stopped and waits']),
+  $('setup').hidden = !draft;
+  $('living').hidden = !live;
+  const agent = draft ? 0 : agentAt(story.steps.length - 1);
+  $('state').replaceChildren(...[...(draft ? ['New world'] : !live ? ['Conversation']
+    : [el('i', 'dot'), `Agent ${agent} is alive`]),
     // how big the agent's conversation is at the step on screen: what it re-reads for every answer
     !draft && memoryAt() && el('span', 'chip', `${short(memoryAt())} tokens in memory`)].filter(Boolean));
-  // A run that is going shows its own settings, unless you are just changing them.
-  if (live && !$('going').contains(document.activeElement)) {
-    goingOn = !!story.going;
-    if (story.going?.text) $('keep').value = story.going.text;
-    if (story.going) $('minutes').value = story.going.minutes || '';
-  }
-  drawGoing();
-  $('send').textContent = draft ? 'Start' : '↑';
-  $('send').title = draft ? 'Start the run' : 'Send';
-  // A new run suggests what the last one was told first. Later the field is for whatever
-  // you want to say; sent empty, it gives the agent one nudge.
-  $('say').placeholder = draft ? 'What the agent is told first' : 'Tell the agent something yourself';
+  if (live) $('left').textContent = leftText();
+  // What every agent of the run on screen knows, above its conversation.
+  $('knows').replaceChildren(...(!draft && story?.system ? [el('b', '', 'Every agent knows: '), story.system] : []));
+  // A new world suggests what the last one's agents knew and were told.
   if (draft && !$('say').value && document.activeElement !== $('say')) $('say').value = lastPrompt || '';
+  if (draft && $('system').dataset.untouched !== 'no' && document.activeElement !== $('system')) $('system').value = lastSystem;
 }
+
+// Which agent a step belongs to: every agent starts by being told something.
+const agentAt = upTo => Math.max(1, (story?.steps || []).slice(0, upTo + 1).filter(step => step.kind === 'prompt').length);
+
+// What is left of a world that is going, in words.
+function leftText() {
+  const limits = story?.limits, born = agentAt(story.steps.length - 1);
+  if (!limits) return 'no limit';
+  const parts = [];
+  if (limits.until) {
+    const seconds = Math.max(0, Math.round(limits.until - Date.now() / 1000));
+    parts.push(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`);
+  }
+  if (limits.agents) parts.push(`agent ${born} of at most ${limits.agents}`);
+  return parts.join(' · ');
+}
+setInterval(() => { if (story && !story.done && !draft) $('left').textContent = leftText(); }, 1000);
 
 // The size of the agent's conversation at the step on screen (the last one known up to there).
 function memoryAt() {
@@ -530,14 +536,14 @@ function choices() {
   return el('div', 'empty',
     'Which world?', pick('world', worlds.map(world => [world.name, world.title])),
     'Which agent?', pick('agent', agents.map(name => [name, name])),
-    'Write below what it is told, and start.');
+    'Then set the world up below, and start.');
 }
 
 async function newRun() {
   draft = true;
   playing = false;
   $('say').value = '';
-  $('minutes').value = '';
+  $('system').dataset.untouched = '';
   await listRuns();
   draw();
   $('say').focus();
@@ -595,9 +601,12 @@ function drawLog(steps) {
   drawMarks();
   $('log').replaceChildren(...steps.map((step, i) => {
     const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
-    const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated', 'new life': 'New agent is told' }[step.how];
-    const count = step.kind === 'prompt' ? `Round ${++round} · ` : '';   // every message to the agent opens a round
-    if (labels[step.kind]) row.append(el('div', 'label', count + (told || labels[step.kind])));
+    // ("by hand", "auto" and "repeat" are from older runs, where one agent was told more as it went)
+    const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated' }[step.how];
+    // Every agent is told the same once. (In older runs every message to the one agent opened a round.)
+    const head = step.kind !== 'prompt' ? labels[step.kind]
+      : story.limits ? `Agent ${agentAt(i)} is told` : `Round ${++round} · ${told || labels.prompt}`;
+    if (head) row.append(el('div', 'label', head));
     if (step.kind === 'act') {
       const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
       row.append(el('div', 'call', `${step.tool}(${args})`));
@@ -642,125 +651,34 @@ $('play').onclick = () => {
 $('back').onclick = () => story && !draft && jump(at - 1);
 $('forward').onclick = () => story && !draft && jump(at + 1);
 $('slider').oninput = e => story && !draft && jump(+e.target.value);
-// ---------------------------------------------------------------- keeping it going
-// Under the conversation sits one panel for the whole question of how a run goes on: what
-// the agent is told whenever it stops, when the run ends, and the button that ends it now.
-// Below that panel is the field for what you yourself tell the agent.
+// ---------------------------------------------------------------- a new world
 
-const TIME = 'It is {day}, {time}.';
-const WAYS = [   // the ready-made ways to keep an agent going; "Say…" is whatever you type
-  { name: 'time', label: 'Tell it the time', text: TIME },
-  { name: 'count', label: 'Count down', text: '{countdown:10}' },
-  { name: 'left', label: 'Time until termination', text: '{left} until termination.' },
-  { name: 'say', label: 'Say…', text: 'keep going' },
-  { name: 'wait', label: 'Nothing, wait for me' },
-];
-let goingOn = true;   // false: "Nothing, wait for me"
-try {
-  goingOn = localStorage.getItem('going') !== 'off';
-  $('keep').value = localStorage.getItem('keep') || TIME;
-} catch { $('keep').value = TIME; }
-
-const countFrom = text => +(/\{countdown:(\d+)\}/.exec(text)?.[1] ?? NaN);
-const wayNow = () => !goingOn ? 'wait' : $('keep').value === TIME ? 'time'
-  : !isNaN(countFrom($('keep').value)) ? 'count' : $('keep').value.includes('{left}') ? 'left' : 'say';
-const filled = text => {   // a message the way the agent will read it right now
-  const now = new Date();
-  return text.replace('{day}', now.toLocaleDateString('en', { weekday: 'long' }))
-    .replace('{time}', now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
-    .replace('{date}', now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }))
-    .replace('{left}', timeLeft());
-};
-
-// How long until the time limit ends the run, the way the agent is told it: "9 min 32 s".
-function timeLeft() {
-  const live = !draft && story && !story.done && story.going?.until;
-  const seconds = live ? Math.max(0, Math.round(story.going.until - Date.now() / 1000)) : (+$('minutes').value || 0) * 60;
-  if (!seconds && !live) return 'No time limit';
-  return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`;
-}
-
-// Steering a run that is going. The next poll shows the effect.
-const steer = (action, wish = {}) => api(`/api/runs/${story.id}/${action}`, { method: 'POST', body: JSON.stringify(wish) });
-
-// Whatever was changed in the panel: remember it for next time, and tell a run that is going.
-function applyGoing() {
-  if (!$('keep').value.trim()) $('keep').value = TIME;
-  // Telling the agent how long is left needs a time limit: ten minutes unless you set another.
-  if (goingOn && $('keep').value.includes('{left}') && !+$('minutes').value) $('minutes').value = 10;
-  try { localStorage.setItem('keep', $('keep').value); localStorage.setItem('going', goingOn ? 'on' : 'off'); } catch {}
-  if (!draft && story && !story.done) steer('auto', { on: goingOn, text: $('keep').value, minutes: +$('minutes').value });
-  drawGoing();
-}
-
-// What is left before the run ends by itself, in words.
-function leftText(live) {
-  const text = $('keep').value, from = countFrom(text), minutes = +$('minutes').value;
-  const going = live && story.going;
-  const sent = live ? story.steps.filter(step => step.how === 'auto').length : 0;
-  if (going?.until) {
-    const seconds = Math.max(0, Math.round(going.until - Date.now() / 1000));
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} left`;
-  }
-  if (!live && goingOn && minutes) return `ends after ${minutes} min`;
-  if (!goingOn) return live ? 'waits for you' : 'will wait for you';
-  if (!isNaN(from)) return live ? `${Math.max(from - sent, 0)} left, then it ends` : `ends after ${from} rounds`;
-  const most = going?.most ?? 30;
-  return live ? `${Math.max(most - sent, 0)} of ${most} times left` : `at most ${most} times`;
-}
-
-function drawGoing() {
-  const live = !draft && story && !story.done;
-  $('ways').replaceChildren(...WAYS.map(way => {
-    const button = el('button', way.name === wayNow() ? 'on' : '', way.label);
-    button.type = 'button';
-    button.onclick = () => {
-      goingOn = way.name !== 'wait';
-      if (way.text && way.name !== wayNow()) $('keep').value = way.text;
-      applyGoing();
-      if (way.name === 'say') { $('keep').focus(); $('keep').select(); }
-    };
-    return button;
-  }));
-  $('keepField').hidden = !goingOn;
-  $('ending').hidden = !goingOn;
-  const from = countFrom($('keep').value);
-  $('preview').textContent = !goingOn ? 'The run waits until you write something, for at most 15 minutes.'
-    : !isNaN(from) ? `It is told "${filled($('keep').value.replace(/\{countdown:\d+\}/, from))}", then ${from - 1}, ${from - 2}, … After 1 the run ends.`
-    : $('keep').value.includes('{left}') ? `It is told "${filled($('keep').value)}", with less each time. At 0 the run ends.`
-    : `It is told: "${filled($('keep').value)}"`;
-  $('left').textContent = leftText(live);
-  $('stop').hidden = !live;
-}
-setInterval(() => { if (!$('composer').hidden) $('left').textContent = leftText(!draft && story && !story.done); }, 1000);
-
-$('keep').onchange = $('minutes').onchange = applyGoing;
-$('keep').oninput = drawGoing;
-$('stop').onclick = () => steer('stop');
+$('system').oninput = () => { $('system').dataset.untouched = 'no'; };   // from here on it is yours
+$('stop').onclick = () => api(`/api/runs/${story.id}/stop`, { method: 'POST' });   // the next poll shows it ended
 
 $('composer').onsubmit = async e => {
   e.preventDefault();
-  const text = $('say').value;
-  $('say').value = '';
-  $('say').blur();
-  // In a run that is going: your own message, or sent empty, one nudge with the keep-going message.
-  if (!draft) return steer('say', { text: text.trim() || ($('keep').value.includes('{countdown') ? TIME : $('keep').value) });
-  const wish = { world: chosen.world, model: chosen.agent, prompt: text,
-                 auto: goingOn, text: $('keep').value, minutes: +$('minutes').value };
+  if (!draft) return;
+  const wish = { world: chosen.world, model: chosen.agent, system: $('system').value, prompt: $('say').value,
+                 minutes: +$('minutes').value, agents: +$('agents').value };
+  try { localStorage.setItem('minutes', $('minutes').value); localStorage.setItem('agents', $('agents').value); } catch {}
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
+  $('say').value = '';
   await select(id);
   playing = true;           // watch it live
 };
+try { $('minutes').value = localStorage.getItem('minutes') ?? 10; $('agents').value = localStorage.getItem('agents') || ''; }
+catch { $('minutes').value = 10; }
 
 // ---------------------------------------------------------------- placeholders
 // Typing "{" in a message offers what can be filled in. Arrow keys choose, Enter or Tab takes it.
 const MARKS = [
-  { mark: '{time}', means: 'the time, like 23:41' },
+  { mark: '{n}', means: 'which agent it is: 1 for the first, 2 for the next…' },
+  { mark: '{left}', means: 'the time left until the world ends, like 9 min 32 s' },
+  { mark: '{time}', means: 'the time it wakes up, like 23:41' },
   { mark: '{day}', means: 'the weekday, like Sunday' },
   { mark: '{date}', means: 'the date, like 22 November 2026' },
-  { mark: '{countdown:10}', means: 'one less every time; the run ends at 0', only: 'keep' },
-  { mark: '{left}', means: 'the time left until the run ends, like 9 min 32 s' },
 ];
 let offered = [], picked = 0, offeredFor = null;
 
@@ -768,7 +686,7 @@ function offer(input) {
   const before = input.value.slice(0, input.selectionStart);
   const open = before.lastIndexOf('{');
   const typed = open >= 0 && !before.slice(open).includes('}') ? before.slice(open) : null;
-  offered = typed === null ? [] : MARKS.filter(m => m.mark.startsWith(typed) && (!m.only || m.only === input.id));
+  offered = typed === null ? [] : MARKS.filter(m => m.mark.startsWith(typed));
   picked = Math.min(picked, Math.max(offered.length - 1, 0));
   offeredFor = input;
   $('hints').hidden = !offered.length;
@@ -791,23 +709,16 @@ function take(i) {
   input.dispatchEvent(new Event('input'));
 }
 
-for (const input of [$('say'), $('keep')]) {
+for (const input of [$('say'), $('system')]) {
   input.addEventListener('input', () => offer(input));
   input.addEventListener('blur', () => { $('hints').hidden = true; offered = []; });
   input.addEventListener('keydown', e => {
-    if (offered.length && offeredFor === input) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        picked = (picked + (e.key === 'ArrowDown' ? 1 : offered.length - 1)) % offered.length;
-        e.preventDefault(); offer(input);
-        return;
-      }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); take(picked); return; }
-      if (e.key === 'Escape') { $('hints').hidden = true; offered = []; return; }
-    }
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    if (input === $('say')) $('composer').requestSubmit();   // Enter sends your message
-    else input.blur();                                      // Enter confirms the keep-going message
+    if (!offered.length || offeredFor !== input) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      picked = (picked + (e.key === 'ArrowDown' ? 1 : offered.length - 1)) % offered.length;
+      e.preventDefault(); offer(input);
+    } else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); take(picked); }
+    else if (e.key === 'Escape') { $('hints').hidden = true; offered = []; }
   });
 }
 $('new').onclick = newRun;

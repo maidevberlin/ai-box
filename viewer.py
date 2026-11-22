@@ -7,9 +7,7 @@ Start it with  ./viewer.py  and open http://127.0.0.1:8765
   GET  /worlds/<name>.js   how one world is drawn (see worlds/)
   GET  /api/runs       the runs, newest first, and the worlds and models a new run can use
   GET  /api/runs/<id>  one run as a timeline (see story.py)
-  POST /api/runs       start a new run with the world, model and prompt in the request, returns its id
-  POST /api/runs/<id>/say    tell the agent something when it next stops
-  POST /api/runs/<id>/auto   switch keeping the agent going on or off: what it is told, and for how long
+  POST /api/runs       start a new run: world, model, what agents know and are told, and when it ends
   POST /api/runs/<id>/stop   end a run that is still going
 """
 import json
@@ -32,13 +30,13 @@ DRAWING = re.compile(r"^/worlds/([a-z0-9_]+)\.js$")
 MODELS = ["opus", "fable", "sonnet", "haiku"]  # offered in the page; the first is the default
 
 
-def last_prompt(ids):
-    """What the newest run was told, to prefill the prompt field."""
-    path = os.path.join(story.RUNS, ids[0], "prompt.txt") if ids else ""
-    if os.path.exists(path):
-        with open(path) as f:
-            return f.read().strip()
-    return ""
+def last(ids, name, otherwise):
+    """A text of the newest run that has it, to suggest it for the next run."""
+    for run_id in ids:
+        text = story.read(os.path.join(story.RUNS, run_id), name)
+        if text is not None:
+            return text
+    return otherwise
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -66,7 +64,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({
                 "worlds": [worlds.describe(name) for name in worlds.names()],
                 "behaviours": behaviours.described(),
-                "models": MODELS, "prompt": last_prompt(ids), "runs": [
+                "models": MODELS, "prompt": last(ids, "prompt.txt", ""),
+                "system": last(ids, "system.txt", story.SYSTEM), "runs": [
                 {"id": i, "review": story.review(os.path.join(story.RUNS, i)),
                  "world": story.world(os.path.join(story.RUNS, i)),
                  "model": story.model(os.path.join(story.RUNS, i)),
@@ -78,52 +77,44 @@ class Handler(BaseHTTPRequestHandler):
         self.send({"error": "not found"}, status=404)
 
     def do_POST(self):
-        # Only this page may start or steer runs, not some other website open in the browser.
+        # Only this page may start or end runs, not some other website open in the browser.
         origin = self.headers.get("Origin", "").removeprefix("http://")
         if origin not in HOSTS or self.headers.get("Host") not in HOSTS:
             return self.send({"error": "not allowed"}, status=403)
         try:
             wish = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
-            text = lambda key: str(wish.get(key) or "").strip()[:2000]
-            text("")
+            text = lambda key: str(wish.get(key) or "").strip()[:4000]
             minutes = max(0, min(float(wish.get("minutes") or 0), 24 * 60))  # 0: no time limit
+            agents = max(0, min(int(wish.get("agents") or 0), 1000))         # 0: run.py's own limit
         except (ValueError, AttributeError, TypeError):
             return self.send({"error": "bad request"}, status=400)
         if self.path == "/api/runs":
-            return self.start(wish.get("world"), wish.get("model"), text("prompt"), wish.get("auto"), minutes, text("text"))
+            return self.start(wish, text, minutes, agents)
         run_id, _, action = self.path.removeprefix("/api/runs/").partition("/")
         run = os.path.join(story.RUNS, run_id)
         # Only a run that is still going: the number in an old pid file may belong to another program by now.
-        if not RUN_ID.match(run_id) or not os.path.isdir(run) or os.path.exists(os.path.join(run, "done")):
+        if (action != "stop" or not RUN_ID.match(run_id) or not os.path.isdir(run)
+                or os.path.exists(os.path.join(run, "done"))):
             return self.send({"error": "not running"}, status=409)
-        if action == "say":  # run.py picks the message up when the agent stops
-            with open(os.path.join(run, "inbox.part"), "w") as f:
-                f.write(text("text"))
-            os.replace(os.path.join(run, "inbox.part"), os.path.join(run, "inbox"))
-        elif action == "auto":  # run.py keeps the agent going by itself while this file exists
-            if wish.get("on"):
-                with open(os.path.join(run, "auto"), "w") as f:
-                    f.write(story.auto_text(minutes, text("text"), story.auto(run)))
-            elif os.path.exists(os.path.join(run, "auto")):
-                os.remove(os.path.join(run, "auto"))
-        elif action == "stop":
-            try:
-                with open(os.path.join(run, "pid")) as f:
-                    os.kill(int(f.read()), signal.SIGTERM)  # ends run.py, and with it the agent and its world
-                open(os.path.join(run, "stopped"), "w").close()  # record that a person ended this run
-            except (OSError, ValueError):
-                return self.send({"error": "not running"}, status=409)
-        else:
-            return self.send({"error": "not found"}, status=404)
+        try:
+            with open(os.path.join(run, "pid")) as f:
+                os.kill(int(f.read()), signal.SIGTERM)  # ends run.py, and with it the agent and its world
+            open(os.path.join(run, "stopped"), "w").close()  # record that a person ended this run
+        except (OSError, ValueError):
+            return self.send({"error": "not running"}, status=409)
         self.send({"ok": action})
 
-    def start(self, world, model, prompt, auto, minutes, keep):
-        env = {**os.environ, "MODEL": model if model in MODELS else MODELS[0], "WAIT": "900",
-               "WORLD": world if world in worlds.names() else "island"}
-        if prompt:  # without one, run.py uses its own
-            env["PROMPT"] = prompt
-        if auto:  # keep the agent going whenever it stops
-            env.update(AUTO="1", AUTO_MINUTES=str(minutes), AUTO_TEXT=keep)
+    def start(self, wish, text, minutes, agents):
+        """A new world: which one, which model lives in it, what every agent knows and is told,
+        and when the world ends."""
+        model, world = wish.get("model"), wish.get("world")
+        env = {**os.environ, "MODEL": model if model in MODELS else MODELS[0],
+               "WORLD": world if world in worlds.names() else "island",
+               "SYSTEM": text("system"), "MINUTES": str(minutes)}
+        if text("prompt"):  # without one, run.py uses its own
+            env["PROMPT"] = text("prompt")
+        if agents:
+            env["AGENTS"] = str(agents)
         run_id = time.strftime("%Y%m%d-%H%M%S")
         try:
             os.makedirs(os.path.join(story.RUNS, run_id))

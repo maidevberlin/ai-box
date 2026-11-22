@@ -37,7 +37,7 @@ module = worlds.load(NAME)
 if os.path.exists(SAVED):  # an earlier agent was here
     with open(SAVED, "rb") as f:
         world, actions = pickle.load(f)
-    if getattr(world, "dead", False):
+    if hasattr(world, "respawn"):  # the agent before is gone, however it went: a new one wakes up
         world.respawn()
 else:
     world = module.World(**{key: setting(key, usual) for key, usual in module.SETTINGS.items()})

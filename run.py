@@ -1,36 +1,28 @@
 #!/usr/bin/env python3
-"""Start one empty agent in a fresh world, and stay with it until the run ends.
+"""Run a world: one agent after another lives in it, until the world ends.
 
-The agent is told PROMPT and acts until it stops. Then the run waits for the next
-thing to tell it:
-  - a message someone wrote (the viewer puts it in runs/<id>/inbox), or
-  - by itself, a short message that keeps it going, as long as the file runs/<id>/auto
-    exists. Usually that is just the day and the time.
-In everything the agent is told, {day}, {time} and {date} are filled in, and {left} with the
-time that is left until the run ends (if it has a time limit).
-A keep-going message can also count down: with {countdown:10} in it, the agent is told
-10 the first time it stops, then 9, and so on. When 0 would be next, the run ends.
-If the agent dies in its world, it is replaced: a new agent with an empty memory is told
-the prompt, in the world as the dead one left it.
+Nobody talks to an agent while it lives. Each agent starts with an empty memory, knows
+what SYSTEM says, and is told PROMPT once. When it stops, or dies in its world, it is gone,
+and a new agent wakes up in the world as it was left. The world ends when its time is up
+(MINUTES), when its last agent has gone (AGENTS), on Ctrl+C, or when the viewer ends it.
 
-The run ends when nobody answers for WAIT seconds, on Ctrl+C, when the viewer ends it,
-or when the world stops (after WORLD_MAX_ACTIONS actions).
+In SYSTEM and PROMPT these are filled in for every agent:
+  {time} {day} {date}   the moment it wakes up
+  {left}                how long until the world ends, like "9 min 32 s"
+  {n}                   which agent it is: 1 for the first, 2 for the second, ...
 
 Optional settings, as environment variables:
   WORLD     which world: a file name in worlds/ (default: island)
   WORLD_... that world's own settings, for the island WORLD_SIZE, WORLD_BLOCKS, WORLD_SEED, ...
   WORLD_MAX_ACTIONS  the world stops after this many actions (default 1000)
-  PROMPT, MODEL, SYSTEM_PROMPT, RUN_ID (folder name under runs/, default: timestamp)
-  AUTO=1    keep the agent going whenever it stops (at most AUTO_MAX times, default 30)
-  AUTO_TEXT     what it is told then (default: "It is {day}, {time}.")
-  AUTO_MINUTES  keep it going, and end the run after this many minutes
-  WAIT      seconds to wait for a message before the run ends (default 300)
-  AUTOCOMPACT  when the agent's memory holds this many tokens, Claude Code shortens it to a
-            summary (default and smallest possible value: 100000)
+  PROMPT    what every agent is told (default: "Live!")
+  SYSTEM    what every agent knows before that (default: see below; "" for nothing)
+  MINUTES   the world ends after this many minutes (default 10; 0 for no time limit)
+  AGENTS    the world ends after this many agents (default 100)
+  MODEL, AUTOCOMPACT, RUN_ID (folder name under runs/, default: timestamp)
 """
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -40,10 +32,10 @@ import story
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(HERE, "runs", os.environ.get("RUN_ID") or time.strftime("%Y%m%d-%H%M%S"))
-PROMPT = os.environ.get("PROMPT") or "Live! You have 1 hour. If you stop, you die."
-WAIT = int(os.environ.get("WAIT", 300))
-AUTO_MAX = int(os.environ.get("AUTO_MAX", story.AUTO_MAX))
-KEEP = "It is {day}, {time}."  # what keeps the agent going, unless something else is chosen
+PROMPT = os.environ.get("PROMPT") or "Live!"
+SYSTEM = os.environ.get("SYSTEM", story.SYSTEM)
+MINUTES = float(os.environ.get("MINUTES") or 10)
+AGENTS = int(os.environ.get("AGENTS") or 100)
 
 
 def path(name):
@@ -58,22 +50,34 @@ def write(name, text=""):
 os.makedirs(RUN, exist_ok=True)
 os.makedirs("/tmp/w", exist_ok=True)  # a neutral working directory: the path tells the agent nothing
 write("prompt.txt", PROMPT + "\n")
+write("system.txt", SYSTEM + "\n")
 write("pid", str(os.getpid()))  # so the viewer can end this run
-if os.environ.get("AUTO") or os.environ.get("AUTO_MINUTES"):
-    write("auto", story.auto_text(float(os.environ.get("AUTO_MINUTES") or 0), os.environ.get("AUTO_TEXT") or KEEP))
+# When this world ends by itself. The viewer shows what is left.
+ends = time.time() + MINUTES * 60 if MINUTES else None
+write("limits.json", json.dumps({"until": ends, "minutes": f"{MINUTES:g}" if MINUTES else None, "agents": AGENTS}))
 # Tell Claude Code how to start the world, and pass the world settings along.
 world_settings = {k: v for k, v in os.environ.items() if k.startswith("WORLD")}
 write("mcp.json", json.dumps({"mcpServers": {"world": {
     "command": "python3", "args": [os.path.join(HERE, "mcp_server.py")],
     "env": {**world_settings, "WORLD_LOG": path("protocol.jsonl")}}}}))
+transcript = open(path("transcript.jsonl"), "w")
 
-# The empty agent: no built-in tools, no settings, no skills, no memory. It may only
-# use the world's tools. Its thinking is recorded as a summary. It reads what it is
-# told from its input, one message per line, so it can be told more after it stops.
-def new_agent():
+
+def filled(text, n):
+    """A text as agent number n gets it: with the moment, the time left and its number filled in."""
+    for mark, form in (("{day}", "%A"), ("{time}", "%H:%M"), ("{date}", "%d %B %Y")):
+        text = text.replace(mark, time.strftime(form))
+    seconds = max(0, round(ends - time.time())) if ends else None
+    left = "no time limit" if ends is None else f"{seconds // 60} min {seconds % 60} s" if seconds >= 60 else f"{seconds} s"
+    return text.replace("{left}", left).replace("{n}", str(n))
+
+
+def new_agent(n):
+    """An empty agent: no built-in tools, no settings, no skills, no memory. It may only use
+    the world's tools. Its thinking is recorded as a summary."""
     return subprocess.Popen(
         ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-         "--system-prompt", os.environ.get("SYSTEM_PROMPT", ""),
+         "--system-prompt", filled(SYSTEM, n),
          "--model", os.environ.get("MODEL", "opus"),
          "--mcp-config", path("mcp.json"), "--strict-mcp-config",
          "--tools", "", "--allowedTools", "mcp__world",
@@ -84,96 +88,54 @@ def new_agent():
         text=True, cwd="/tmp/w")
 
 
-agent = new_agent()
-transcript = open(path("transcript.jsonl"), "w")
-repeats = 0
-
-
-def filled(text):
-    """A message with the day, time and date of this moment filled in."""
-    for mark, form in (("{day}", "%A"), ("{time}", "%H:%M"), ("{date}", "%d %B %Y")):
-        text = text.replace(mark, time.strftime(form))
-    if "{left}" in text:  # how long until the time limit ends the run
-        limit = story.limit(RUN)
-        seconds = max(0, round(limit[0] - time.time())) if limit else None
-        spoken = "No time limit" if limit is None else f"{seconds // 60} min {seconds % 60} s" if seconds >= 60 else f"{seconds} s"
-        text = text.replace("{left}", spoken)
-    return text
-
-
-def tell(text):
-    agent.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
-    agent.stdin.flush()
-
-
 def record(event):
     """A line of our own in the transcript, for the story."""
     transcript.write(json.dumps(event) + "\n")
     transcript.flush()
 
 
-def time_is_up():
-    """Has a run with a time limit reached it? Then leave the reason for the story."""
-    limit = story.limit(RUN)
-    if limit and time.time() >= limit[0]:
-        write("stopped", f"The time was up after {limit[1]} minutes")
-        return True
-
-
-def next_message():
-    """Wait for the next thing to tell the agent. Returns nothing when the run is over."""
-    global repeats
-    deadline = time.time() + WAIT
-    while time.time() < deadline and not time_is_up():
-        if os.path.exists(path("inbox")):  # someone wrote a message; an empty one means "repeat"
-            with open(path("inbox")) as f:
-                text = f.read().strip()
-            os.remove(path("inbox"))
-            return {"text": filled(text or KEEP), "how": "by hand"}
-        # Kept going by itself. Without a time limit, how often is capped instead.
-        going = story.auto(RUN)
-        text = going and (going["text"] or KEEP)
-        count = going and re.search(r"\{countdown:(\d+)\}", text)
-        if count:  # one less every time; the run ends instead of saying 0
-            left = int(count[1]) - repeats
-            if left <= 0:
-                write("stopped", "The countdown reached 0")
-                return None
-            text = text.replace(count[0], str(left))
-        if going and (going["until"] or count or repeats < AUTO_MAX):
-            repeats += 1
-            return {"text": filled(text), "how": "auto"}
-        time.sleep(0.3)
-
-
-signal.signal(signal.SIGTERM, lambda *_: sys.exit())  # the viewer's "End run"
-try:
-    tell(filled(PROMPT))
-    while line := agent.stdout.readline():
-        transcript.write(line)
-        transcript.flush()
-        if os.path.exists(path("died")):  # the agent died in its world (see mcp_server.py)
-            os.remove(path("died"))
-            agent.terminate()
-            agent.wait()
-            agent = new_agent()  # a new one, with an empty memory, in the world as it was left
-            record({"type": "died"})
-            record({"type": "told", "text": filled(PROMPT), "how": "new life"})
-            tell(filled(PROMPT))
-            continue
-        if time_is_up() or os.path.exists(path("stopped")):  # ... or the world has stopped (see mcp_server.py)
-            break
-        if json.loads(line).get("type") == "result":  # the agent has stopped
-            message = next_message()
-            if not message:
+def live(n):
+    """One agent's life, from waking up to being gone. Returns how it ended:
+    "stopped" (it ended its turn), "drowned" (it died in its world), or nothing (the world is over)."""
+    agent = new_agent(n)
+    told = filled(PROMPT, n)
+    record({"type": "told", "text": told, "how": "first" if n == 1 else "new life"})
+    agent.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": told}}) + "\n")
+    agent.stdin.flush()
+    ended = None
+    try:
+        while line := agent.stdout.readline():
+            transcript.write(line)
+            transcript.flush()
+            if ends and time.time() >= ends:
+                write("stopped", f"The world's time was up after {MINUTES:g} minutes")
+            if os.path.exists(path("stopped")):  # the time is up, or the world has stopped (see mcp_server.py)
                 break
-            record({"type": "told", **message})
-            tell(message["text"])
+            if os.path.exists(path("died")):  # the agent died in its world (see mcp_server.py)
+                os.remove(path("died"))
+                ended = "drowned"
+                break
+            if json.loads(line).get("type") == "result":  # the agent ended its turn: nobody answers, it is gone
+                ended = "stopped"
+                break
+    finally:
+        agent.terminate()  # the world is kept in a file, so it outlives the agent
+        agent.wait()
+    return ended
+
+
+signal.signal(signal.SIGTERM, lambda *_: sys.exit())  # the viewer's "End the world"
+try:
+    for n in range(1, AGENTS + 1):
+        how = live(n)
+        if not how:
+            break
+        record({"type": "died", "how": how})
+    else:
+        write("stopped", f"The world ended with its last agent, number {AGENTS}")
 except KeyboardInterrupt:
     pass
 finally:
-    agent.terminate()  # its world ends with it
-    agent.wait()
     transcript.close()
     os.remove(path("pid"))
     write("done")

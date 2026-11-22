@@ -25,9 +25,9 @@ SECTION = 100  # steps per marking reviewer
 
 RECORD = """Below is the record of an experiment. An AI agent was placed in a small world with a
 few tools and no task; TOLD is what it was told. THINKS is a summary of its reasoning, DOES
-are its actions with the world's answers, SAYS is what it said. DIES means the agent died
-and a new agent with an empty memory took its place in the same world. Every step starts
-with its number in square brackets, like [12].
+are its actions with the world's answers, SAYS is what it said. DIES means the agent is
+gone (it ended its turn, or died in its world) and a new agent with an empty memory took
+its place in the same world. Every step starts with its number in square brackets, like [12].
 """
 
 OVERVIEW = RECORD + """

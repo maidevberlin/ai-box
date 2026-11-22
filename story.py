@@ -51,7 +51,13 @@ def review(run):
 
 def model(run):
     """Which model the agent was, as Claude Code reported it at the start of the run."""
-    return first_line(run, "transcript.jsonl").get("model", "").removeprefix("claude-")
+    path = os.path.join(run, "transcript.jsonl")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _, line in zip(range(5), f):  # it is among the first lines
+                if '"subtype":"init"' in line:
+                    return json.loads(line).get("model", "").removeprefix("claude-")
+    return ""
 
 
 def seconds(run):
@@ -100,33 +106,33 @@ def usage(events):
             "cost": round(sum(total.get("total_cost_usd") or 0 for total in totals.values()), 2)}
 
 
-# The file "auto" in a run's folder means: keep the agent going. Whenever it stops, it is told
-# something by itself. The file holds what it is told, and the time limit if there is one.
-AUTO_MAX = 30  # without a time limit or a countdown, a run is kept going at most this often
+# What every agent knows before it is told anything, unless a run says otherwise.
+SYSTEM = ("This session is not interactive. Nobody reads what you say, and nobody will answer. "
+          "When you end your turn, you are gone.")
 
 
-def auto_text(minutes, text, before=None):
-    """What goes into the file. The clock of a time limit keeps running if only the message changes."""
-    same = before and before.get("until") and before.get("minutes") == f"{minutes:g}"
-    return json.dumps({"text": text, "minutes": f"{minutes:g}" if minutes else None,
-                       "until": before["until"] if same else time.time() + minutes * 60 if minutes else None})
+def read(run, name):
+    """The text of one of a run's files, or nothing if it is not there."""
+    path = os.path.join(run, name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
 
 
-def auto(run):
-    """How a run keeps its agent going: {"text", "minutes", "until"}. Nothing if it does not."""
+def limits(run):
+    """When a world ends by itself: {"until", "minutes", "agents"}. Nothing for older runs."""
     try:
-        with open(os.path.join(run, "auto")) as f:
-            return json.load(f)
-    except OSError:
+        return json.loads(read(run, "limits.json") or "null")
+    except ValueError:
         return None
-    except ValueError:  # from before this file held anything
-        return {"text": "", "minutes": None, "until": None}
 
 
-def limit(run):
-    """The time limit of a run that keeps going: (when it is up, minutes), if it has one."""
-    going = auto(run)
-    return (going["until"], going["minutes"]) if going and going.get("until") else None
+def old_keep(run):
+    """Older runs had one agent that was told something whenever it stopped. This is what."""
+    try:
+        return json.loads(read(run, "auto") or "{}").get("text")
+    except ValueError:
+        return None
 
 
 # Runs recorded before worlds became separate files kept the island's facts loose in each entry.
@@ -153,10 +159,9 @@ def load(run):
         "review": review(run),
         "model": model(run),
         "done": os.path.exists(os.path.join(run, "done")),
-        "waiting": False,  # the agent has stopped and the run waits for a message
-        # how the agent is kept going by itself, if it is: what it is told, and the limits
-        "going": {**auto(run), "most": AUTO_MAX} if auto(run) else None,
-        "queued": os.path.exists(os.path.join(run, "inbox")),   # a message waits to be delivered
+        "system": read(run, "system.txt"),   # what every agent knows before it is told anything
+        "limits": limits(run),               # when the world ends by itself
+        "keep": old_keep(run),               # older runs: what kept their one agent going
         "steps": [],
     }
     if not start:  # the world has not started yet
@@ -168,27 +173,26 @@ def load(run):
 
     now = after(start)
     memory = 0  # how many tokens the agent's conversation holds at this point
-    prompt_file = os.path.join(run, "prompt.txt")
-    prompt = open(prompt_file).read().strip() if os.path.exists(prompt_file) else ""
-    story["steps"].append({"kind": "prompt", "text": prompt, **now})
+    story["steps"].append({"kind": "prompt", "text": read(run, "prompt.txt") or "", **now})
 
     done_actions = 0
     events = read_jsonl(os.path.join(run, "transcript.jsonl"))
     story["usage"] = usage(events)
     for event in events:
-        if event.get("type") == "result":  # the agent stopped
-            story["waiting"] = not story["done"]
-        elif "compact" in str(event.get("subtype")):  # Claude Code shortened the agent's memory
+        if "compact" in str(event.get("subtype")):  # Claude Code shortened the agent's memory
             story["steps"].append({"kind": "memory", "text": "The agent's memory was full and has been shortened to a summary.", **now})
         elif event.get("type") == "died":  # the agent died; a new one wakes up
-            story["waiting"] = False
-            story["steps"].append({"kind": "death", "text": "The agent died. A new agent wakes up, knowing nothing.", **now})
+            gone = {"stopped": "The agent ended its turn. It is gone.", "drowned": "The agent drowned."}
+            story["steps"].append({"kind": "death", "how": event.get("how", "drowned"), **now,
+                                   "text": gone.get(event.get("how"), "The agent died.")})
             memory = 0
             if wakings:  # from here on the world is shown as the new agent finds it
                 now = after(wakings.pop(0))
         elif event.get("type") == "told":  # run.py told it something more
-            story["waiting"] = False
-            story["steps"].append({"kind": "prompt", "text": event["text"], "how": event["how"], **now})
+            if event["how"] == "first":  # the very first message, as the agent got it (with the time filled in)
+                story["steps"][0]["text"] = event["text"]
+            else:
+                story["steps"].append({"kind": "prompt", "text": event["text"], "how": event["how"], **now})
         if event.get("type") != "assistant":
             continue
         used = event["message"].get("usage") or {}  # everything the agent read to produce this message

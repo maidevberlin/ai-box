@@ -1,5 +1,9 @@
 """The worlds an agent can be put into. One world is one file in this folder.
 
+What all worlds share (looking, walking, jumping, throwing, notes, dying, and the list of
+tools) is in _common.py, as the class Grid. Change it there and it changes in every world.
+A world file holds only what is its own.
+
 To invent a world, copy island.py to a new name and change it. A world file has:
 
   TITLE     its name, for people
@@ -7,14 +11,14 @@ To invent a world, copy island.py to a new name and change it. A world file has:
             (Blank lines separate paragraphs; lines starting with "- " become a list.)
   SETTINGS  what can be changed per run, with the usual values.
             Set for a run as WORLD_<NAME>, for example WORLD_SIZE=30.
-  World     a class, created with the settings. Every method named in tools() is something
+  World     a class built on Grid, created with the settings. Every method named in tools() is something
             the agent can do, and returns the sentence the agent gets to read. It also has:
               setup()   what stays the same for the whole run
               state()   everything that can change; recorded after every action
               detail    extra facts about the last action for the viewer, or None
             and, if agents can die in this world:
               dead      True from the moment the agent dies
-              respawn() called when a new agent wakes up in the world the dead one left
+              respawn() called when a new agent wakes up in the world the last one left
   tools(world)
             exactly what the agent is told about each tool:
             name -> (description, parameters, required parameters)
