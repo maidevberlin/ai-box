@@ -60,6 +60,7 @@ def call(name, args):
     global actions
     actions += 1
     world.detail = None
+    alive = not getattr(world, "dead", False)
     if not isinstance(name, str) or name not in TOOLS:
         result = "There is no such tool."
     elif actions > MAX_ACTIONS:
@@ -68,7 +69,7 @@ def call(name, args):
         # start it again and the agent would find itself in a brand new world.)
         with open(os.path.join(RUN, "stopped"), "w") as f:
             f.write(f"The world stopped after {MAX_ACTIONS} actions")
-    elif getattr(world, "dead", False):
+    elif not alive:  # it asked for several things at once, and an earlier one killed it
         result = "You are dead."
     else:
         try:
@@ -78,7 +79,9 @@ def call(name, args):
     detail = {"detail": world.detail} if world.detail else {}  # for example the path of a throw
     log({"n": actions, "tool": name, "args": args, "result": result, **detail})
     save()
-    if getattr(world, "dead", False):  # tell run.py: it ends this agent and starts a new one
+    # Tell run.py, once: it ends this agent and starts a new one. (Not again for what the dead
+    # agent still tries: that second sign killed the next agent before it had done anything.)
+    if alive and getattr(world, "dead", False):
         open(os.path.join(RUN, "died"), "w").close()
     return result
 

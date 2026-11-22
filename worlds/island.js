@@ -26,6 +26,11 @@ export function create(box) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 1000);
   const controls = new OrbitControls(camera, renderer.domElement);
+  // The picture is only drawn while something moves: drawing it 60 times a second all the
+  // time kept the whole computer busy. Anything that changes it calls wake().
+  let awake = 0;
+  const wake = () => { awake = performance.now() + 1500; };   // long enough for a throw and a glide
+  controls.addEventListener('change', wake);
   controls.maxPolarAngle = Math.PI / 2 - 0.05;   // never look from below the ground
   scene.background = new THREE.Color(COLORS.sky);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.7));
@@ -97,6 +102,7 @@ export function create(box) {
   }
 
   function show(story, step, index, fresh) {
+    wake();
     const { size, north: northIs } = story.setup, state = step.state;
     if (builtFor !== story.id) { buildIsland(size); builtFor = story.id; }
     // Where the middle of a cell is. Older runs counted y from the south.
@@ -159,14 +165,17 @@ export function create(box) {
 
   // The drawing always fills its box, whatever size the window gives it.
   const resizing = new ResizeObserver(() => {
-    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(box.clientWidth, box.clientHeight);
     camera.aspect = box.clientWidth / box.clientHeight;
     camera.updateProjectionMatrix();
+    wake();
   });
   resizing.observe(box);
 
   renderer.setAnimationLoop(() => {
+    controls.update();   // turning or zooming wakes the picture up
+    if (performance.now() > awake) return;
     agent.position.lerp(target, 0.18);   // glide to the new place instead of jumping there
     if (flight) {                         // move the thrown block along its recorded path
       const last = flight.points.length - 1;
@@ -175,7 +184,6 @@ export function create(box) {
       flying.position.lerpVectors(flight.points[i], flight.points[i + 1], along - i);
       flying.visible = !(flight.lost && along >= last);   // one that fell into the water disappears
     }
-    controls.update();
     renderer.render(scene, camera);
   });
 

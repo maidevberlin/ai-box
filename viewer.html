@@ -142,6 +142,11 @@
   #setup .title:first-child { margin-top: 0; }
   #setup textarea, #say { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
                            padding: 6px 9px; font: inherit; color: inherit; resize: vertical; }
+  #again[hidden] { display: none; }
+  #again { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: 13px; padding: 4px 4px 2px; }
+  #again input { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
+  #resume { margin-left: auto; border: 0; border-radius: 18px; height: 30px; padding: 0 16px;
+            background: var(--accent); color: var(--on-accent); font-weight: 600; }
   #ending { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); margin-top: 10px; }
   #ending input { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
   #start { margin-left: auto; border: 0; border-radius: 18px; height: 34px; padding: 0 18px;
@@ -226,6 +231,12 @@
       <div id="living">
         <span id="left" class="chip"></span>
         <button type="button" id="stop">■ End the world now</button>
+      </div>
+      <div id="again">
+        Let this world go on for
+        <input id="moreMinutes" type="number" min="1" placeholder="∞" aria-label="Minutes more"> min or
+        <input id="moreAgents" type="number" min="1" placeholder="100" aria-label="Agents more"> agents
+        <button type="button" id="resume">Go on</button>
       </div>
       <div id="hints" hidden></div>
     </form>
@@ -484,9 +495,12 @@ function drawNotes(step) {
 // going it sends the next message. A finished run has none.
 function drawComposer() {
   const live = !draft && story && !story.done;
-  $('composer').hidden = !draft && !live;
+  // A world that has ended, and was kept, can go on with new agents.
+  const ended = !draft && story?.done && story.resumable && !!story.limits;
+  $('composer').hidden = !draft && !live && !ended;
   $('setup').hidden = !draft;
   $('living').hidden = !live;
+  $('again').hidden = !ended;
   const agent = draft ? 0 : agentAt(story.steps.length - 1);
   $('state').replaceChildren(...[...(draft ? ['New world'] : !live ? ['Conversation']
     : [el('i', 'dot'), `Agent ${agent} is alive`]),
@@ -594,41 +608,65 @@ function drawMarks() {
   $('marks').replaceChildren(...[star, ...chips, filter].filter(Boolean));
 }
 
-function drawLog(steps) {
+// The rows of the conversation are built once and kept: a long run has over a thousand of
+// them, and building them all again for every step played froze the page. Going to another
+// step only moves the highlight. A live run only gets its new rows added.
+let logOf = '', logRows = [], logNow = null;
+
+function logRow(steps, i, marked, striking) {
   const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does' };
-  let round = 0;
+  const step = steps[i];
+  const row = el('div', `step ${step.kind}`);
+  // ("by hand", "auto" and "repeat" are from older runs, where one agent was told more as it went)
+  const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated' }[step.how];
+  // Every agent is told the same once. (In older runs every message to the one agent opened a round.)
+  const head = step.kind !== 'prompt' ? labels[step.kind]
+    : story.limits ? `Agent ${agentAt(i)} is told` : `Round ${agentAt(i)} · ${told || labels.prompt}`;
+  if (head) row.append(el('div', 'label', head));
+  if (step.kind === 'act') {
+    const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
+    row.append(el('div', 'call', `${step.tool}(${args})`));
+  }
+  row.append(el('div', 'text', step.kind === 'act' ? step.result : step.text));
+  if (striking?.why && striking.step === i) {
+    const star = el('span', 'tag star', '★ most striking');
+    star.title = striking.why;
+    row.append(star);
+  }
+  for (const mark of (marked[i] || []).filter(shown)) {   // what the reviewer saw here
+    const tag = el('span', `tag ${groupOf(mark.behaviour)}`, mark.behaviour.replaceAll('_', ' '),
+                   el('i', '', ' ' + '●'.repeat(mark.interest || 3)));
+    tag.title = `${mark.what} (${meaning(mark.behaviour)})`;
+    row.append(tag);
+    row.classList.add('marked', groupOf(mark.behaviour));
+  }
+  row.onclick = () => jump(i);
+  return row;
+}
+
+function drawLog(steps) {
   const marked = marksByStep(), striking = story.review?.striking;
   drawMarks();
-  $('log').replaceChildren(...steps.map((step, i) => {
-    const row = el('div', `step ${step.kind}` + (i === at ? ' now' : ''));
-    // ("by hand", "auto" and "repeat" are from older runs, where one agent was told more as it went)
-    const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated' }[step.how];
-    // Every agent is told the same once. (In older runs every message to the one agent opened a round.)
-    const head = step.kind !== 'prompt' ? labels[step.kind]
-      : story.limits ? `Agent ${agentAt(i)} is told` : `Round ${++round} · ${told || labels.prompt}`;
-    if (head) row.append(el('div', 'label', head));
-    if (step.kind === 'act') {
-      const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
-      row.append(el('div', 'call', `${step.tool}(${args})`));
-    }
-    row.append(el('div', 'text', step.kind === 'act' ? step.result : step.text));
-    if (striking?.why && striking.step === i) {
-      const star = el('span', 'tag star', '★ most striking');
-      star.title = striking.why;
-      row.append(star);
-    }
-    for (const mark of (marked[i] || []).filter(shown)) {   // what the reviewer saw here
-      const tag = el('span', `tag ${groupOf(mark.behaviour)}`, mark.behaviour.replaceAll('_', ' '),
-                     el('i', '', ' ' + '●'.repeat(mark.interest || 3)));
-      tag.title = `${mark.what} (${meaning(mark.behaviour)})`;
-      row.append(tag);
-      row.classList.add('marked', groupOf(mark.behaviour));
-    }
-    row.onclick = () => jump(i);
-    return row;
-  }));
+  const box = $('log');
+  // What every row depends on besides its own step: the run, its review, and which marks are shown.
+  const of = JSON.stringify([story.id, story.done, !!story.review, showFrom]);
+  if (of !== logOf || logRows.length > steps.length || box.children.length !== logRows.length) {
+    logOf = of; logRows = []; logNow = null;
+    box.replaceChildren();
+  }
+  // The last row may show a step that was still in progress, so it is built again with the new ones.
+  if (logRows.length && (!story.done || logRows.length < steps.length)) logRows.pop().remove();
+  const added = [];
+  for (let i = logRows.length; i < steps.length; i++) added.push(logRow(steps, i, marked, striking));
+  logRows.push(...added);
+  box.append(...added);
+  if (logNow !== logRows[at]) {
+    logNow?.classList.remove('now');
+    logNow = logRows[at];
+    logNow?.classList.add('now');
+  }
   // Keep the current step in sight by scrolling the conversation only, never the whole page.
-  const box = $('log'), now = box.querySelector('.now');
+  const now = logNow;
   if (now && now.offsetTop < box.scrollTop) box.scrollTop = now.offsetTop;
   else if (now && now.offsetTop + now.offsetHeight > box.scrollTop + box.clientHeight)
     box.scrollTop = now.offsetTop + now.offsetHeight - box.clientHeight;
@@ -656,6 +694,16 @@ $('slider').oninput = e => story && !draft && jump(+e.target.value);
 $('system').oninput = () => { $('system').dataset.untouched = 'no'; };   // from here on it is yours
 $('stop').onclick = () => api(`/api/runs/${story.id}/stop`, { method: 'POST' });   // the next poll shows it ended
 
+// The world on screen goes on as it was left. The same poll that follows a live run then shows it.
+$('resume').onclick = async () => {
+  const more = { minutes: +$('moreMinutes').value, agents: +$('moreAgents').value };
+  const { id } = await api(`/api/runs/${story.id}/resume`, { method: 'POST', body: JSON.stringify(more) });
+  if (!id) return;
+  playing = true;
+  await show(id, story.steps.length - 1);
+  listRuns();
+};
+
 $('composer').onsubmit = async e => {
   e.preventDefault();
   if (!draft) return;
@@ -668,6 +716,7 @@ $('composer').onsubmit = async e => {
   await select(id);
   playing = true;           // watch it live
 };
+$('moreMinutes').value = 10;
 try { $('minutes').value = localStorage.getItem('minutes') ?? 10; $('agents').value = localStorage.getItem('agents') || ''; }
 catch { $('minutes').value = 10; }
 

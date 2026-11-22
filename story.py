@@ -161,6 +161,7 @@ def load(run):
         "done": os.path.exists(os.path.join(run, "done")),
         "system": read(run, "system.txt"),   # what every agent knows before it is told anything
         "limits": limits(run),               # when the world ends by itself
+        "resumable": os.path.exists(os.path.join(run, "world.pickle")),  # its world was kept, so it can go on
         "keep": old_keep(run),               # older runs: what kept their one agent going
         "steps": [],
     }

@@ -20,6 +20,10 @@ Optional settings, as environment variables:
   MINUTES   the world ends after this many minutes (default 10; 0 for no time limit)
   AGENTS    the world ends after this many agents (default 100)
   MODEL, AUTOCOMPACT, RUN_ID (folder name under runs/, default: timestamp)
+
+A world that has ended can go on: RESUME=1 with its RUN_ID. Its world is as it was left, and
+new agents live in it for another MINUTES or AGENTS, with the same world, model, SYSTEM and
+PROMPT as before. They are numbered on from the last one.
 """
 import json
 import os
@@ -32,8 +36,14 @@ import story
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(HERE, "runs", os.environ.get("RUN_ID") or time.strftime("%Y%m%d-%H%M%S"))
-PROMPT = os.environ.get("PROMPT") or "Live!"
-SYSTEM = os.environ.get("SYSTEM", story.SYSTEM)
+RESUME = bool(os.environ.get("RESUME")) and os.path.exists(os.path.join(RUN, "world.pickle"))
+if RESUME:  # as before: what its agents knew and were told, and which model they were
+    PROMPT, SYSTEM = (story.read(RUN, name).rstrip("\n") for name in ("prompt.txt", "system.txt"))
+    MODEL = "claude-" + story.model(RUN)
+else:
+    PROMPT = os.environ.get("PROMPT") or "Live!"
+    SYSTEM = os.environ.get("SYSTEM", story.SYSTEM)
+    MODEL = os.environ.get("MODEL", "opus")
 MINUTES = float(os.environ.get("MINUTES") or 10)
 AGENTS = int(os.environ.get("AGENTS") or 100)
 
@@ -49,18 +59,27 @@ def write(name, text=""):
 
 os.makedirs(RUN, exist_ok=True)
 os.makedirs("/tmp/w", exist_ok=True)  # a neutral working directory: the path tells the agent nothing
-write("prompt.txt", PROMPT + "\n")
-write("system.txt", SYSTEM + "\n")
+if RESUME:  # the world is not over any more
+    for name in ("done", "stopped", "died", "review.json"):
+        if os.path.exists(path(name)):
+            os.remove(path(name))
+else:
+    write("prompt.txt", PROMPT + "\n")
+    write("system.txt", SYSTEM + "\n")
 write("pid", str(os.getpid()))  # so the viewer can end this run
 # When this world ends by itself. The viewer shows what is left.
 ends = time.time() + MINUTES * 60 if MINUTES else None
 write("limits.json", json.dumps({"until": ends, "minutes": f"{MINUTES:g}" if MINUTES else None, "agents": AGENTS}))
 # Tell Claude Code how to start the world, and pass the world settings along.
-world_settings = {k: v for k, v in os.environ.items() if k.startswith("WORLD")}
-write("mcp.json", json.dumps({"mcpServers": {"world": {
-    "command": "python3", "args": [os.path.join(HERE, "mcp_server.py")],
-    "env": {**world_settings, "WORLD_LOG": path("protocol.jsonl")}}}}))
-transcript = open(path("transcript.jsonl"), "w")
+# (A world that goes on keeps the settings it was started with.)
+if not RESUME:
+    world_settings = {k: v for k, v in os.environ.items() if k.startswith("WORLD")}
+    write("mcp.json", json.dumps({"mcpServers": {"world": {
+        "command": "python3", "args": [os.path.join(HERE, "mcp_server.py")],
+        "env": {**world_settings, "WORLD_LOG": path("protocol.jsonl")}}}}))
+# How many agents have lived in this world already: each was told something once.
+BEFORE = sum('"type": "told"' in line for line in open(path("transcript.jsonl"), errors="replace")) if RESUME else 0
+transcript = open(path("transcript.jsonl"), "a" if RESUME else "w")
 
 
 def filled(text, n):
@@ -78,7 +97,7 @@ def new_agent(n):
     return subprocess.Popen(
         ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
          "--system-prompt", filled(SYSTEM, n),
-         "--model", os.environ.get("MODEL", "opus"),
+         "--model", MODEL,
          "--mcp-config", path("mcp.json"), "--strict-mcp-config",
          "--tools", "", "--allowedTools", "mcp__world",
          "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence",
@@ -97,6 +116,8 @@ def record(event):
 def live(n):
     """One agent's life, from waking up to being gone. Returns how it ended:
     "stopped" (it ended its turn), "drowned" (it died in its world), or nothing (the world is over)."""
+    if os.path.exists(path("died")):  # a late sign from the agent before: it is not about this one
+        os.remove(path("died"))
     agent = new_agent(n)
     told = filled(PROMPT, n)
     record({"type": "told", "text": told, "how": "first" if n == 1 else "new life"})
@@ -126,13 +147,13 @@ def live(n):
 
 signal.signal(signal.SIGTERM, lambda *_: sys.exit())  # the viewer's "End the world"
 try:
-    for n in range(1, AGENTS + 1):
+    for n in range(BEFORE + 1, BEFORE + AGENTS + 1):
         how = live(n)
         if not how:
             break
         record({"type": "died", "how": how})
     else:
-        write("stopped", f"The world ended with its last agent, number {AGENTS}")
+        write("stopped", f"The world ended with its last agent, number {BEFORE + AGENTS}")
 except KeyboardInterrupt:
     pass
 finally:

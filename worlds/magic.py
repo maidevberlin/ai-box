@@ -50,6 +50,9 @@ the agent carries one thing, notes are flat and are read by looking at them, sig
 plus one per level of height, walking into the water means drowning, and a new agent with an
 empty memory then wakes up in the middle of the island as it was left.
 
+Looking around shows the colours of every block in a stack, by level, and also of the
+stack the agent stands on. So a blue block floating under other blocks can be seen.
+
 Land is seen from twice as far as a stack. The land across the water comes into view from
 the east shore as soon as the agent stands on one block there. Nothing tells it to go there.
 
@@ -208,13 +211,30 @@ class World(Grid):
     def occupied(self):
         return {place[:2] for place in self.blocks} | {(note[0], note[1]) for note in self.notes}
 
+    def pattern(self, cell):
+        """The colours of the blocks in a cell, by level, lowest first."""
+        return ", ".join(f"{z + 1} {colour}" if z >= 0 else f"{colour} floating in the water"
+                         for z, colour in self.column(cell))
+
+    def single(self, cell):
+        """Whether a cell holds just one block, lying on the ground or in the water: its colour says it all."""
+        column = self.column(cell)
+        return len(column) == 1 and column[0][0] <= 0
+
     def describe(self, cell):
-        return f"{self.height(cell)}" + (f", {self.top(cell)} on top" if self.top(cell) else "")
+        """Looking around shows the colours of a whole stack, not only its top."""
+        if not self.column(cell):
+            return f"{self.height(cell)}"
+        if self.single(cell):
+            return f"{self.height(cell)} ({self.pattern(cell).removeprefix('1 ')})"
+        return f"{self.height(cell)} (by level: {self.pattern(cell)})"
 
     def footing(self):
         h = self.height(self.pos)
-        return (f"standing {h} high on a {self.top(self.pos)} block" if h else "on the ground" if self.land(self.pos)
-                else f"on a {self.top(self.pos)} block floating in the water")
+        if not h:
+            return "on the ground" if self.land(self.pos) else f"on a {self.top(self.pos)} block floating in the water"
+        under = "" if self.single(self.pos) else f" (blocks under you, by level: {self.pattern(self.pos)})"
+        return f"standing {h} high on a {self.top(self.pos)} block{under}"
 
     # --- the tricks ----------------------------------------------------------
 
@@ -248,8 +268,7 @@ class World(Grid):
             return f"There is nothing at ({cell[0]}, {cell[1]}), only {under}."
         said = f"At ({cell[0]}, {cell[1]}), {self.height(cell)} high, over {under}."
         if column:
-            said += " Blocks there, by level: " + ", ".join(
-                f"{z + 1} {colour}" if z >= 0 else f"{colour} floating in the water" for z, colour in column) + "."
+            said += f" Blocks there, by level: {self.pattern(cell)}."
         if notes:
             said += f" {len(notes)} note(s) lie there."
         return said + (f' The note on top says "{self.note_on(cell)}"' if self.note_on(cell) else "")

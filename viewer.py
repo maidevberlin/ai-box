@@ -92,6 +92,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.start(wish, text, minutes, agents)
         run_id, _, action = self.path.removeprefix("/api/runs/").partition("/")
         run = os.path.join(story.RUNS, run_id)
+        if action == "resume":
+            return self.resume(run_id, run, minutes, agents)
         # Only a run that is still going: the number in an old pid file may belong to another program by now.
         if (action != "stop" or not RUN_ID.match(run_id) or not os.path.isdir(run)
                 or os.path.exists(os.path.join(run, "done"))):
@@ -123,6 +125,19 @@ class Handler(BaseHTTPRequestHandler):
         subprocess.Popen(
             [os.path.join(HERE, "run.py")], env={**env, "RUN_ID": run_id},
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.send({"id": run_id})
+
+    def resume(self, run_id, run, minutes, agents):
+        """A world that has ended goes on, as it was left, for some more time or agents."""
+        if not (RUN_ID.match(run_id) and os.path.exists(os.path.join(run, "done"))
+                and os.path.exists(os.path.join(run, "world.pickle"))):
+            return self.send({"error": "not a world that has ended"}, status=409)
+        os.remove(os.path.join(run, "done"))  # at once, so that a second click does not start it twice
+        env = {**os.environ, "RESUME": "1", "RUN_ID": run_id, "MINUTES": str(minutes)}
+        if agents:
+            env["AGENTS"] = str(agents)
+        subprocess.Popen([os.path.join(HERE, "run.py")], env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.send({"id": run_id})
 
     def log_message(self, *args):  # keep the terminal quiet
