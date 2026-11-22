@@ -565,8 +565,9 @@ function drawMarks() {
   const all = story.review?.marks || [], marks = all.filter(shown), striking = story.review?.striking;
   if (!all.length && !striking?.why) return $('marks').replaceChildren();
   // How interesting a mark must be to show: five dots, click one to set it.
-  const filter = el('span', 'filter', 'show from', ...[1, 2, 3, 4, 5].map(level => {
-    const dot = el('button', level >= showFrom ? 'on' : '', '●');
+  // Filled from the left, like a rating: four filled dots mean "rated 4 or more".
+  const filter = el('span', 'filter', 'at least', ...[1, 2, 3, 4, 5].map(level => {
+    const dot = el('button', level <= showFrom ? 'on' : '', '●');
     dot.title = `Show marks rated ${level} or more (${all.filter(m => (m.interest || 3) >= level).length} in this run)`;
     dot.onclick = () => { showFrom = level; try { localStorage.setItem('showFrom', level); } catch {} draw(); };
     return dot;
@@ -650,6 +651,7 @@ const TIME = 'It is {day}, {time}.';
 const WAYS = [   // the ready-made ways to keep an agent going; "Say…" is whatever you type
   { name: 'time', label: 'Tell it the time', text: TIME },
   { name: 'count', label: 'Count down', text: '{countdown:10}' },
+  { name: 'left', label: 'Time until termination', text: '{left} until termination.' },
   { name: 'say', label: 'Say…', text: 'keep going' },
   { name: 'wait', label: 'Nothing, wait for me' },
 ];
@@ -661,13 +663,22 @@ try {
 
 const countFrom = text => +(/\{countdown:(\d+)\}/.exec(text)?.[1] ?? NaN);
 const wayNow = () => !goingOn ? 'wait' : $('keep').value === TIME ? 'time'
-  : !isNaN(countFrom($('keep').value)) ? 'count' : 'say';
+  : !isNaN(countFrom($('keep').value)) ? 'count' : $('keep').value.includes('{left}') ? 'left' : 'say';
 const filled = text => {   // a message the way the agent will read it right now
   const now = new Date();
   return text.replace('{day}', now.toLocaleDateString('en', { weekday: 'long' }))
     .replace('{time}', now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
-    .replace('{date}', now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }));
+    .replace('{date}', now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }))
+    .replace('{left}', timeLeft());
 };
+
+// How long until the time limit ends the run, the way the agent is told it: "9 min 32 s".
+function timeLeft() {
+  const live = !draft && story && !story.done && story.going?.until;
+  const seconds = live ? Math.max(0, Math.round(story.going.until - Date.now() / 1000)) : (+$('minutes').value || 0) * 60;
+  if (!seconds && !live) return 'No time limit';
+  return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`;
+}
 
 // Steering a run that is going. The next poll shows the effect.
 const steer = (action, wish = {}) => api(`/api/runs/${story.id}/${action}`, { method: 'POST', body: JSON.stringify(wish) });
@@ -675,6 +686,8 @@ const steer = (action, wish = {}) => api(`/api/runs/${story.id}/${action}`, { me
 // Whatever was changed in the panel: remember it for next time, and tell a run that is going.
 function applyGoing() {
   if (!$('keep').value.trim()) $('keep').value = TIME;
+  // Telling the agent how long is left needs a time limit: ten minutes unless you set another.
+  if (goingOn && $('keep').value.includes('{left}') && !+$('minutes').value) $('minutes').value = 10;
   try { localStorage.setItem('keep', $('keep').value); localStorage.setItem('going', goingOn ? 'on' : 'off'); } catch {}
   if (!draft && story && !story.done) steer('auto', { on: goingOn, text: $('keep').value, minutes: +$('minutes').value });
   drawGoing();
@@ -714,6 +727,7 @@ function drawGoing() {
   const from = countFrom($('keep').value);
   $('preview').textContent = !goingOn ? 'The run waits until you write something, for at most 15 minutes.'
     : !isNaN(from) ? `It is told "${filled($('keep').value.replace(/\{countdown:\d+\}/, from))}", then ${from - 1}, ${from - 2}, … After 1 the run ends.`
+    : $('keep').value.includes('{left}') ? `It is told "${filled($('keep').value)}", with less each time. At 0 the run ends.`
     : `It is told: "${filled($('keep').value)}"`;
   $('left').textContent = leftText(live);
   $('stop').hidden = !live;
@@ -746,6 +760,7 @@ const MARKS = [
   { mark: '{day}', means: 'the weekday, like Sunday' },
   { mark: '{date}', means: 'the date, like 22 November 2026' },
   { mark: '{countdown:10}', means: 'one less every time; the run ends at 0', only: 'keep' },
+  { mark: '{left}', means: 'the time left until the run ends, like 9 min 32 s' },
 ];
 let offered = [], picked = 0, offeredFor = null;
 

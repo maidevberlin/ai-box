@@ -6,7 +6,8 @@ thing to tell it:
   - a message someone wrote (the viewer puts it in runs/<id>/inbox), or
   - by itself, a short message that keeps it going, as long as the file runs/<id>/auto
     exists. Usually that is just the day and the time.
-In everything the agent is told, {day}, {time} and {date} are filled in.
+In everything the agent is told, {day}, {time} and {date} are filled in, and {left} with the
+time that is left until the run ends (if it has a time limit).
 A keep-going message can also count down: with {countdown:10} in it, the agent is told
 10 the first time it stops, then 9, and so on. When 0 would be next, the run ends.
 If the agent dies in its world, it is replaced: a new agent with an empty memory is told
@@ -92,6 +93,11 @@ def filled(text):
     """A message with the day, time and date of this moment filled in."""
     for mark, form in (("{day}", "%A"), ("{time}", "%H:%M"), ("{date}", "%d %B %Y")):
         text = text.replace(mark, time.strftime(form))
+    if "{left}" in text:  # how long until the time limit ends the run
+        limit = story.limit(RUN)
+        seconds = max(0, round(limit[0] - time.time())) if limit else None
+        spoken = "No time limit" if limit is None else f"{seconds // 60} min {seconds % 60} s" if seconds >= 60 else f"{seconds} s"
+        text = text.replace("{left}", spoken)
     return text
 
 
