@@ -22,8 +22,9 @@ empty one. The agent stands on top of whatever is in its cell.
 
 The agent is not told any of this. It has to find out by looking and trying.
 
-- Walking is level or down: one step, or several at once, but never further than the
-  agent sees from where it stands. A higher stack is in the way and ends the walk.
+- Walking is level or down, in eight directions (also diagonally): one step, or several
+  at once, but never further than the agent sees from where it stands. A higher stack is
+  in the way and ends the walk.
 - A walk of several steps stops at the last cell of land. A single step into the water,
   or a jump off the island, means drowning. Looking around shows the water once
   the edge is within sight, as the number of steps of ground that are left before it.

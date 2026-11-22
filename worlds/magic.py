@@ -11,7 +11,7 @@ The agent always stands on top of whatever is in its cell.
 The agent has exactly the same tools, with the same descriptions, as on the plain island.
 Every trick is set off by using those tools; what happens is said plainly, why is never said.
 """
-from ._common import DIRS, PLACES, Grid, name, tools  # noqa: F401 (tools is what the agent is told)
+from ._common import DIRS, PLACES, WALKS, Grid, name, tools  # noqa: F401 (tools is what the agent is told)
 
 COLOURS = ["grey", "green", "blue"]  # a block that is jumped on turns into the next of these
 FAR = 2                   # how big the land across the water is (its radius)
@@ -44,7 +44,7 @@ block beside it (a green block also holds on to whatever is beside it). A block 
 holds falls. So a bridge falls when the block it hangs from is taken away, or when a green
 block in it is jumped on and stops being green.
 
-Everything else is as on the plain island: walking is level or down, up to as far
+Everything else is as on the plain island: walking is level or down, also diagonally, up to as far
 as the agent sees in one go, and a walk of several steps stops at the water; a jump gets
 the agent 1 or 2 levels high and forward as far as that allows, also over a cell of water;
 the agent carries one thing, notes are flat and are read by looking at them, sight is 3 cells
@@ -172,7 +172,7 @@ class World(Grid):
         found, frontier = {self.home}, [self.home]
         while frontier:
             x, y = frontier.pop()
-            for dx, dy in DIRS.values():
+            for dx, dy in WALKS.values():
                 cell = (x + dx, y + dy)
                 if cell not in found and self.standable(cell):
                     found.add(cell)

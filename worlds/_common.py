@@ -26,6 +26,8 @@ import time
 
 # North makes y bigger and east makes x bigger, as on a map.
 DIRS = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
+# Walking also goes diagonally. (Looking at, taking, putting and jumping stay with the four.)
+WALKS = {**DIRS, **{f"{ns}-{ew}": (DIRS[ew][0], DIRS[ns][1]) for ns in ("north", "south") for ew in ("east", "west")}}
 PLACES = ["here", *DIRS]  # where take and put can reach
 SIGHTS = ["around", "hand", *PLACES]  # what look can be pointed at
 REACH = 2                 # put reaches stacks at most this much higher or lower than your feet
@@ -80,7 +82,7 @@ class Grid:
 
     def next_to(self, place):
         """The cell that 'here', 'north', ... means from where the agent stands."""
-        dx, dy = DIRS.get(place, (0, 0))
+        dx, dy = WALKS.get(place, (0, 0))
         return (self.pos[0] + dx, self.pos[1] + dy)
 
     def footing(self):
@@ -184,8 +186,8 @@ class Grid:
         """Some steps, level or down. A higher stack is in the way: that needs a jump.
         (Never further than the agent sees: agents that could walk any distance walked blind
         into the water.)"""
-        if direction not in DIRS:
-            return "Unknown direction. Use north, south, east or west."
+        if direction not in WALKS:
+            return f"Unknown direction. Use {', '.join(WALKS)}."
         far = self.sight()
         if type(steps) is not int or steps < 1:
             return "Steps must be a whole number, 1 or more."
@@ -294,7 +296,7 @@ def tools(world):
         # "wait": ("Wait.", {"seconds": {"type": "integer", "minimum": 1}}, ["seconds"]),
         "note": ("Write a note.", {"text": {"type": "string"}}, ["text"]),
         "walk": ("Walk in a direction: one step, or more, up to as far as you see.",
-                 {"direction": direction, "steps": {"type": "integer", "minimum": 1}}, ["direction"]),
+                 {"direction": {"type": "string", "enum": list(WALKS)}, "steps": {"type": "integer", "minimum": 1}}, ["direction"]),
         "jump": ("Jump in a direction. More strength gets you further and higher.",
                  {"direction": direction,
                   "strength": {"type": "integer", "minimum": 1, "maximum": world.max_jump}},
