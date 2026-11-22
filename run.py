@@ -14,7 +14,7 @@ In SYSTEM and PROMPT these are filled in for every agent:
 Optional settings, as environment variables:
   WORLD     which world: a file name in worlds/ (default: island)
   WORLD_... that world's own settings, for the island WORLD_SIZE, WORLD_BLOCKS, WORLD_SEED, ...
-  WORLD_MAX_ACTIONS  the world stops after this many actions (default 1000)
+  WORLD_MAX_ACTIONS  the world stops after this many actions (default 5000)
   PROMPT    what every agent is told (default: "Live!")
   SYSTEM    what every agent knows before that (default: see below; "" for nothing)
   MINUTES   the world ends after this many minutes (default 10; 0 for no time limit)

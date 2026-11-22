@@ -22,7 +22,7 @@ NAME = os.environ.get("WORLD", "island")
 LOG = os.path.abspath(os.environ.get("WORLD_LOG", "protocol.jsonl"))
 RUN = os.path.dirname(LOG)
 SAVED = os.path.join(RUN, "world.pickle")  # the world and the number of actions so far
-MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 1000))  # safety stop: then the world and the run end
+MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 5000))  # safety stop: then the world and the run end
 
 
 def setting(key, usual):
