@@ -232,11 +232,14 @@ def load(run):
                     waiting[place] = lives[place].pop(0) if lives.get(place) else []
                 if not waiting[place] and len(lives.get(place, [])) > born_later(events, event, place):
                     waiting[place] = lives[place].pop(0)  # the world was started again within this life
-                if not waiting[place]:  # called, but not finished yet (or never done)
+                asked = part["name"].removeprefix("mcp__world__")
+                # What the agent asked for is the next thing the world did, unless the world never
+                # did it: it failed on the way, or the agent was ended first.
+                lost = waiting[place] and (waiting[place][0]["tool"], waiting[place][0]["args"]) != (asked, part["input"])
+                if not waiting[place] or lost:  # called, but not finished yet (or never done)
                     story["steps"].append({
-                        "kind": "act", "tool": part["name"].removeprefix("mcp__world__"),
-                        "args": part["input"], "pending": True, **mine, **now,
-                        "result": "… stopped" if story["done"] else "… in progress"})
+                        "kind": "act", "tool": asked, "args": part["input"], "pending": True, **mine, **now,
+                        "result": "The world did not answer." if lost else "… stopped" if story["done"] else "… in progress"})
                     continue
                 action = waiting[place].pop(0)
                 now = after(action)

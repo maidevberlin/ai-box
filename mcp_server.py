@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import time
+import traceback
 
 import kept
 import worlds
@@ -98,6 +99,9 @@ def call(name, args):
                 result = getattr(world, name)(**args)
             except TypeError:  # wrong or missing arguments
                 result = "That did not work. Check the arguments."
+            except Exception:  # a mistake in the world's code: say so in errors.txt, and keep the world going
+                traceback.print_exc()
+                result = "That did not work."
             if hasattr(world, "lose_footing"):
                 world.lose_footing()
             if hasattr(world, "noticed") and not world.dead:
@@ -111,6 +115,10 @@ def call(name, args):
                 f.write(json.dumps({"time": time.strftime("%H:%M:%S"), "by": AGENT, **made}) + "\n")
         world.calls = []
     return result
+
+
+class UnknownMethod(Exception):
+    """Something was asked of this server that it does not offer."""
 
 
 def handle(method, params):
@@ -128,7 +136,7 @@ def handle(method, params):
         return {"content": [{"type": "text", "text": text}]}
     if method == "ping":
         return {}
-    raise LookupError(method)
+    raise UnknownMethod(method)
 
 
 # A new agent wakes up in its place: in a new world, or in the world as it was left.
@@ -161,7 +169,7 @@ for line in sys.stdin:
         continue
     try:
         reply = {"result": handle(message.get("method"), message.get("params") or {})}
-    except LookupError:
+    except UnknownMethod:
         reply = {"error": {"code": -32601, "message": "Method not found"}}
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], **reply}) + "\n")
     sys.stdout.flush()

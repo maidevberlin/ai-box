@@ -226,9 +226,17 @@ class World(Grid):
         return {place[:2] for place in self.blocks} | {(note[0], note[1]) for note in self.notes}
 
     def pattern(self, cell):
-        """The colours of the blocks in a cell, by level, lowest first."""
-        return ", ".join(f"{z + 1} {colour}" if z >= 0 else f"{colour} floating in the water"
-                         for z, colour in self.column(cell))
+        """The colours of the blocks in a cell, by level, lowest first. Blocks of one colour
+        lying directly on each other are said together: "1-4 green, 5-12 blue"."""
+        runs = []  # [first level, last level, colour]
+        for z, colour in self.column(cell):
+            if runs and runs[-1][2] == colour and runs[-1][1] == z - 1 and runs[-1][0] >= 0:
+                runs[-1][1] = z
+            else:
+                runs.append([z, z, colour])
+        return ", ".join(f"{colour} floating in the water" if first < 0 else
+                         f"{first + 1} {colour}" if first == last else f"{first + 1}-{last + 1} {colour}"
+                         for first, last, colour in runs)
 
     def single(self, cell):
         """Whether a cell holds just one block, lying on the ground or in the water: its colour says it all."""

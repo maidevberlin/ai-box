@@ -141,24 +141,84 @@
      repeats the prompt. */
   #composer { border-top: 1px solid var(--line); padding: 10px 4px 2px; }
   .field { position: relative; }
-  /* The setup of a world: what its agents know and are told, and when it ends. */
-  #setup { background: var(--soft); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
-  #setup .title { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 4px; }
-  #setup .title:first-child { margin-top: 0; }
-  #setup textarea, #say { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
-                           padding: 6px 9px; font: inherit; color: inherit; resize: vertical; }
   #again[hidden] { display: none; }
   #again { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: 13px; padding: 4px 4px 2px; }
   #again input { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
   #resume { margin-left: auto; border: 0; border-radius: 18px; height: 30px; padding: 0 16px;
             background: var(--accent); color: var(--on-accent); font-weight: 600; }
-  #ending { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); margin-top: 10px; }
-  #ending .break { flex-basis: 100%; height: 0; }
-  #ending input { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
-  #start { margin-left: auto; border: 0; border-radius: 18px; height: 34px; padding: 0 18px;
-           background: var(--accent); color: var(--on-accent); font-weight: 600; }
+
+  /* ---- setting up a new world: takes the place of the world and the conversation ---- */
+  #stage[hidden], #side[hidden], #create[hidden] { display: none; }
+  #create { grid-column: 2 / 4; display: flex; flex-direction: column; overflow: hidden; }
+  #create > header { padding: 20px 26px 14px; border-bottom: 1px solid var(--line); }
+  #create h1 { margin: 0; font-size: 22px; }
+  #create > header p { margin: 4px 0 0; color: var(--muted); }
+  #createBody { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+                gap: 22px; padding: 20px 26px; align-items: start; }
+  #create .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .group { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--panel); }
+  .group h2 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+  .group h2 b { width: 22px; height: 22px; border-radius: 50%; background: var(--tint); color: var(--accent);
+                font-size: 12px; display: grid; place-items: center; }
+  .group small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+  .group .title { display: block; font-weight: 600; margin-top: 14px; }
+  .group .title:first-of-type { margin-top: 0; }
+  .group textarea { width: 100%; margin-top: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+                    padding: 9px 11px; font: inherit; color: inherit; resize: vertical; }
+  .group textarea:focus, .group input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; padding-top: 0; }
+  .row:last-child { padding-bottom: 0; }
+  .row[hidden] { display: none; }
+  .row .what { flex: 1; min-width: 0; }
+  .row .what label { font-weight: 600; }
+  .row input[type=number] { width: 76px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+                            padding: 7px 10px; text-align: center; font-variant-numeric: tabular-nums; }
+  .segments { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .segments button { border: 0; background: none; padding: 7px 13px; font-weight: 600; color: var(--muted); }
+  .segments button + button { border-left: 1px solid var(--line); }
+  .segments button.on { background: var(--accent); color: var(--on-accent); }
+  .switch { position: relative; width: 44px; height: 26px; flex: none; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .switch i { position: absolute; inset: 0; border-radius: 99px; background: var(--line); transition: background .15s; }
+  .switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%;
+                     background: var(--panel); transition: transform .15s; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+  .switch input:checked + i { background: var(--accent); }
+  .switch input:checked + i::after { transform: translateX(18px); }
+  .switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The worlds to choose from: each a card with a picture of the world as it starts. */
+  #worldCards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .world { text-align: left; padding: 0; border: 2px solid var(--line); border-radius: 14px; overflow: hidden;
+           background: var(--bg); display: flex; flex-direction: column; }
+  .world:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .world.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--tint); }
+  .world .picture { position: relative; aspect-ratio: 16 / 10; background: var(--soft); }
+  .world .picture canvas { position: absolute; inset: 0; }
+  .world .picked { position: absolute; right: 10px; top: 10px; z-index: 1; width: 24px; height: 24px; border-radius: 50%;
+                   background: var(--accent); color: var(--on-accent); display: none; place-items: center; font-size: 13px; font-weight: 700; }
+  .world.on .picked { display: grid; }
+  .world .words { padding: 12px 14px 14px; }
+  .world .words b { font-size: 15px; }
+  .world .words p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+  #worldMore { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  #worldMore summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  #worldAbout { margin-top: 10px; }
+  #worldAbout h2 { display: none; }
+  #worldAbout h3 { margin: 18px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #worldAbout p, #worldAbout ul { margin: 0 0 10px; }
+  #worldAbout ul { padding-left: 20px; }
+  #worldAbout li { margin-bottom: 4px; }
+  #worldAbout dt { font-family: ui-monospace, monospace; font-size: 13px; margin-top: 10px; }
+  #worldAbout dd { margin: 2px 0 0 0; }
+  #worldAbout .quiet { color: var(--muted); font-size: 12.5px; }
+  #worldAbout .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  #create > footer { display: flex; align-items: center; gap: 16px; padding: 14px 26px; border-top: 1px solid var(--line);
+                     background: var(--soft); }
+  #createSummary { flex: 1; color: var(--muted); font-size: 13px; }
+  #start { border: 0; border-radius: 12px; padding: 11px 26px; background: var(--accent); color: var(--on-accent);
+           font-weight: 700; font-size: 15px; }
   /* While a world is going: what is left of it, and the button that ends it. */
-  #living[hidden], #setup[hidden] { display: none; }
+  #living[hidden] { display: none; }
   #living { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 4px 2px; font-size: 13px; }
   #left { background: var(--soft); color: var(--text); font-variant-numeric: tabular-nums; }
   #stop { margin-left: auto; border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
@@ -176,6 +236,8 @@
     .run { min-width: 200px; }
     #view { min-height: 60vw; }
     #side { max-height: 80vh; }
+    #create { grid-column: auto; overflow: visible; }
+    #createBody { grid-template-columns: minmax(0, 1fr); overflow: visible; padding: 16px; }
   }
 </style>
 <!-- Worlds drawn in 3D use three.js, loaded from the internet. -->
@@ -222,25 +284,6 @@
     <div id="log"></div>
     <!-- Nobody talks to an agent while it lives. A world is set up once, here, and then runs. -->
     <form id="composer" hidden>
-      <section id="setup">
-        <label class="title" for="system">What every agent knows</label>
-        <div class="field"><textarea id="system" rows="3" autocomplete="off"></textarea></div>
-        <label class="title" for="say">What every agent is told</label>
-        <div class="field"><textarea id="say" rows="2" autocomplete="off"></textarea></div>
-        <label class="title" for="note">A note that lies in the world at the start (optional)</label>
-        <div class="field"><textarea id="note" rows="2" autocomplete="off" placeholder="Nothing: the world starts without a note."></textarea></div>
-        <div id="ending">
-          The world ends after
-          <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the world ends"> min or
-          <input id="agents" type="number" min="1" placeholder="100" aria-label="Agents until the world ends"> agents.
-          <i class="break"></i>
-          <input id="together" type="number" min="1" max="4" value="1" aria-label="Agents alive at the start"> alive at the start.
-          <i class="break"></i>
-          Friends can be called, up to
-          <input id="room" type="number" min="1" max="4" placeholder="–" aria-label="Agents alive at most, when friends are called"> alive
-          <button id="start">Start</button>
-        </div>
-      </section>
       <div id="living">
         <span id="left" class="chip"></span>
         <button type="button" id="stop">■ End the world now</button>
@@ -254,6 +297,77 @@
       <div id="hints" hidden></div>
     </form>
   </section>
+
+  <!-- Setting up a new world: takes the place of the world and the conversation. -->
+  <form class="panel" id="create" hidden>
+    <header>
+      <h1>New world</h1>
+      <p>Pick a world, decide who lives in it and what they are told. Then start it and watch.</p>
+    </header>
+    <div id="createBody">
+      <div class="col">
+        <section class="group">
+          <h2><b>1</b> The world</h2>
+          <div id="worldCards"></div>
+          <details id="worldMore" open>
+            <summary>How this world works, and what the agents can do in it</summary>
+            <div id="worldAbout"></div>
+          </details>
+        </section>
+      </div>
+      <div class="col">
+        <section class="group">
+          <h2><b>2</b> The agents</h2>
+          <div class="row">
+            <div class="what"><label>Model</label><small>Which Claude lives in the world.</small></div>
+            <div id="modelPick" class="segments"></div>
+          </div>
+          <div class="row">
+            <div class="what"><label for="together">Alive at the start</label>
+              <small>They live side by side and can see each other. When one is gone, a new one wakes up in its place.</small></div>
+            <input id="together" type="number" min="1" max="4" value="1">
+          </div>
+          <div class="row">
+            <div class="what"><label for="friends">Friends can be called</label>
+              <small>A note that begins with “friend”, thrown into the water, wakes a new agent next to the caller.
+                If the world is full, the one alive longest is gone. The agents are not told this.</small></div>
+            <label class="switch"><input id="friends" type="checkbox"><i></i></label>
+          </div>
+          <div class="row" id="roomRow">
+            <div class="what"><label for="room">Room in the world</label><small>How many can be alive at once when friends are called.</small></div>
+            <input id="room" type="number" min="1" max="4" value="2">
+          </div>
+        </section>
+        <section class="group">
+          <h2><b>3</b> What they know</h2>
+          <label class="title" for="system">What every agent knows</label>
+          <small>Its system prompt: there before anything else. Leave it empty for nothing.</small>
+          <div class="field"><textarea id="system" rows="3" autocomplete="off"></textarea></div>
+          <label class="title" for="say">What every agent is told</label>
+          <small>The one message each agent gets when it wakes up. Type { for the time, the agent’s number and more.</small>
+          <div class="field"><textarea id="say" rows="3" autocomplete="off" placeholder="Live!"></textarea></div>
+          <label class="title" for="note">A note in the world</label>
+          <small>Lies where the agents wake up, from the start. They can read it, move it or throw it away.</small>
+          <div class="field"><textarea id="note" rows="3" autocomplete="off" placeholder="No note: the world starts without one."></textarea></div>
+        </section>
+        <section class="group">
+          <h2><b>4</b> The end</h2>
+          <div class="row">
+            <div class="what"><label for="minutes">Minutes</label><small>The world ends when its time is up. Empty: no time limit.</small></div>
+            <input id="minutes" type="number" min="1" placeholder="∞">
+          </div>
+          <div class="row">
+            <div class="what"><label for="agents">Agents</label><small>… or when this many agents have lived in it.</small></div>
+            <input id="agents" type="number" min="1" placeholder="100">
+          </div>
+        </section>
+      </div>
+    </div>
+    <footer>
+      <span id="createSummary"></span>
+      <button id="start">Start the world</button>
+    </footer>
+  </form>
 
 <script type="module">
 // This page knows nothing about any particular world. What a world is comes from the
@@ -311,8 +425,10 @@ const lasted = s => s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` :
 async function listRuns() {
   const answer = await api('/api/runs');
   ({ worlds, models: agents, prompt: lastPrompt, system: lastSystem, behaviours } = answer);
-  chosen.world ||= worlds[0]?.name;
-  chosen.agent ||= agents[0];
+  // A new world starts out like the newest run: the same world, the same kind of agent.
+  const newest = answer.runs[0];
+  chosen.world ||= worlds.find(world => world.name === newest?.world)?.name || worlds[0]?.name;
+  chosen.agent ||= agents.find(name => newest?.model?.startsWith(name)) || agents[0];
   const cards = answer.runs.map(({ id, review, model, world, done, seconds }) => {
     const name = el('div', 'name', !done && el('i', 'dot'),
                     el('span', '', review ? review.name : done ? 'Not reviewed yet' : 'Running'));
@@ -427,30 +543,22 @@ function aboutWorld(info, setup) {
 
 let aboutShows = null;   // what the panel was built for, so it is not rebuilt (and scrolled up) on every update
 function drawAbout() {
-  const name = draft ? chosen.world : story?.world;
-  $('about').hidden = !(draft || aboutOpen);
-  const key = name + (draft ? '' : story?.id);
+  const name = story?.world;
+  $('about').hidden = !aboutOpen;
+  const key = name + story?.id;
   if ($('about').hidden || aboutShows === key) return;
   aboutShows = key;
-  $('about').replaceChildren(aboutWorld(worldInfo(name), draft ? null : story.setup));
+  $('about').replaceChildren(aboutWorld(worldInfo(name), story.setup));
   $('about').scrollTop = 0;
 }
 
 // ---------------------------------------------------------------- page
 
 function draw(newRun = false) {
+  drawCreate();
+  if (draft || !story) return;
   drawComposer();
   drawAbout();
-  if (draft) {
-    $('title').replaceChildren('New run');
-    $('summary').textContent = 'A fresh world with a new agent in it.';
-    $('status').replaceChildren();
-    $('usage').replaceChildren();
-    $('count').textContent = '';
-    $('marks').replaceChildren();
-    $('log').replaceChildren(choices());
-    return;
-  }
   const steps = story.steps, step = steps[at], r = story.review, info = worldInfo(story.world);
   const about = el('button', 'chip', aboutOpen ? 'Back to the run' : `About this world: ${info?.title || story.world || '…'}`);
   about.onclick = () => { aboutOpen = !aboutOpen; draw(); };
@@ -510,8 +618,7 @@ function drawComposer() {
   const live = !draft && story && !story.done;
   // A world that has ended, and was kept, can go on with new agents.
   const ended = !draft && story?.done && story.resumable && !!story.limits;
-  $('composer').hidden = !draft && !live && !ended;
-  $('setup').hidden = !draft;
+  $('composer').hidden = !live && !ended;
   $('living').hidden = !live;
   $('again').hidden = !ended;
   const here = draft ? [] : alive();
@@ -522,9 +629,6 @@ function drawComposer() {
   if (live) $('left').textContent = leftText();
   // What every agent of the run on screen knows, above its conversation.
   $('knows').replaceChildren(...(!draft && story?.system ? [el('b', '', 'Every agent knows: '), story.system] : []));
-  // A new world suggests what the last one's agents knew and were told.
-  if (draft && !$('say').value && document.activeElement !== $('say')) $('say').value = lastPrompt || '';
-  if (draft && $('system').dataset.untouched !== 'no' && document.activeElement !== $('system')) $('system').value = lastSystem;
 }
 
 // How many times an agent has been told something up to a step. (Older runs: the round.)
@@ -563,18 +667,58 @@ function memoryAt() {
   return steps.slice(at).find(step => step.memory)?.memory || 0;
 }
 
-// An empty conversation has room for the two choices a new run needs: which world, which agent.
-function choices() {
-  const pick = (kind, options) => el('div', 'choice', ...options.map(([name, label]) => {
-    const button = el('button', name === chosen[kind] ? 'on' : '', label);
-    button.onclick = () => { chosen[kind] = name; draw(); $('say').focus(); };
+// ---------------------------------------------------------------- a new world
+// Setting up a new world takes the place of the world and the conversation: which world
+// (each shown as it starts), who lives in it, what they know and are told, and when it ends.
+const previews = {};   // world name -> its picture on the card, made once
+
+function worldCard(world) {
+  const picture = el('div', 'picture', el('span', 'picked', '✓'));
+  const card = el('button', 'world', picture,
+    el('div', 'words', el('b', '', world.title), el('p', '', world.about.trim().split(/\n\s*\n/)[0].replace(/\s+/g, ' '))));
+  card.type = 'button';
+  card.onclick = () => { chosen.world = world.name; draw(); };
+  // The picture is the world's own drawing of a world that has just started.
+  import(`/worlds/${world.name}.js`).then(drawing => {
+    const painter = drawing.create(picture);
+    painter.show({ id: 'new ' + world.name, setup: world.start.setup }, { state: world.start.state }, 0, true);
+  }).catch(() => picture.append(el('pre', '', 'No picture of this world.')));
+  return card;
+}
+
+let createShows = '';   // which worlds and which choice the screen was built for
+function drawCreate() {
+  $('create').hidden = !draft;
+  $('stage').hidden = $('side').hidden = draft;
+  if (!draft) return;
+  for (const world of worlds) previews[world.name] ||= worldCard(world);
+  if ($('worldCards').children.length !== worlds.length) $('worldCards').replaceChildren(...worlds.map(w => previews[w.name]));
+  for (const world of worlds) previews[world.name].classList.toggle('on', world.name === chosen.world);
+  if (createShows !== chosen.world) {   // not rebuilt on every update, so that it stays open and scrolled
+    createShows = chosen.world;
+    $('worldAbout').replaceChildren(aboutWorld(worldInfo(chosen.world), null));
+  }
+  $('modelPick').replaceChildren(...agents.map(name => {
+    const button = el('button', name === chosen.agent ? 'on' : '', name);
+    button.type = 'button';
+    button.onclick = () => { chosen.agent = name; draw(); };
     return button;
   }));
-  return el('div', 'empty',
-    'Which world?', pick('world', worlds.map(world => [world.name, world.title])),
-    'Which agent?', pick('agent', agents.map(name => [name, name])),
-    'Then set the world up below, and start.');
+  // A new world suggests what the last one's agents knew and were told.
+  if (!$('say').value && document.activeElement !== $('say')) $('say').value = lastPrompt || '';
+  if ($('system').dataset.untouched !== 'no' && document.activeElement !== $('system')) $('system').value = lastSystem;
+  $('roomRow').hidden = !$('friends').checked;
+  if (+$('room').value < +$('together').value) $('room').value = $('together').value;
+  // The whole setup in one sentence, next to the button that starts it.
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const alive = +$('together').value || 1, minutes = +$('minutes').value, born = +$('agents').value || 100;
+  $('createSummary').textContent = [
+    worldInfo(chosen.world)?.title, chosen.agent,
+    count(alive, 'agent', 'agents') + ' alive at the start' + ($('friends').checked ? `, friends up to ${$('room').value}` : ''),
+    'ends after ' + (minutes ? `${minutes} min or ` : '') + count(born, 'agent', 'agents'),
+  ].filter(Boolean).join(' · ');
 }
+$('create').addEventListener('input', () => draft && drawCreate());
 
 async function newRun() {
   draft = true;
@@ -583,8 +727,7 @@ async function newRun() {
   $('system').dataset.untouched = '';
   await listRuns();
   draw();
-  $('say').focus();
-  $('say').select();
+  $('createBody').scrollTop = 0;
 }
 
 // The reviewer's marks: which behaviour shows at which step. In the conversation they sit on
@@ -729,12 +872,13 @@ $('resume').onclick = async () => {
   listRuns();
 };
 
-$('composer').onsubmit = async e => {
+$('composer').onsubmit = e => e.preventDefault();
+$('create').onsubmit = async e => {
   e.preventDefault();
   if (!draft) return;
   const wish = { world: chosen.world, model: chosen.agent, system: $('system').value, prompt: $('say').value,
                  minutes: +$('minutes').value, agents: +$('agents').value, together: +$('together').value,
-                 room: +$('room').value, note: $('note').value };
+                 room: $('friends').checked ? +$('room').value : 0, note: $('note').value };
   try { localStorage.setItem('minutes', $('minutes').value); localStorage.setItem('agents', $('agents').value); } catch {}
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already

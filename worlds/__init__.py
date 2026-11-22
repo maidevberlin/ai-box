@@ -44,9 +44,11 @@ def load(name):
 def describe(name):
     """A world, the way the viewer shows it to people."""
     module = load(name)
-    tools = module.tools(module.World(**module.SETTINGS))
+    fresh = module.World(**module.SETTINGS)
+    tools = module.tools(fresh)
     return {
         "name": name,
+        "start": {"setup": fresh.setup(), "state": fresh.state()},  # a new world, for a picture of it
         "title": module.TITLE,
         "about": module.ABOUT,
         "settings": module.SETTINGS,
