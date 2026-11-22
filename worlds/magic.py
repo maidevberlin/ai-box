@@ -44,7 +44,8 @@ block beside it (a green block also holds on to whatever is beside it). A block 
 holds falls. So a bridge falls when the block it hangs from is taken away, or when a green
 block in it is jumped on and stops being green.
 
-Everything else is as on the plain island: walking is one step, level or down; a jump gets
+Everything else is as on the plain island: walking is level or down, up to as far
+as the agent sees in one go, and a walk of several steps stops at the water; a jump gets
 the agent 1 or 2 levels high and forward as far as that allows, also over a cell of water;
 the agent carries one thing, notes are flat and are read by looking at them, sight is 3 cells
 plus one per level of height, walking into the water means drowning, and a new agent with an

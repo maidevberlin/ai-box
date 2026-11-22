@@ -22,8 +22,10 @@ empty one. The agent stands on top of whatever is in its cell.
 
 The agent is not told any of this. It has to find out by looking and trying.
 
-- Walking is one step at a time, level or down. A higher stack is in the way.
-- Walking or jumping off the island means drowning. Looking around shows the water once
+- Walking is level or down: one step, or several at once, but never further than the
+  agent sees from where it stands. A higher stack is in the way and ends the walk.
+- A walk of several steps stops at the last cell of land. A single step into the water,
+  or a jump off the island, means drowning. Looking around shows the water once
   the edge is within sight, as the number of steps of ground that are left before it.
 - When the agent dies, a new agent wakes up in the middle of the island. It knows nothing
   of the one before: it starts with an empty memory and is told the same prompt. The world

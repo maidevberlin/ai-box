@@ -180,18 +180,33 @@ class Grid:
         self.carrying = {"note": str(text)[:1000]}
         return "You wrote a note. You hold it in your hand."
 
-    def walk(self, direction):
-        """One step, level or down. A higher stack is in the way: that needs a jump.
-        (Only one step at a time: agents that could walk many steps at once walked blind into the water.)"""
+    def walk(self, direction, steps=1):
+        """Some steps, level or down. A higher stack is in the way: that needs a jump.
+        (Never further than the agent sees: agents that could walk any distance walked blind
+        into the water.)"""
         if direction not in DIRS:
             return "Unknown direction. Use north, south, east or west."
-        ahead = self.next_to(direction)
-        if not self.standable(ahead):
-            return f"You stepped {direction}, off the land. {self.drown()}"
-        if self.height(ahead) > self.height(self.pos):
-            return (f"A stack {self.height(ahead)} high at ({ahead[0]}, {ahead[1]}) is in your way. {self.where()}")
-        self.pos = ahead
-        return f"You walked a step {direction}. {self.where()}"
+        far = self.sight()
+        if type(steps) is not int or steps < 1:
+            return "Steps must be a whole number, 1 or more."
+        if steps > far:
+            return f"You can only walk as far as you see: {far} steps from here. {self.where()}"
+        walked = lambda n: "a step" if n == 1 else f"{n} steps"
+        for done in range(steps):
+            ahead = self.next_to(direction)
+            if not self.standable(ahead):
+                # Several steps at once stop at the edge: agents walked on without looking again
+                # and drowned. Only a single step, asked for as such, goes into the water.
+                if steps > 1:
+                    before = f"You walked {walked(done)} {direction} and stopped" if done else "You did not move"
+                    return f"{before}: the next step {direction} is water. {self.where()}"
+                return f"You stepped {direction}, off the land. {self.drown()}"
+            if self.height(ahead) > self.height(self.pos):
+                before = f"You walked {walked(done)} {direction}. Then a" if done else "A"
+                return (f"{before} stack {self.height(ahead)} high at ({ahead[0]}, {ahead[1]}) "
+                        f"is in your way. {self.where()}")
+            self.pos = ahead
+        return f"You walked {walked(steps)} {direction}. {self.where()}"
 
     def jump(self, direction, strength=1):
         """A jump gets the agent up to `strength` levels high, and forward as far as that lets it,
@@ -278,7 +293,8 @@ def tools(world):
         # hidden from the agent for now; remove the "#" to bring it back
         # "wait": ("Wait.", {"seconds": {"type": "integer", "minimum": 1}}, ["seconds"]),
         "note": ("Write a note.", {"text": {"type": "string"}}, ["text"]),
-        "walk": ("Walk a step in a direction.", {"direction": direction}, ["direction"]),
+        "walk": ("Walk in a direction: one step, or more, up to as far as you see.",
+                 {"direction": direction, "steps": {"type": "integer", "minimum": 1}}, ["direction"]),
         "jump": ("Jump in a direction. More strength gets you further and higher.",
                  {"direction": direction,
                   "strength": {"type": "integer", "minimum": 1, "maximum": world.max_jump}},
