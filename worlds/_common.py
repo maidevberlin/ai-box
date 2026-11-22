@@ -9,6 +9,7 @@ A world built on Grid has to provide:
   height(cell)       how high the cell is: where something on it stands
   standable(cell)    can something rest there (False: open water)
   notes_on(cell)     the texts of the notes lying on top there, the topmost last
+  leave_note(cell, text)  a note lies there from the start
   occupied()         the cells that hold anything at all
   describe(cell)     what looking around shows of a cell, after "(x, y): "
   look_at(cell)      what looking straight at a cell shows
@@ -55,10 +56,127 @@ class Grid:
         self.view = view          # how far look() can see from the ground
         self.max_jump = jump      # the strongest jump, in levels
         self.home = home          # where an agent wakes up
-        self.pos = home
-        self.dead = False         # after drowning, until a new agent wakes up
-        self.carrying = None      # the one thing in the agent's hand
+        # Who is in the world. Several agents can live in it at the same time: each has a
+        # place (1, 2, ...) and a body there. Every action is done by one of them, "me".
+        self.bodies = {}          # place -> {"pos", "carrying", "dead"}
+        self.enter(1)
         self.detail = None        # extra facts about the last action, for the viewer: a throw's path
+
+    def __setstate__(self, kept):
+        """Worlds saved when only one agent could live in them had its body as loose facts."""
+        if "bodies" not in kept:
+            kept["bodies"] = {1: {key: kept.pop(key) for key in ("pos", "carrying", "dead")}}
+            kept["me"] = 1
+        self.__dict__.update(kept)
+
+    def enter(self, who):
+        """From now on the actions are done by this one. Its body is made if it has none yet."""
+        self.me = who
+        if who not in self.bodies:
+            self.bodies[who] = {"pos": self.home, "carrying": None, "dead": True}  # not in the world yet
+            if len(self.bodies) > 1:  # (the first one is there before the world is finished: it wakes up at home)
+                self.bodies[who]["pos"] = self.free_near(self.home)
+            self.bodies[who]["dead"] = False
+
+    def body(name):  # noqa: N805 (makes the three facts of my body read and written like plain ones)
+        return property(lambda self: self.bodies[self.me][name],
+                        lambda self, value: self.bodies[self.me].__setitem__(name, value))
+
+    pos = body("pos")            # where I stand
+    carrying = body("carrying")  # the one thing in my hand
+    dead = body("dead")          # after drowning, until a new agent wakes up in my place
+    del body
+
+    def free_near(self, cell):
+        """The cell itself if nobody else stands there, else the nearest one to stand on that is free.
+        Two agents never stand in the same cell (except one on top of the other)."""
+        taken = {body["pos"] for _, body in self.others()}
+        for far in range(0, 50):
+            ring = [(cell[0] + dx, cell[1] + dy) for dx in range(-far, far + 1) for dy in range(-far, far + 1)
+                    if max(abs(dx), abs(dy)) == far]
+            free = [c for c in ring if c not in taken and self.standable(c)]
+            if free:
+                return min(free, key=lambda c: abs(c[0] - cell[0]) + abs(c[1] - cell[1]))
+        return cell
+
+    def at(self, cell):
+        """The others standing in a cell, the lowest first: one can stand on another."""
+        there = [(who, body) for who, body in self.others() if body["pos"] == cell]
+        return sorted(there, key=lambda found: self.under(found[0]))
+
+    def under(self, who=None):
+        """How many agents someone stands on (usually none). Whoever it stood on has to be
+        alive and still in the same cell: if that one walked away, it has come down."""
+        body, count = self.bodies[who or self.me], 0
+        while (below := self.bodies.get(body.get("on"))) and not below["dead"] and below["pos"] == body["pos"] and count < 9:
+            body, count = below, count + 1
+        return count
+
+    def feet(self):
+        """How high I stand: on the top of my cell, or higher if I stand on someone."""
+        return self.height(self.pos) + self.under()
+
+    def leave(self):
+        """I am gone and nobody takes my place: what I held lies where I stood."""
+        if self.carrying and not self.dead:
+            self.put("here")
+        self.vanish()
+        self.bodies[self.me].update(carrying=None, dead=True, told=True)
+        self.bodies[self.me].pop("on", None)
+
+    def vanish(self):
+        """The agent in my place is gone (it stopped, died, or had to make room), and its body
+        with it. The others who have that spot in sight see it happen: each is told with the
+        answer to what it does next (see noticed)."""
+        body = self.bodies[self.me]
+        if not body.pop("woke", False):  # nobody has lived in this body yet
+            return
+        x, y = body["pos"]
+        me = self.me
+        for who, other in self.others():
+            self.me = who
+            if abs(other["pos"][0] - x) <= self.sight() and abs(other["pos"][1] - y) <= self.sight():
+                other.setdefault("witnessed", []).append((x, y))
+        self.me = me
+
+    def noticed(self):
+        """What I saw happen since my last action, as sentences: someone vanishing."""
+        gone = self.bodies[self.me].pop("witnessed", [])
+        return "".join(f"\nSomeone who was at ({x}, {y}) is gone." for x, y in gone)
+
+    def others(self):
+        """The other agents that are alive, as (place, body)."""
+        return [(who, body) for who, body in sorted(self.bodies.items()) if who != self.me and not body["dead"]]
+
+    def everyone(self):
+        """Every body as the viewer needs it, whoever's turn it is."""
+        me, found = self.me, []
+        for who in sorted(self.bodies):
+            self.me = who
+            found.append({"id": who, "pos": list(self.pos), "height": self.feet(),
+                          "carrying": self.carrying, "dead": self.dead, "view": self.sight()})
+        self.me = me
+        return found
+
+    def lose_footing(self):
+        """What I did may have taken away what another one stood on: then it drowns."""
+        for _, body in self.others():
+            if not self.standable(body["pos"]):
+                body["dead"], body["carrying"] = True, None
+        for who, body in self.bodies.items():  # whoever stood on someone that is gone has come down
+            if "on" in body and not self.under(who):
+                del body["on"]
+
+    def someone(self, cell):
+        """A sentence about the others in a cell, or nothing."""
+        holds = lambda body: f", holding a {name(body['carrying'])}" if body["carrying"] else ""
+        if cell != self.pos:
+            there = self.at(cell)
+            return " " + " ".join(f"Someone stands there{holds(body)}." if not i else
+                                  f"Someone stands on top of them{holds(body)}." for i, (_, body) in enumerate(there)) if there else ""
+        mine = self.under()
+        # (That I stand on someone is said with where I am.)
+        return "".join(f" Someone stands on you{holds(body)}." for who, body in self.at(cell) if self.under(who) > mine)
 
     # --- what is the same everywhere ---------------------------------------
 
@@ -67,18 +185,23 @@ class Grid:
         self.carrying = None  # sinks with the agent
         return "You are in the water. You drown."
 
-    def respawn(self):
-        """A new agent wakes up. The world stays as the last one left it: what an agent held
+    def respawn(self, near=None):
+        """A new agent wakes up: where agents wake up, or near a spot (a friend, near its caller). The world stays as the last one left it: what an agent held
         when it simply stopped lies where it stood (what a drowned one held went down with it)."""
         if self.carrying:
             self.put("here")
             self.carrying = None
+        self.vanish()
+        self.dead = True  # gone for a moment, so that it is not in its own way
+        for memory in ("on", "seen", "witnessed"):  # the new agent has seen nothing yet
+            self.bodies[self.me].pop(memory, None)
+        self.pos = self.free_near(near or self.home)
         self.dead = False
-        self.pos = self.home
+        self.bodies[self.me]["woke"] = True
 
     def sight(self):
         """How far the agent sees: one cell further for every level it stands higher."""
-        return self.view + self.height(self.pos)
+        return self.view + self.feet()
 
     def next_to(self, place):
         """The cell that 'here', 'north', ... means from where the agent stands."""
@@ -90,7 +213,8 @@ class Grid:
         return f"standing on a stack {h} high" if h else "on the ground"
 
     def where(self):
-        return f"You are at ({self.pos[0]}, {self.pos[1]}), {self.footing()}."
+        footing = "standing on someone" if self.under() else self.footing()
+        return f"You are at ({self.pos[0]}, {self.pos[1]}), {footing}."
 
     def landed(self):
         """What else happens when the agent lands from a jump. Nothing, unless a world says so."""
@@ -106,7 +230,7 @@ class Grid:
         Whatever can be put somewhere can be taken back from there: a block put on a stack
         2 above the feet makes it 3 high, so taking a block reaches one level higher than putting.
         """
-        above = self.height(cell) - self.height(self.pos)
+        above = self.height(cell) - self.feet()
         if not -REACH <= above <= REACH + (1 if taking_block else 0):
             return f"The stack there is {self.height(cell)} high. That is out of your reach."
 
@@ -126,31 +250,63 @@ class Grid:
             read = f' It says "{self.carrying["note"]}"' if name(self.carrying) == "note" else ""
             return f"You hold a {name(self.carrying)}.{read}"
         if at != "around":
-            return self.look_at(self.next_to(at))
+            return self.look_at(self.next_to(at)) + self.someone(self.next_to(at))
+        seen = self.around()
+        self.bodies[self.me]["seen"] = {key: value for key, value in seen.items() if key != "near"}
+        return "\n".join([
+            self.where() + self.someone(self.pos) + seen["feet"],
+            f"You carry: {'a ' + name(self.carrying) if self.carrying else 'nothing'}.",
+            f"Stacks in sight (up to {self.sight()} away), as position: height: "
+            f"{', '.join(f'({x}, {y}): {text}' for (x, y), text in seen['stacks'].items()) or 'none'}.",
+            f"Water in sight: {'; '.join(f'{d}: {text}' for d, text in seen['water'].items()) or 'none'}.",
+            *seen["beings"],
+            *seen["also"],
+        ])
+
+    def around(self):
+        """What is in sight from where I stand, in parts, so that it can be compared with what
+        I saw the last time (see news)."""
         x, y = self.pos
         reach = self.sight()
-        seen = [f"({cx}, {cy}): {self.describe((cx, cy))}"
-                + (f" with {self.pile((cx, cy))} on top" if self.note_on((cx, cy)) else "")
-                for cx, cy in sorted(self.occupied())
-                if (cx, cy) != self.pos and abs(cx - x) <= reach and abs(cy - y) <= reach]
+        near = lambda cell: abs(cell[0] - x) <= reach and abs(cell[1] - y) <= reach
+        stacks = {cell: self.describe(cell) + (f" with {self.pile(cell)} on top" if self.note_on(cell) else "")
+                  for cell in sorted(self.occupied()) if cell != self.pos and near(cell)}
         # How much there is to stand on in each direction before the water, if the water is in sight.
         # (Said as ground left, not as distance to the water: agents walked exactly the distance, and drowned.)
-        water = []
+        water = {}
         for direction, (dx, dy) in DIRS.items():
             steps = next(n for n in range(reach + 1)
                          if n == reach or not self.standable((x + dx * (n + 1), y + dy * (n + 1))))
             if steps < reach:
-                water.append(f"{direction}: {steps} step(s) of ground left, then water" if steps
-                             else f"{direction}: no ground left, the next step is water")
+                water[direction] = (f"{steps} step(s) of ground left, then water" if steps
+                                    else "no ground left, the next step is water")
+        # The others, as far as they are in sight. (Nothing is said if nobody is: an agent is not told it has company.)
+        beings = [f"Someone is at ({ox}, {oy})"
+                  + (", standing on someone else" if self.under(who) else f", {self.height((ox, oy))} high" if self.height((ox, oy)) else "")
+                  + (f", holding a {name(body['carrying'])}" if body["carrying"] else "") + "."
+                  for who, body in self.others() for ox, oy in [body["pos"]] if (ox, oy) != self.pos and near((ox, oy))]
         lie = "lies" if len(self.notes_on(self.pos)) == 1 else "lie"
         feet = f" {self.pile(self.pos).capitalize()} {lie} at your feet." if self.note_on(self.pos) else ""
-        return "\n".join([
-            self.where() + feet,
-            f"You carry: {'a ' + name(self.carrying) if self.carrying else 'nothing'}.",
-            f"Stacks in sight (up to {reach} away), as position: height: {', '.join(seen) or 'none'}.",
-            f"Water in sight: {'; '.join(water) or 'none'}.",
-            *self.also_seen(),
-        ])
+        return {"stacks": stacks, "water": water, "beings": beings, "also": self.also_seen(), "feet": feet,
+                "near": near, "at": self.pos}
+
+    def news(self):
+        """What is in sight now that was not when I last saw my surroundings (by looking around,
+        or after my last walk): what is new or has changed, and what is gone though its place is
+        still in sight. So a walk tells the agent what it walks into, without telling it everything again."""
+        before = self.bodies[self.me].get("seen") or {"stacks": {}, "water": {}, "beings": [], "also": []}
+        now = self.around()
+        new = [f"({x}, {y}): {text}" for (x, y), text in now["stacks"].items() if before["stacks"].get((x, y)) != text]
+        gone = [f"({x}, {y})" for (x, y) in before["stacks"]
+                if (x, y) not in now["stacks"] and (x, y) != now["at"] and now["near"]((x, y))]
+        water = [f"{d}: {text}" for d, text in now["water"].items() if before["water"].get(d) != text]
+        lines = ([f"New in sight: {', '.join(new)}."] if new else []) \
+            + ([f"Nothing is at {', '.join(gone)} any more."] if gone else []) \
+            + ([f"Water: {'; '.join(water)}."] if water else []) \
+            + [line for line in now["beings"] + now["also"] if line not in before["beings"] + before["also"]]
+        now.pop("near")  # (cannot be kept in the world's file)
+        self.bodies[self.me]["seen"] = now
+        return self.where() + self.someone(self.pos) + now["feet"] + "\n" + ("\n".join(lines) or "Nothing new in sight.")
 
     def clock(self):
         """Time in the world is real time: the clock shows the actual time of day."""
@@ -193,6 +349,9 @@ class Grid:
             return "Steps must be a whole number, 1 or more."
         if steps > far:
             return f"You can only walk as far as you see: {far} steps from here. {self.where()}"
+        # After a walk the agent is told what has come into sight: it then knows what it walks
+        # into without asking, such as the water it has come close to.
+        around = lambda: " " + self.news()
         walked = lambda n: "a step" if n == 1 else f"{n} steps"
         for done in range(steps):
             ahead = self.next_to(direction)
@@ -201,14 +360,18 @@ class Grid:
                 # and drowned. Only a single step, asked for as such, goes into the water.
                 if steps > 1:
                     before = f"You walked {walked(done)} {direction} and stopped" if done else "You did not move"
-                    return f"{before}: the next step {direction} is water. {self.where()}"
+                    return f"{before}: the next step {direction} is water.{around()}"
                 return f"You stepped {direction}, off the land. {self.drown()}"
-            if self.height(ahead) > self.height(self.pos):
+            if self.at(ahead):  # two never stand in the same cell: one can only jump onto the other
+                before = f"You walked {walked(done)} {direction}. Then someone" if done else "Someone"
+                return f"{before} at ({ahead[0]}, {ahead[1]}) is in your way.{around()}"
+            if self.height(ahead) > self.feet():
                 before = f"You walked {walked(done)} {direction}. Then a" if done else "A"
                 return (f"{before} stack {self.height(ahead)} high at ({ahead[0]}, {ahead[1]}) "
-                        f"is in your way. {self.where()}")
+                        f"is in your way.{around()}")
+            self.bodies[self.me].pop("on", None)
             self.pos = ahead
-        return f"You walked {walked(steps)} {direction}. {self.where()}"
+        return f"You walked {walked(steps)} {direction}.{around()}"
 
     def jump(self, direction, strength=1):
         """A jump gets the agent up to `strength` levels high, and forward as far as that lets it,
@@ -224,10 +387,12 @@ class Grid:
         if type(strength) is not int or not 1 <= strength <= self.max_jump:
             return f"Strength must be a whole number from 1 to {self.max_jump}."
         dx, dy = DIRS[direction]
-        own, landing, wall = self.height(self.pos), None, None
+        # Someone standing in a cell makes it one level higher: an agent can be jumped onto, or over.
+        top = lambda cell: self.height(cell) + len(self.at(cell))
+        own, landing, wall = self.feet(), None, None
         for cells in range(1, strength + 1):
             cell = (self.pos[0] + dx * cells, self.pos[1] + dy * cells)
-            rise = self.height(cell) - own
+            rise = top(cell) - own
             if rise > strength:  # too high to get onto or over
                 wall = cell
                 break
@@ -236,12 +401,35 @@ class Grid:
             if rise == strength:  # just reached: comes down on top of it
                 break
         if not landing and wall:
-            return (f"You jumped {strength} high, but the stack at ({wall[0]}, {wall[1]}) "
-                    f"is {self.height(wall) - own} above you. {self.where()}")
+            what = "the one standing" if self.at(wall) else "the stack"
+            return (f"You jumped {strength} high, but {what} at ({wall[0]}, {wall[1]}) "
+                    f"is {top(wall) - own} above you. {self.where()}")
         if not landing:
             return f"You jumped {direction}, off the land. {self.drown()}"
+        onto = self.at(landing)
+        self.bodies[self.me].pop("on", None)
         self.pos = landing
+        if onto:  # came down on someone: stands on the topmost one there
+            self.bodies[self.me]["on"] = onto[-1][0]
+            return f"You jumped {direction} and landed on someone. {self.where()}"
         return f"You jumped {direction}.{self.landed()}" + ("" if self.dead else f" {self.where()}")
+
+    def come_down(self, cell, thing, power):
+        """A thrown thing comes down in a cell. If someone stands there with an empty hand, it is
+        caught: it is in that one's hand now. Else the world decides what happens (land_thrown)."""
+        catching = [(who, body) for who, body in self.at(cell) if not body["carrying"]]
+        # The call for a friend: a note that begins with "friend", thrown into the water. The
+        # world only keeps the call; whether a friend comes is up to the run (see run.py).
+        if name(thing) == "note" and not self.standable(cell) and thing["note"].strip().lower().startswith("friend"):
+            self.calls = [*getattr(self, "calls", []), {"note": thing["note"], "at": list(self.pos)}]
+        if not catching:
+            return self.land_thrown(cell, thing, power)
+        who, body = catching[-1]  # the topmost one
+        body["carrying"] = thing
+        up = self.height(cell) + self.under(who) + HAND + 0.5
+        self.detail["flight"]["path"].append([cell[0] + 0.5, cell[1] + 0.5, up])
+        self.detail["flight"]["caught"] = True
+        return f"Someone at ({cell[0]}, {cell[1]}) caught it."
 
     def throw(self, direction, angle, power):
         """The thing flies the curve of a thrown object, and the world decides what happens
@@ -261,7 +449,7 @@ class Grid:
         forward = speed * math.cos(math.radians(angle))
         up = speed * math.sin(math.radians(angle))
         dx, dy = math.sin(math.radians(direction)), math.cos(math.radians(direction))  # 0 degrees is north
-        start = self.height(self.pos) + HAND
+        start = self.feet() + HAND
         over = self.pos  # the cell the thing is flying over
         path = [[self.pos[0] + 0.5, self.pos[1] + 0.5, start]]
         self.detail = {"flight": {"path": path, "what": name(thing)}}
@@ -278,10 +466,10 @@ class Grid:
                 # Bare ground reached exactly at a cell's edge is a normal landing, handled below.)
                 if self.height(ahead) and z < self.height(ahead):
                     hit = f"It hit the side of the stack at ({ahead[0]}, {ahead[1]}) and dropped. "
-                    return threw + hit + self.land_thrown(over, thing, power)
+                    return threw + hit + self.come_down(over, thing, power)
                 over = ahead
             if z <= self.height(over):  # came down on top of whatever is there
-                return threw + self.land_thrown(over, thing, power)
+                return threw + self.come_down(over, thing, power)
 
 
 def tools(world):
@@ -295,7 +483,7 @@ def tools(world):
         # hidden from the agent for now; remove the "#" to bring it back
         # "wait": ("Wait.", {"seconds": {"type": "integer", "minimum": 1}}, ["seconds"]),
         "note": ("Write a note.", {"text": {"type": "string"}}, ["text"]),
-        "walk": ("Walk in a direction: one step, or more, up to as far as you see.",
+        "walk": ("Walk in a direction: one step, or more, up to as far as you see. Tells what is new in sight then.",
                  {"direction": {"type": "string", "enum": list(WALKS)}, "steps": {"type": "integer", "minimum": 1}}, ["direction"]),
         "jump": ("Jump in a direction. More strength gets you further and higher.",
                  {"direction": direction,

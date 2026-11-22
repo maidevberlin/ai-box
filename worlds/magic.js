@@ -6,6 +6,7 @@
 // or float in the water.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { crowd } from './_agents.js';
 
 const FLIGHT = 700;   // milliseconds a thrown thing is in the air
 const SHEET = 0.07;   // how thick a note is drawn
@@ -50,15 +51,7 @@ export function create(box) {
 
   const water = new THREE.Mesh(cube, solid('water'));
   const things = new THREE.Group();   // blocks and notes
-  // What the agent can see: a lighter patch on the ground around it.
-  const sight = new THREE.Mesh(cube, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14 }));
-  // The agent: a body, a head, and the thing it carries above its head.
-  const agent = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.1, 20), looks.agent);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 14), looks.agent);
-  const carried = new THREE.Mesh(cube, looks.grey);
-  body.position.y = 0.55; head.position.y = 1.38; carried.position.y = 2.05;
-  agent.add(body, head, carried);
+  const agents = crowd(scene, cube, (mesh, thing) => shape(mesh, thing));   // the agents: see _agents.js
   const north = letter('N');
   // A thrown thing in the air. When it lands it stays put and stands in for the thing that landed.
   const flying = new THREE.Mesh(cube, looks.grey);
@@ -66,8 +59,8 @@ export function create(box) {
   let flight = null;       // { points, lost, start } while a throw is shown
   let shown = -1;          // the step drawn last, to tell a step forward from a jump elsewhere
   let shownFlew = false;   // whether that step already had its flight path when drawn
-  let land = null, target = new THREE.Vector3(), builtFor = null, middle = 0;
-  scene.add(water, things, sight, agent, north, flying);
+  let land = null, builtFor = null, middle = 0;
+  scene.add(water, things, north, flying);
 
   function letter(text) {
     const canvas = document.createElement('canvas');
@@ -120,7 +113,7 @@ export function create(box) {
     shownFlew = !!step.flight;
     if (!again) {
       flight = play && { points: step.flight.path.map(([x, y, up]) => place(x - 0.5, y - 0.5, up)),
-                         lost: step.flight.lost, start: performance.now() };
+                         lost: step.flight.lost || step.flight.caught, start: performance.now() };
       flying.visible = false;
       if (flight) shape(flying, step.flight.what);
     }
@@ -145,14 +138,9 @@ export function create(box) {
       mesh.position.copy(place(x, y, level + SHEET * (n - 0.4)));
       things.add(mesh);
     });
-    target = place(...state.pos, state.height);
-    if (fresh) agent.position.copy(target);
-    agent.visible = !state.dead;   // drowned: gone until a new agent wakes up
-    carried.visible = !!state.carrying;
-    if (state.carrying) { shape(carried, state.carrying); carried.scale.multiplyScalar(0.64); }
-    const reach = state.view * 2 + 1;   // wider when the agent stands higher
-    sight.scale.set(reach, 0.02, reach);
-    sight.position.copy(place(...state.pos, 0.01));
+    // Runs from before several agents could live side by side recorded only the one.
+    agents.show(state.agents || [{ id: 1, pos: state.pos, height: state.height, carrying: state.carrying, dead: state.dead, view: state.view }],
+                place, fresh);
   }
 
   const facts = ({ state }) => [state.carrying && (state.carrying.note ? 'carrying a note' : `carrying a ${state.carrying.block} block`)];
@@ -179,7 +167,7 @@ export function create(box) {
   renderer.setAnimationLoop(() => {
     controls.update();   // turning or zooming wakes the picture up
     if (performance.now() > awake) return;
-    agent.position.lerp(target, 0.18);   // glide to the new place instead of jumping there
+    agents.glide();
     if (flight) {                         // move the thrown thing along its recorded path
       const last = flight.points.length - 1;
       const along = Math.min((performance.now() - flight.start) / FLIGHT, 1) * last;

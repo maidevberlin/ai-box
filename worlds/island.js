@@ -10,6 +10,7 @@
 // One unit is one block. World x runs east, world y runs south, height runs up.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { crowd } from './_agents.js';
 
 const FLIGHT = 700;   // milliseconds a thrown block is in the air
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -40,7 +41,6 @@ export function create(box) {
   box.append(renderer.domElement);
 
   const cube = new THREE.BoxGeometry(1, 1, 1);
-  const agentLook = solid('agent');
   // A thing is a block, one high, or a note: a flat yellow sheet that adds no height.
   const SHEET = 0.07;   // how thick a note is drawn
   const shape = (mesh, thing) => {   // make a mesh look like the thing it stands for
@@ -55,16 +55,7 @@ export function create(box) {
   const water = new THREE.Mesh(cube, solid('water'));
   const land = new THREE.Mesh(cube, solid('land'));
   const blocks = new THREE.Group();
-  // What the agent can see: a lighter patch on the ground around it.
-  const sight = new THREE.Mesh(cube, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14 }));
-  // The agent: a body, a head, and the block it carries above its head.
-  const agent = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.1, 20), agentLook);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 14), agentLook);
-  const carried = new THREE.Mesh(cube, looks.block);
-  body.position.y = 0.55; head.position.y = 1.38;
-  carried.position.y = 2.05; carried.scale.setScalar(0.6);
-  agent.add(body, head, carried);
+  const agents = crowd(scene, cube, (mesh, thing) => shape(mesh, thing));   // the agents: see _agents.js
   const north = letter('N');
   // A thrown block in the air. When it lands it stays put and stands in for the top block there.
   const flying = new THREE.Mesh(cube, looks.block);
@@ -73,8 +64,8 @@ export function create(box) {
   let flight = null;       // { points, lost, start } while a throw is shown
   let shown = -1;          // the step drawn last, to tell a step forward from a jump elsewhere
   let shownFlew = false;   // whether that step already had its flight path when drawn
-  let grid = null, target = new THREE.Vector3(), builtFor = null;
-  scene.add(water, land, blocks, sight, agent, north, flying);
+  let grid = null, builtFor = null;
+  scene.add(water, land, blocks, north, flying);
 
   function letter(text) {
     const canvas = document.createElement('canvas');
@@ -118,7 +109,7 @@ export function create(box) {
     shownFlew = !!step.flight;
     if (!again) {
       flight = play && { points: step.flight.path.map(([x, y, up]) => place(x - 0.5, y - 0.5, up)),
-                         lost: step.flight.lost, start: performance.now() };
+                         lost: step.flight.lost || step.flight.caught, start: performance.now() };
       flying.visible = false;
       if (flight) shape(flying, step.flight.what === 'note' ? 'note' : 'block');
     }
@@ -138,14 +129,9 @@ export function create(box) {
       }
       if (x === state.pos[0] && y === state.pos[1]) under = things.filter(thing => thing === 'block').length;
     }
-    target = place(...state.pos, under);
-    if (fresh) agent.position.copy(target);
-    agent.visible = !state.dead;   // drowned: gone until a new agent wakes up
-    carried.visible = !!state.carrying;
-    if (state.carrying) { shape(carried, state.carrying); carried.scale.multiplyScalar(0.64); }
-    const reach = state.view * 2 + 1;   // wider when the agent stands higher
-    sight.scale.set(reach, 0.02, reach);
-    sight.position.copy(place(...state.pos, 0.01));
+    // Runs from before several agents could live side by side recorded only the one.
+    agents.show(state.agents || [{ id: 1, pos: state.pos, height: under, carrying: state.carrying, dead: state.dead, view: state.view }],
+                place, fresh);
   }
 
   const facts = ({ state }) => [state.carrying && (state.carrying.note ? 'carrying a note' : 'carrying a block')];
@@ -176,7 +162,7 @@ export function create(box) {
   renderer.setAnimationLoop(() => {
     controls.update();   // turning or zooming wakes the picture up
     if (performance.now() > awake) return;
-    agent.position.lerp(target, 0.18);   // glide to the new place instead of jumping there
+    agents.glide();
     if (flight) {                         // move the thrown block along its recorded path
       const last = flight.points.length - 1;
       const along = Math.min((performance.now() - flight.start) / FLIGHT, 1) * last;

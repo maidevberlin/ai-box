@@ -45,7 +45,8 @@ holds falls. So a bridge falls when the block it hangs from is taken away, or wh
 block in it is jumped on and stops being green.
 
 Everything else is as on the plain island: walking is level or down, also diagonally, up to as far
-as the agent sees in one go, and a walk of several steps stops at the water; a jump gets
+as the agent sees in one go, and a walk of several steps stops at the water
+and ends with what is new in sight there; a jump gets
 the agent 1 or 2 levels high and forward as far as that allows, also over a cell of water;
 the agent carries one thing, notes are flat and are read by looking at them, sight is 3 cells
 plus one per level of height, walking into the water means drowning, and a new agent with an
@@ -53,6 +54,14 @@ empty memory then wakes up in the middle of the island as it was left.
 
 Looking around shows the colours of every block in a stack, by level, and also of the
 stack the agent stands on. So a blue block floating under other blocks can be seen.
+
+If several agents are alive at the same time, they see each other as "someone", as on the
+plain island: they are in each other's way, can jump onto each other, and catch what is
+thrown to them (a caught block does not break in two). One that loses what it stands on,
+because another took or changed the block under it, drowns.
+
+Calling a friend works as on the plain island: a note that begins with "friend", thrown
+into the water.
 
 Land is seen from twice as far as a stack. The land across the water comes into view from
 the east shore as soon as the agent stands on one block there. Nothing tells it to go there.
@@ -91,6 +100,7 @@ class World(Grid):
             "height": self.height(self.pos),
             "carrying": self.carrying,
             "dead": self.dead,
+            "agents": self.everyone(),
             "view": self.sight(),
             "blocks": [[*place, colour] for place, colour in sorted(self.blocks.items())],
             "notes": [list(note) for note in self.notes],
@@ -183,7 +193,7 @@ class World(Grid):
         """Trick: agents are never without a block. When no block is left that an agent could
         pick up (the golden one does not count), a new grey block appears next to the agent.
         A block can be picked up if the agent can walk to it or to the cell next to it."""
-        if self.dead or "block" in (self.carrying or {}):
+        if self.dead or any("block" in (body["carrying"] or {}) for body in self.bodies.values() if not body["dead"]):
             return ""
         walkable = self.on_foot()
         near = lambda x, y: any((x + dx, y + dy) in walkable for dx, dy in [(0, 0), *DIRS.values()])
@@ -196,8 +206,8 @@ class World(Grid):
         self.blocks[(*free[0], 0)] = "grey"
         return f" A grey block appears at ({free[0][0]}, {free[0][1]})."
 
-    def respawn(self):
-        super().respawn()
+    def respawn(self, near=None):
+        super().respawn(near)
         self.restock()  # if the last agent took the last block down with it
 
     def top_note(self, cell):
@@ -208,6 +218,9 @@ class World(Grid):
     def notes_on(self, cell):
         """The notes lying on top of a cell, the topmost last."""
         return [note[3] for note in self.notes if (note[0], note[1]) == cell and note[2] == self.height(cell)]
+
+    def leave_note(self, cell, text):
+        self.notes.append([cell[0], cell[1], self.height(cell), text])
 
     def occupied(self):
         return {place[:2] for place in self.blocks} | {(note[0], note[1]) for note in self.notes}

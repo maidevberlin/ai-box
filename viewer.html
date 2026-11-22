@@ -116,6 +116,11 @@
   .choice button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .step { padding: 8px 12px; border-radius: 12px; cursor: pointer; border: 1px solid transparent; }
   .step.now { border-color: var(--accent); }
+  /* Agents that live side by side: each place in the world has its colour, as in the picture. */
+  .step.place1 { --place: #e8553a; } .step.place2 { --place: #8b5cf6; }
+  .step.place3 { --place: #14b8a6; } .step.place4 { --place: #f59e0b; }
+  .step[class*="place"] .label { color: var(--place); }
+  .step[class*="place"]:not(.marked) { border-left: 3px solid var(--place); border-radius: 4px 12px 12px 4px; }
   .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   #knows { color: var(--muted); font-size: 12.5px; padding: 0 12px 6px; }
@@ -148,6 +153,7 @@
   #resume { margin-left: auto; border: 0; border-radius: 18px; height: 30px; padding: 0 16px;
             background: var(--accent); color: var(--on-accent); font-weight: 600; }
   #ending { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); margin-top: 10px; }
+  #ending .break { flex-basis: 100%; height: 0; }
   #ending input { width: 54px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 2px 6px; }
   #start { margin-left: auto; border: 0; border-radius: 18px; height: 34px; padding: 0 18px;
            background: var(--accent); color: var(--on-accent); font-weight: 600; }
@@ -221,10 +227,17 @@
         <div class="field"><textarea id="system" rows="3" autocomplete="off"></textarea></div>
         <label class="title" for="say">What every agent is told</label>
         <div class="field"><textarea id="say" rows="2" autocomplete="off"></textarea></div>
+        <label class="title" for="note">A note that lies in the world at the start (optional)</label>
+        <div class="field"><textarea id="note" rows="2" autocomplete="off" placeholder="Nothing: the world starts without a note."></textarea></div>
         <div id="ending">
           The world ends after
           <input id="minutes" type="number" min="1" placeholder="∞" aria-label="Minutes until the world ends"> min or
-          <input id="agents" type="number" min="1" placeholder="100" aria-label="Agents until the world ends"> agents
+          <input id="agents" type="number" min="1" placeholder="100" aria-label="Agents until the world ends"> agents.
+          <i class="break"></i>
+          <input id="together" type="number" min="1" max="4" value="1" aria-label="Agents alive at the start"> alive at the start.
+          <i class="break"></i>
+          Friends can be called, up to
+          <input id="room" type="number" min="1" max="4" placeholder="–" aria-label="Agents alive at most, when friends are called"> alive
           <button id="start">Start</button>
         </div>
       </section>
@@ -454,7 +467,7 @@ function draw(newRun = false) {
   if (step?.state && painter) painter.show(story, step, at, newRun);
   // Which agent is on screen. (Older runs had one agent that was told more as it went: there it is the round.)
   const round = upTo => steps.slice(0, upTo + 1).filter(s => s.kind === 'prompt').length;
-  const which = story.limits ? `agent ${agentAt(at)} of ${agentAt(steps.length - 1)}` : `round ${round(at)} of ${round(steps.length)}`;
+  const which = story.limits ? `agent ${agentAt(at)} of ${agentsBorn()}` : `round ${round(at)} of ${round(steps.length)}`;
   $('status').replaceChildren(...(!step ? ['Waiting for the world to start…']
     : [which, step.time, ...(step.state && painter ? painter.facts(step) : [])])
     .filter(Boolean).map(text => el('span', 'chip', text)));
@@ -501,9 +514,9 @@ function drawComposer() {
   $('setup').hidden = !draft;
   $('living').hidden = !live;
   $('again').hidden = !ended;
-  const agent = draft ? 0 : agentAt(story.steps.length - 1);
+  const here = draft ? [] : alive();
   $('state').replaceChildren(...[...(draft ? ['New world'] : !live ? ['Conversation']
-    : [el('i', 'dot'), `Agent ${agent} is alive`]),
+    : [el('i', 'dot'), here.length > 1 ? `Agents ${here.join(' and ')} are alive` : `Agent ${here[0] ?? agentsBorn()} is alive`]),
     // how big the agent's conversation is at the step on screen: what it re-reads for every answer
     !draft && memoryAt() && el('span', 'chip', `${short(memoryAt())} tokens in memory`)].filter(Boolean));
   if (live) $('left').textContent = leftText();
@@ -514,12 +527,22 @@ function drawComposer() {
   if (draft && $('system').dataset.untouched !== 'no' && document.activeElement !== $('system')) $('system').value = lastSystem;
 }
 
-// Which agent a step belongs to: every agent starts by being told something.
-const agentAt = upTo => Math.max(1, (story?.steps || []).slice(0, upTo + 1).filter(step => step.kind === 'prompt').length);
+// How many times an agent has been told something up to a step. (Older runs: the round.)
+const roundAt = upTo => Math.max(1, (story?.steps || []).slice(0, upTo + 1).filter(step => step.kind === 'prompt').length);
+// Which agent a step belongs to, and how many agents have woken up in the run so far.
+const agentAt = i => story?.steps[i]?.agent ?? roundAt(i);
+const agentsBorn = () => Math.max(1, ...(story?.steps || []).map(step => step.agent || 1));
+// Agents can live side by side, each in its own place in the world. Which agents are alive:
+// in every place the last one, unless it is gone.
+function alive() {
+  const last = {};
+  for (const step of story?.steps || []) last[step.place || 1] = step;
+  return Object.values(last).filter(step => step.kind !== 'death').map(step => step.agent || agentsBorn()).sort((a, b) => a - b);
+}
 
 // What is left of a world that is going, in words.
 function leftText() {
-  const limits = story?.limits, born = agentAt(story.steps.length - 1);
+  const limits = story?.limits, born = agentsBorn();
   if (!limits) return 'no limit';
   const parts = [];
   if (limits.until) {
@@ -614,14 +637,16 @@ function drawMarks() {
 let logOf = '', logRows = [], logNow = null;
 
 function logRow(steps, i, marked, striking) {
-  const labels = { prompt: 'Agent is told', think: 'Agent thinks', say: 'Agent says', act: 'Agent does' };
-  const step = steps[i];
-  const row = el('div', `step ${step.kind}`);
+  // Side by side, every step says whose it is, in the colour of that agent's place in the world.
+  const step = steps[i], together = story.together > 1;
+  const agent = together ? `Agent ${agentAt(i)}` : 'Agent';
+  const labels = { prompt: `${agent} is told`, think: `${agent} thinks`, say: `${agent} says`, act: `${agent} does` };
+  const row = el('div', `step ${step.kind}` + (together ? ` place${step.place}` : ''));
   // ("by hand", "auto" and "repeat" are from older runs, where one agent was told more as it went)
   const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated' }[step.how];
   // Every agent is told the same once. (In older runs every message to the one agent opened a round.)
   const head = step.kind !== 'prompt' ? labels[step.kind]
-    : story.limits ? `Agent ${agentAt(i)} is told` : `Round ${agentAt(i)} · ${told || labels.prompt}`;
+    : story.limits ? `Agent ${agentAt(i)} ${step.how === 'called' ? 'is called as a friend, and told' : 'is told'}` : `Round ${roundAt(i)} · ${told || labels.prompt}`;
   if (head) row.append(el('div', 'label', head));
   if (step.kind === 'act') {
     const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
@@ -708,7 +733,8 @@ $('composer').onsubmit = async e => {
   e.preventDefault();
   if (!draft) return;
   const wish = { world: chosen.world, model: chosen.agent, system: $('system').value, prompt: $('say').value,
-                 minutes: +$('minutes').value, agents: +$('agents').value };
+                 minutes: +$('minutes').value, agents: +$('agents').value, together: +$('together').value,
+                 room: +$('room').value, note: $('note').value };
   try { localStorage.setItem('minutes', $('minutes').value); localStorage.setItem('agents', $('agents').value); } catch {}
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already

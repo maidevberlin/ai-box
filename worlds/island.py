@@ -24,7 +24,8 @@ The agent is not told any of this. It has to find out by looking and trying.
 
 - Walking is level or down, in eight directions (also diagonally): one step, or several
   at once, but never further than the agent sees from where it stands. A higher stack is
-  in the way and ends the walk.
+  in the way and ends the walk. After every walk the agent is told what is new in sight
+  since it last saw its surroundings: stacks, notes, water, others.
 - A walk of several steps stops at the last cell of land. A single step into the water,
   or a jump off the island, means drowning. Looking around shows the water once
   the edge is within sight, as the number of steps of ground that are left before it.
@@ -53,6 +54,22 @@ The agent is not told any of this. It has to find out by looking and trying.
   power 1 to 10). It lands on top of what it comes down on, drops in front of a stack it
   hits from the side, and is lost if it comes down in the water.
 - It sees 3 cells far from the ground, and one cell further for every level it stands higher.
+- A run can have several agents alive at the same time. They wake up in the middle, next
+  to each other, each with an empty memory and the same prompt, and are not told about
+  each other. An agent sees another as "someone": where it stands and what it holds,
+  within sight. They cannot talk: notes are all they can give each other.
+- Two agents never stand in the same cell: one is in the other's way when walking. But an
+  agent counts as one level high for a jump, so one can jump onto the other and stand on
+  it, or jump over it. When the lower one moves away, the upper one comes down.
+- Catching: a thrown thing that comes down where another agent stands with an empty hand
+  ends up in that agent's hand, instead of landing.
+- Calling a friend (only in runs that allow it): a note that begins with "friend", thrown
+  into the water, calls a new agent. It wakes up next to the caller with that note in its hand.
+  If the world is full then, the agent that has been alive longest is gone at that moment,
+  even if it is the caller. A called friend is not followed by a new agent when it goes.
+  Nothing tells the agents this, unless a note says so.
+- When an agent is gone (it stopped, died, or had to make room), the others who had it
+  in sight are told with their next action: "Someone who was at (x, y) is gone."
 - Time is real: the clock shows the actual time of day.
 - (0, 0) is the south-west corner. North makes y bigger, east makes x bigger, as on a map.
 """
@@ -86,6 +103,7 @@ class World(Grid):
             "pos": list(self.pos),
             "carrying": self.carrying,
             "dead": self.dead,
+            "agents": self.everyone(),
             "view": self.sight(),
             "stacks": [[x, y, things] for (x, y), things in sorted(self.stacks.items())],
         }
@@ -123,6 +141,9 @@ class World(Grid):
         if not self.stacks[cell]:
             del self.stacks[cell]
         return thing
+
+    def leave_note(self, cell, text):
+        self.add(cell, {"note": text})
 
     def high(self, cell, thing):
         """After a block came down somewhere: how high that stack is now. A note changes nothing."""

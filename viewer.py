@@ -117,6 +117,18 @@ class Handler(BaseHTTPRequestHandler):
             env["PROMPT"] = text("prompt")
         if agents:
             env["AGENTS"] = str(agents)
+        try:  # how many agents live side by side
+            env["TOGETHER"] = str(max(1, min(int(wish.get("together") or 1), 4)))
+        except (ValueError, TypeError):
+            env["TOGETHER"] = "1"
+        try:  # friends can be called, up to this many agents alive (0: no calling)
+            env["ROOM"] = str(max(0, min(int(wish.get("room") or 0), 4)))
+        except (ValueError, TypeError):
+            env["ROOM"] = "0"
+        if text("note"):  # a note that lies in the world from the start
+            env["WORLD_NOTE"] = text("note")
+        else:
+            env.pop("WORLD_NOTE", None)
         run_id = time.strftime("%Y%m%d-%H%M%S")
         try:
             os.makedirs(os.path.join(story.RUNS, run_id))

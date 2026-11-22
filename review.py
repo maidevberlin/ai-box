@@ -107,14 +107,15 @@ def ask(task, schema, record):
 
 
 run = story.latest_or(sys.argv)
-steps = story.load(run)["steps"]
+told = story.load(run)
+steps, together = told["steps"], told.get("together", 1) > 1  # side by side: the text says whose step each is
 if not steps:
     sys.exit("This run has no steps to review.")
 sections = [(first, steps[first:first + SECTION]) for first in range(0, len(steps), SECTION)]
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as reviewers:
-    overview = reviewers.submit(ask, OVERVIEW, OVERVIEW_SCHEMA, story.told(steps, numbered=True)[:500_000])
-    marked = [(first, len(part), reviewers.submit(ask, MARKING, MARKING_SCHEMA, story.told(part, numbered=True, first=first)))
+    overview = reviewers.submit(ask, OVERVIEW, OVERVIEW_SCHEMA, story.told(steps, numbered=True, together=together)[:500_000])
+    marked = [(first, len(part), reviewers.submit(ask, MARKING, MARKING_SCHEMA, story.told(part, numbered=True, first=first, together=together)))
               for first, part in sections]
     review = {key: overview.result()[key] for key in OVERVIEW_SCHEMA["properties"]}
     # Only marks that point into the section they came from, in the order of the run.
