@@ -286,7 +286,8 @@ class Grid:
                   + (f", holding a {name(body['carrying'])}" if body["carrying"] else "") + "."
                   for who, body in self.others() for ox, oy in [body["pos"]] if (ox, oy) != self.pos and near((ox, oy))]
         lie = "lies" if len(self.notes_on(self.pos)) == 1 else "lie"
-        feet = f" {self.pile(self.pos).capitalize()} {lie} at your feet." if self.note_on(self.pos) else ""
+        pile = self.pile(self.pos)  # (only its first letter is made big: the note's own words stay as they are)
+        feet = f" {pile[0].upper() + pile[1:]} {lie} at your feet." if self.note_on(self.pos) else ""
         return {"stacks": stacks, "water": water, "beings": beings, "also": self.also_seen(), "feet": feet,
                 "near": near, "at": self.pos}
 
