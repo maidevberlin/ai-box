@@ -130,6 +130,10 @@ class Handler(BaseHTTPRequestHandler):
             env["ROOM"] = str(max(0, min(int(wish.get("room") or 0), 4)))
         except (ValueError, TypeError):
             env["ROOM"] = "0"
+        if wish.get("keep"):  # agents keep their memory when they wake up again
+            env["MEMORY"] = "keep"
+        else:
+            env.pop("MEMORY", None)
         if text("note"):  # a note that lies in the world from the start
             env["WORLD_NOTE"] = text("note")
         else:

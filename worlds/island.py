@@ -63,6 +63,9 @@ The agent is not told any of this. It has to find out by looking and trying.
   it, or jump over it. When the lower one moves away, the upper one comes down.
 - Catching: a thrown thing that comes down where another agent stands with an empty hand
   ends up in that agent's hand, instead of landing.
+- In runs where agents keep their memory, nobody new wakes up: an agent that drowned wakes
+  up again in the middle with its next action, and one that ended its turn wakes up there
+  and is told its prompt again. It remembers everything it did before.
 - Calling a friend (only in runs that allow it): a note that begins with "friend", thrown
   into the water, calls a new agent. It wakes up next to the caller with that note in its hand.
   If the world is full then, the agent that has been alive longest is gone at that moment,

@@ -199,13 +199,19 @@ def load(run):
             story["steps"].append({"kind": "memory", "text": "The agent's memory was full and has been shortened to a summary.", **who, **now})
         elif event.get("type") == "died":  # the agent died; a new one wakes up
             gone = {"stopped": "The agent ended its turn. It is gone.", "drowned": "The agent drowned.",
-                    "replaced": "The agent is gone: a friend was called, the world was full, and it had been alive longest."}
+                    "replaced": "The agent is gone: a friend was called, the world was full, and it had been alive longest.",
+                    "slept": "The agent ended its turn."}
             story["steps"].append({"kind": "death", "how": event.get("how", "drowned"), **who, **now,
                                    "text": gone.get(event.get("how"), "The agent died.")})
-            memory[place] = 0
-            if wakings.get(place):  # from here on the world is shown as the new agent finds it
+            # (An agent that keeps its memory and drowned wakes up with its next action: no new start.)
+            kept_on = (story["limits"] or {}).get("keep") and event.get("how") == "drowned"
+            if not kept_on:
+                memory[place] = 0
+            if wakings.get(place) and not kept_on:  # from here on the world is shown as the new agent finds it
                 now = after(wakings[place].pop(0))
         elif event.get("type") == "told":  # run.py told it something
+            if event["how"] == "again":  # the same agent, woken up again: its actions from here on are a new life
+                waiting[place] = lives[place].pop(0) if lives.get(place) else []
             if event["how"] in ("first", "new life", "called"):  # a new agent ("called": as a friend, by a note)
                 born += 1
                 number[place] = event.get("n") or born

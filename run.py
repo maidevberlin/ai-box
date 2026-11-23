@@ -16,6 +16,12 @@ ROOM agents at the same time. If it is full when a friend is called, the agent t
 alive longest is gone at that moment, and the friend wakes up in its place. A called friend
 is not followed by a new agent when it goes, unless it took the place of one that would be.
 
+Agents can keep their memory (MEMORY=keep). Then an agent that dies, or ends its turn, is not
+replaced: the same agent wakes up again in the middle, and remembers everything. If it drowned,
+it wakes up with its next action; if it ended its turn, it is told PROMPT again. AGENTS then
+counts how often agents wake up again: an agent that only ends its turn would otherwise be
+woken up again and again, as fast as it can answer.
+
 In SYSTEM and PROMPT these are filled in for every agent:
   {time} {day} {date}   the moment it wakes up
   {left}                how long until the world ends, like "9 min 32 s"
@@ -31,6 +37,7 @@ Optional settings, as environment variables:
   AGENTS    the world ends after this many agents (default 100)
   TOGETHER  how many agents live at the same time (default 1)
   ROOM      friends can be called, up to this many agents alive (default 0: no calling)
+  MEMORY    "keep": an agent keeps its memory when it wakes up again (default: a new agent)
   WORLD_NOTE  a note that lies in the world from the start, where agents wake up
   MODEL, AUTOCOMPACT, RUN_ID (folder name under runs/, default: timestamp)
 
@@ -57,7 +64,9 @@ if RESUME:  # as before: what its agents knew and were told, and which model the
     MODEL = "claude-" + story.model(RUN)
     TOGETHER = (story.limits(RUN) or {}).get("together") or 1
     ROOM = (story.limits(RUN) or {}).get("room") or 0
+    KEEP = bool((story.limits(RUN) or {}).get("keep"))
 else:
+    KEEP = os.environ.get("MEMORY") == "keep"
     TOGETHER = max(1, int(os.environ.get("TOGETHER") or 1))
     ROOM = int(os.environ.get("ROOM") or 0)
     PROMPT = os.environ.get("PROMPT") or "Live!"
@@ -90,11 +99,13 @@ write("pid", str(os.getpid()))  # so the viewer can end this run
 # When this world ends by itself. The viewer shows what is left.
 ends = time.time() + MINUTES * 60 if MINUTES else None
 write("limits.json", json.dumps({"until": ends, "minutes": f"{MINUTES:g}" if MINUTES else None, "agents": AGENTS,
-                                 "together": TOGETHER, "room": ROOM}))
+                                 "together": TOGETHER, "room": ROOM, "keep": KEEP}))
 # Tell Claude Code how to start the world, and pass the world settings along.
 # (A world that goes on keeps the settings it was started with.)
 if not RESUME:
     world_settings = {k: v for k, v in os.environ.items() if k.startswith("WORLD")}
+    if KEEP:  # the world wakes a drowned agent up again itself (see mcp_server.py)
+        world_settings["WORLD_KEEP"] = "1"
     write("mcp.1.json", json.dumps({"mcpServers": {"world": {
         "command": "python3", "args": [os.path.join(HERE, "mcp_server.py")],
         "env": {**world_settings, "WORLD_LOG": path("protocol.jsonl"), "WORLD_AGENT": "1"}}}}))
@@ -150,6 +161,7 @@ def new_agent(n, place):
 
 writing = threading.Lock()  # the agents that live side by side write into one transcript
 born = BEFORE               # how many agents have woken up so far
+woken = 0                   # how often an agent that keeps its memory has woken up again
 living = {}                 # place -> (the agent's process, its number), for the agents that are alive
 places = {}                 # place -> the thread in which its agents live
 called = {}                 # place -> the call ({"note", "at"}) of the friend that wakes up there next
@@ -193,9 +205,22 @@ def live(n, place, call=None):
                 break
             if os.path.exists(died):  # the agent died in its world (see mcp_server.py)
                 os.remove(died)
+                if KEEP and may_wake():  # it is not gone: the world wakes it up again with its next action
+                    record({"type": "died", "how": "drowned", "place": place, "n": n})
+                    record({"type": "told", "how": "woke", "place": place, "n": n,
+                            "text": "It wakes up again in the middle, and remembers everything."})
+                    continue
                 ended = "drowned"
                 break
             if event.get("type") == "result":  # the agent ended its turn: nobody answers, it is gone
+                if KEEP and may_wake():  # ... unless it keeps its memory: then it wakes up again, and is told again
+                    record({"type": "died", "how": "slept", "place": place, "n": n})
+                    wake_again(place)
+                    told = filled(PROMPT, n)
+                    record({"type": "told", "text": told, "how": "again", "place": place, "n": n})
+                    agent.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": told}}) + "\n")
+                    agent.stdin.flush()
+                    continue
                 ended = "stopped"
                 break
         if not ended and place in called and not os.path.exists(path("stopped")):
@@ -205,6 +230,30 @@ def live(n, place, call=None):
         agent.wait()
         living.pop(place, None)
     return ended
+
+
+def may_wake():
+    """Whether an agent that keeps its memory may wake up again (see AGENTS). If not, the world ends."""
+    global woken
+    with writing:
+        woken += 1
+        if woken <= AGENTS:
+            return True
+    write("stopped", f"The world ended: agents had woken up again {AGENTS} times")
+    return False
+
+
+def wake_again(place):
+    """The agent in a place wakes up again in the middle, the same one (see MEMORY). The world
+    records it as a new start, so that the story shows where it woke up."""
+    with kept.world_of(RUN) as box:
+        world = box[0]
+        world.enter(place)
+        world.respawn()
+        world.bodies[place].pop("told", None)
+        with open(path("protocol.jsonl"), "a") as f:
+            f.write(json.dumps({"time": time.strftime("%H:%M:%S"), "agent": place, "n": 0, "tool": "start",
+                                "world": story.world(RUN), "setup": world.setup(), "state": world.state()}) + "\n")
 
 
 def lives(place, lasting=True):

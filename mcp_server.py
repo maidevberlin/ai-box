@@ -28,6 +28,7 @@ import worlds
 NAME = os.environ.get("WORLD", "island")
 LOG = os.path.abspath(os.environ.get("WORLD_LOG", "protocol.jsonl"))
 RUN = os.path.dirname(LOG)
+KEEP = bool(os.environ.get("WORLD_KEEP"))  # an agent that drowned wakes up again, the same one (see run.py)
 AGENT = int(os.environ.get("WORLD_AGENT") or 1)  # which place in the world this process's agent has
 MAX_ACTIONS = int(os.environ.get("WORLD_MAX_ACTIONS", 5000))  # safety stop: then the world and the run end
 
@@ -92,6 +93,10 @@ def call(name, args):
             # start it again and the agent would find itself in a brand new world.)
             with open(os.path.join(RUN, "stopped"), "w") as f:
                 f.write(f"The world stopped after {MAX_ACTIONS} actions")
+        elif getattr(world, "dead", False) and KEEP:  # it drowned: now it wakes up again, remembering
+            world.respawn()
+            world.bodies[AGENT].pop("told", None)
+            result = f"You wake up again. {world.where()}"
         elif getattr(world, "dead", False):  # it asked for several things at once, and an earlier one killed it
             result = "You are dead."
         else:

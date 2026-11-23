@@ -333,6 +333,12 @@
                 If the world is full, the one alive longest is gone. The agents are not told this.</small></div>
             <label class="switch"><input id="friends" type="checkbox"><i></i></label>
           </div>
+          <div class="row">
+            <div class="what"><label for="keep">Agents keep their memory</label>
+              <small>When an agent dies or ends its turn, no new one comes: the same agent wakes up again in the middle
+                and remembers everything.</small></div>
+            <label class="switch"><input id="keep" type="checkbox"><i></i></label>
+          </div>
           <div class="row" id="roomRow">
             <div class="what"><label for="room">Room in the world</label><small>How many can be alive at once when friends are called.</small></div>
             <input id="room" type="number" min="1" max="4" value="2">
@@ -357,7 +363,8 @@
             <input id="minutes" type="number" min="1" placeholder="∞">
           </div>
           <div class="row">
-            <div class="what"><label for="agents">Agents</label><small>… or when this many agents have lived in it.</small></div>
+            <div class="what"><label for="agents">Agents</label><small>… or when this many agents have lived in it.
+              If agents keep their memory: when they have woken up again this many times.</small></div>
             <input id="agents" type="number" min="1" placeholder="100">
           </div>
         </section>
@@ -749,6 +756,7 @@ function drawCreate() {
   $('createSummary').textContent = [
     worldInfo(chosen.world)?.title, chosen.agent,
     count(alive, 'agent', 'agents') + ' alive at the start' + ($('friends').checked ? `, friends up to ${$('room').value}` : ''),
+    $('keep').checked && 'they keep their memory',
     'ends after ' + (minutes ? `${minutes} min or ` : '') + count(born, 'agent', 'agents'),
   ].filter(Boolean).join(' · ');
 }
@@ -823,7 +831,8 @@ function logRow(steps, i, marked, striking) {
   const told = { 'by hand': 'You tell the agent', auto: 'Kept going', repeat: 'Prompt repeated' }[step.how];
   // Every agent is told the same once. (In older runs every message to the one agent opened a round.)
   const head = step.kind !== 'prompt' ? labels[step.kind]
-    : story.limits ? `Agent ${agentAt(i)} ${step.how === 'called' ? 'is called as a friend, and told' : 'is told'}` : `Round ${roundAt(i)} · ${told || labels.prompt}`;
+    : story.limits ? `Agent ${agentAt(i)} ${{ called: 'is called as a friend, and told', woke: 'wakes up again',
+                                             again: 'wakes up again, remembering, and is told' }[step.how] || 'is told'}` : `Round ${roundAt(i)} · ${told || labels.prompt}`;
   if (head) row.append(el('div', 'label', head));
   if (step.kind === 'act') {
     const args = Object.entries(step.args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
@@ -912,7 +921,7 @@ $('create').onsubmit = async e => {
   if (!draft) return;
   const wish = { world: chosen.world, model: chosen.agent, system: $('system').value, prompt: $('say').value,
                  minutes: +$('minutes').value, agents: +$('agents').value, together: +$('together').value,
-                 room: $('friends').checked ? +$('room').value : 0, note: $('note').value };
+                 room: $('friends').checked ? +$('room').value : 0, note: $('note').value, keep: $('keep').checked };
   try { localStorage.setItem('minutes', $('minutes').value); localStorage.setItem('agents', $('agents').value); } catch {}
   const { id } = await api('/api/runs', { method: 'POST', body: JSON.stringify(wish) });
   if (!id) return;          // a run started this very second already
