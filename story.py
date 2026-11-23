@@ -2,8 +2,9 @@
 """Turns the files of one run into a single timeline of steps.
 
 A step is the prompt, something the agent thought, said or did, or the end of the run.
-Every step carries the world's state after it, so the viewer can draw any step alone.
-This file knows nothing about any particular world: a state is whatever the world recorded.
+Every step carries the state of the agents and notes after it. The blocks are carried only
+where they change: all of them on the step where an agent wakes up ("blocks"), and what an
+action changed on its step ("changes"). The viewer puts the world together from these.
 
 Run it directly to print a run as text:  ./story.py [runs/<id>]   (default: latest)
 """
@@ -12,7 +13,6 @@ import os
 import sys
 import time
 
-import worlds
 
 RUNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs")
 
@@ -127,24 +127,6 @@ def limits(run):
         return None
 
 
-def old_keep(run):
-    """Older runs had one agent that was told something whenever it stopped. This is what."""
-    try:
-        return json.loads(read(run, "auto") or "{}").get("text")
-    except ValueError:
-        return None
-
-
-# Runs recorded before worlds became separate files kept the island's facts loose in each entry.
-def old_setup(start):
-    return {"size": start["size"], "view": start["view"], "north": start.get("north", 1)}
-
-
-def old_state(entry, start):
-    return {"pos": entry["pos"], "carrying": entry["carrying"], "view": entry.get("view", start["view"]),
-            "blocks": entry.get("blocks") or entry.get("stones") or []}
-
-
 def load(run):
     protocol = read_jsonl(os.path.join(run, "protocol.jsonl"))
     start = protocol[0] if protocol and protocol[0]["tool"] == "start" else None
@@ -152,22 +134,30 @@ def load(run):
     story = {
         "id": os.path.basename(run),
         "world": start.get("world", "island") if start else None,
-        "setup": (start.get("setup") or old_setup(start)) if start else None,
+        "setup": start.get("setup") if start else None,
         "review": review(run),
         "model": model(run),
         "done": os.path.exists(os.path.join(run, "done")),
         "system": read(run, "system.txt"),   # what every agent knows before it is told anything
         "limits": limits(run),               # when the world ends by itself
         "resumable": os.path.exists(os.path.join(run, "world.pickle")),  # its world was kept, so it can go on
-        "keep": old_keep(run),               # older runs: what kept their one agent going
         "steps": [],
     }
     if not start:  # the world has not started yet
         return story
 
     def after(entry):
-        """The moment after a protocol entry: the time and the world's state."""
-        return {"time": entry.get("time"), "state": entry.get("state") or old_state(entry, start)}
+        """The moment after a protocol entry: the time, and the state of agents and notes."""
+        return {"time": entry.get("time"),
+                "state": {k: v for k, v in entry["state"].items() if k not in ("blocks", "changes")}}
+
+    # All blocks go with the next step after an agent woke up (see the top of this file).
+    pending = [start["state"].get("blocks", [])]
+
+    def add(step):
+        if pending[0] is not None:
+            step["blocks"], pending[0] = pending[0], None
+        story["steps"].append(step)
 
     # Several agents can live side by side, each in its own place in the world (older runs:
     # one place). What happens in one place is in order; the places are told as they were recorded.
@@ -188,7 +178,7 @@ def load(run):
     memory = {}   # per place: how many tokens its agent's conversation holds at this point
     number = {}   # per place: which agent lives there (1 for the world's first, 2 for the second, ...)
     born = 0
-    story["steps"].append({"kind": "prompt", "text": read(run, "prompt.txt") or "", "agent": 1, "place": 1, **now})
+    add({"kind": "prompt", "text": read(run, "prompt.txt") or "", "agent": 1, "place": 1, **now})
 
     events = read_jsonl(os.path.join(run, "transcript.jsonl"))
     story["usage"] = usage(events)
@@ -196,19 +186,21 @@ def load(run):
         place = place_of(event)
         who = {"agent": number.get(place, 1), "place": place}
         if "compact" in str(event.get("subtype")):  # Claude Code shortened the agent's memory
-            story["steps"].append({"kind": "memory", "text": "The agent's memory was full and has been shortened to a summary.", **who, **now})
+            add({"kind": "memory", "text": "The agent's memory was full and has been shortened to a summary.", **who, **now})
         elif event.get("type") == "died":  # the agent died; a new one wakes up
             gone = {"stopped": "The agent ended its turn. It is gone.", "drowned": "The agent drowned.",
                     "replaced": "The agent is gone: a friend was called, the world was full, and it had been alive longest.",
                     "slept": "The agent ended its turn."}
-            story["steps"].append({"kind": "death", "how": event.get("how", "drowned"), **who, **now,
+            add({"kind": "death", "how": event.get("how", "drowned"), **who, **now,
                                    "text": gone.get(event.get("how"), "The agent died.")})
             # (An agent that keeps its memory and drowned wakes up with its next action: no new start.)
             kept_on = (story["limits"] or {}).get("keep") and event.get("how") == "drowned"
             if not kept_on:
                 memory[place] = 0
             if wakings.get(place) and not kept_on:  # from here on the world is shown as the new agent finds it
-                now = after(wakings[place].pop(0))
+                waking = wakings[place].pop(0)
+                now = after(waking)
+                pending[0] = waking["state"].get("blocks")
         elif event.get("type") == "told":  # run.py told it something
             if event["how"] == "again":  # the same agent, woken up again: its actions from here on are a new life
                 waiting[place] = lives[place].pop(0) if lives.get(place) else []
@@ -220,7 +212,7 @@ def load(run):
             if event["how"] == "first":  # the very first message, as the agent got it (with the time filled in)
                 story["steps"][0]["text"] = event["text"]
             else:
-                story["steps"].append({"kind": "prompt", "text": event["text"], "how": event["how"], **who, **now})
+                add({"kind": "prompt", "text": event["text"], "how": event["how"], **who, **now})
         if event.get("type") != "assistant":
             continue
         used = event["message"].get("usage") or {}  # everything the agent read to produce this message
@@ -229,9 +221,9 @@ def load(run):
         mine = {"memory": memory[place], **who}
         for part in event["message"]["content"]:
             if part["type"] == "thinking" and part["thinking"].strip():
-                story["steps"].append({"kind": "think", "text": part["thinking"].strip(), **mine, **now})
+                add({"kind": "think", "text": part["thinking"].strip(), **mine, **now})
             elif part["type"] == "text" and part["text"].strip():
-                story["steps"].append({"kind": "say", "text": part["text"].strip(), **mine, **now})
+                add({"kind": "say", "text": part["text"].strip(), **mine, **now})
             # Only calls to the world's tools reach the protocol.
             elif part["type"] == "tool_use" and part["name"].startswith("mcp__world__"):
                 if place not in waiting:  # (runs from before every agent was told something by run.py)
@@ -251,8 +243,9 @@ def load(run):
                 now = after(action)
                 # Extra facts about this action for the viewer, such as the path of a throw.
                 detail = action.get("detail") or ({"flight": action["flight"]} if action.get("flight") else {})
-                story["steps"].append({"kind": "act", "tool": action["tool"], "args": action["args"],
-                                       "result": action["result"], **detail, **mine, **now})
+                add({"kind": "act", "tool": action["tool"], "args": action["args"],
+                                       "result": action["result"], **detail, **mine, **now,
+                                       "changes": action["state"].get("changes", [])})
     story["together"] = len({step["place"] for step in story["steps"]})
     return stopped(run, story)
 
@@ -300,9 +293,6 @@ def text(story, numbered=False):
     """The whole run as readable text."""
     lines = [f"Run {story['id']}  (world: {story['world']}, agent: {story['model']})", "",
              told(story["steps"], numbered, together=story.get("together", 1) > 1)]
-    picture = getattr(worlds.load(story["world"]), "picture", None) if story["steps"] else None
-    if picture:  # not every world can draw itself as text
-        lines += ["Final world:", picture(story["setup"], story["steps"][-1]["state"])]
     return "\n".join(lines)
 
 

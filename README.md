@@ -59,11 +59,17 @@ Ideas for more worlds are collected in [docs/world-ideas.md](docs/world-ideas.md
 
 ## Adding a world
 
-A world is one Python file in `worlds/` (what happens) and one JavaScript file next to it
-(how it is drawn). What both have to provide is described in
-[worlds/__init__.py](worlds/__init__.py) and at the top of
-[worlds/island.js](worlds/island.js). What every world shares is in
-[worlds/_common.py](worlds/_common.py).
+A world is one Python file in `worlds/`, holding one class. It is built from:
+
+- the core (`worlds/core.py`): blocks in a 3D grid (the ground is blocks too), agents,
+  tools and time;
+- the features it wants (`worlds/features.py`): looking, walking, jumping, carrying,
+  throwing, notes, the clock.
+
+It adds its own kinds of block, its own tools (any method marked `@tool`), and its own
+rules (by overriding a method). [worlds/island.py](worlds/island.py) is the smallest world,
+[worlds/magic.py](worlds/magic.py) one with tricks. No drawing is needed: every world is drawn
+from the colours of its kinds of block.
 
 ## How it is built
 
@@ -72,6 +78,7 @@ A world is one Python file in `worlds/` (what happens) and one JavaScript file n
 | `run.py` | Runs a world: starts the agents, one after another, until the world ends |
 | `mcp_server.py` | Hands the world to an agent as tools, and writes the protocol |
 | `kept.py` | The file a world is kept in, shared by the agents that are alive |
+| `worlds/core.py`, `worlds/features.py` | What worlds are made of |
 | `story.py` | Turns a run's records into one timeline |
 | `review.py` | The reviewing agent: name, summary, rating, and behaviours per step |
 | `behaviours.py` | The list of behaviours, and the table in BEHAVIOURS.md |

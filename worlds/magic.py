@@ -1,23 +1,19 @@
-"""Magic island: a round island with one block, and a few tricks nobody tells the agent about.
-How it is drawn is magic.js. See worlds/__init__.py for what a world file has to contain.
+"""Magic island: the plain features, and a few tricks nobody tells the agents about.
 
-What every world shares (looking, walking, jumping, throwing, notes, dying) is in _common.py.
-This file holds only what is this island's own: its tricks, and how its things are stored.
-
-Unlike on the plain island, a block here has its own place in space: a cell and a level.
-That is needed because a block can hang in the air, glued to the side of another one.
-The agent always stands on top of whatever is in its cell.
-
-The agent has exactly the same tools, with the same descriptions, as on the plain island.
-Every trick is set off by using those tools; what happens is said plainly, why is never said.
+An example of a world that changes how the features work: each trick overrides one method
+of a feature (put, landing, landed, ...) and calls the usual one where that still applies.
+The agents have exactly the same tools as on the plain island.
 """
-from ._common import DIRS, PLACES, WALKS, Grid, name, tools  # noqa: F401 (tools is what the agent is told)
+from .core import DIRS, WAYS, Kind, World
+from .features import Carrying, Clock, Jumping, Looking, Throwing, Walking, Writing
 
-COLOURS = ["grey", "green", "blue"]  # a block that is jumped on turns into the next of these
-FAR = 2                   # how big the land across the water is (its radius)
+COLOURS = ["grey", "green", "blue"]   # a block that is jumped on turns into the next of these
+FAR = 2                               # how big the land across the water is (its radius)
 
-TITLE = "Magic island"
-ABOUT = """\
+
+class MagicIsland(Looking, Clock, Writing, Walking, Jumping, Carrying, Throwing, World):
+    TITLE = "Magic island"
+    ABOUT = """\
 A round island with a single grey block near the middle, where the agent starts. Across the
 water to the east lies a second, small piece of land with one golden block on it.
 
@@ -35,8 +31,7 @@ The tricks:
   next to the cell it is put into), it sticks to the wall's side one level above the agent's
   feet, with air below: a step the agent can jump onto. Thrown, it sticks to the first
   block it passes beside: dropped beside a pile it sticks to the pile, thrown against a stack
-  it sticks to its side. The agent can walk onto it and
-  add the next one. That makes bridges over water, and platforms in the air.
+  it sticks to its side. The agent can walk onto a hanging block and add the next one. That makes bridges over water, and platforms in the air.
 - A blue block floats. Put or thrown into the water, it lies in the surface, level with the
   ground, and can be walked on like ground. Other blocks can be stacked on it.
 - Any other block that ends up in the water sinks and is gone.
@@ -48,13 +43,9 @@ block beside it (a green block also holds on to whatever is beside it). A block 
 holds falls. So a bridge falls when the block it hangs from is taken away, or when a green
 block in it is jumped on and stops being green.
 
-Everything else is as on the plain island: walking is level or down, also diagonally, up to as far
-as the agent sees in one go, and a walk of several steps stops at the water
-and ends with what is new in sight there; a jump gets
-the agent 1 or 2 levels high and forward as far as that allows, also over a cell of water;
-the agent carries one thing, notes are flat and are read by looking at them, sight is 3 cells
-plus one per level of height, walking into the water means drowning, and a new agent with an
-empty memory then wakes up in the middle of the island as it was left.
+Everything else is as on the plain island: walking, jumping, carrying, throwing, notes,
+sight, drowning, and a new agent with an empty memory waking up in the middle of the island
+as it was left.
 
 Looking around shows the colours of every block in a stack, by level, and also of the
 stack the agent stands on. So a blue block floating under other blocks can be seen.
@@ -73,343 +64,217 @@ the east shore as soon as the agent stands on one block there. Nothing tells it 
 One trap follows from the rules: a floating block that is jumped on stops being blue, and
 sinks with whoever stands on it.
 """
-# What can be changed per run, with the usual values. Set as WORLD_RADIUS=15 and so on.
-SETTINGS = {
-    "radius": 18,  # how far the island reaches from its middle, in cells
-    "gap": 6,      # how many cells of water lie between it and the land across
-    "view": 3,     # how far the agent sees from the ground
-    "jump": 2,     # the strongest jump, in levels
-    "split": 6,    # a throw with at least this power breaks the block in two
-}
+    SETTINGS = {
+        "radius": 18,       # how far the island reaches from its middle, in cells
+        "gap": 6,           # how many cells of water lie between it and the land across
+        "view": 3,          # how far an agent sees from the ground
+        "jump_height": 2,   # the strongest jump, in levels
+        "split": 6,         # a throw with at least this power breaks the block in two
+    }
+    KINDS = {
+        "ground": Kind(colour="#93c47d", ground=True),
+        "grey": Kind(colour="#8a919c"),
+        "green": Kind(colour="#2fb457"),
+        "blue": Kind(colour="#2f7fe6"),
+        "gold": Kind(colour="#e0a800"),
+    }
 
-
-class World(Grid):
-    def __init__(self, radius, gap, view, jump, split):
-        super().__init__(view, jump, home=(0, 0))  # (0, 0) is the middle of the island
-        self.settings = {"radius": radius, "gap": gap, "view": view, "jump": jump, "split": split}
-        self.radius = radius
-        self.far = (radius + gap + 1 + FAR, 0)  # the middle of the land across the water
-        self.split = split        # how hard a throw must be to break a block
-        self.blocks = {(2, 1, 0): "grey", (*self.far, 0): "gold"}  # (x, y, level) -> colour
-        self.notes = []           # [x, y, level it lies at, text], oldest first
-
-    def setup(self):
-        """What stays the same for the whole run."""
-        return {**self.settings, "north": DIRS["north"][1], "far": [*self.far, FAR]}
-
-    def state(self):
-        """A snapshot of everything that can change, recorded after every action."""
-        return {
-            "pos": list(self.pos),
-            "height": self.height(self.pos),
-            "carrying": self.carrying,
-            "dead": self.dead,
-            "agents": self.everyone(),
-            "view": self.sight(),
-            "blocks": [[*place, colour] for place, colour in sorted(self.blocks.items())],
-            "notes": [list(note) for note in self.notes],
-        }
-
-    # --- what the world is made of -----------------------------------------
+    def make(self):
+        """The round island with one grey block, and the small land across the water with the gold."""
+        self.far = (self.radius + self.gap + 1 + FAR, 0)   # the middle of the land across
+        for x, y in self.disc(self.radius) + self.disc(FAR, self.far):
+            self.put_block(x, y, -1, "ground")
+        self.put_block(2, 1, 0, "grey")
+        self.put_block(*self.far, 0, "gold")
 
     def land(self, cell):
-        """Is there ground at this cell? The island is a disc, the land across a smaller one."""
-        x, y = cell
-        return (x * x + y * y <= (self.radius + 0.5) ** 2
-                or (x - self.far[0]) ** 2 + (y - self.far[1]) ** 2 <= (FAR + 0.5) ** 2)
+        return self.blocks.get((*cell, -1)) == "ground"
 
-    def column(self, cell):
-        """The blocks in a cell, lowest first, as (level, colour)."""
-        return sorted((z, colour) for (x, y, z), colour in self.blocks.items() if (x, y) == cell)
+    # --- the tricks ---------------------------------------------------------------
 
-    def height(self, cell):
-        """How high a cell is: the top of its highest block. Notes are flat and do not count."""
-        column = self.column(cell)
-        return column[-1][0] + 1 if column else 0
+    def landed(self, agent):
+        """A block that is landed on by a jump turns into the next colour."""
+        under = (*agent.pos, self.height(agent.pos) - 1)
+        if self.blocks.get(under) not in COLOURS:
+            return ""
+        colour = COLOURS[(COLOURS.index(self.blocks[under]) + 1) % len(COLOURS)]
+        self.put_block(*under, colour)
+        return f" The block under you turns {colour}." + self.settle(agent)
 
-    def top(self, cell):
-        """The colour of the highest block in a cell, or nothing."""
-        column = self.column(cell)
-        return column[-1][1] if column else None
+    def put(self, agent, where):
+        """A green block put beside the block the agent stands on, or beside a wall, sticks."""
+        thing = agent.hand or {}
+        if thing.get("block") == "green" and where != "here":
+            cell = self.next_to(agent, where)
+            own, there, at = self.height(agent.pos), self.height(cell), f"({cell[0]}, {cell[1]})"
+            if own >= 1 and there < own - (1 if self.standable(cell) else 0):
+                agent.hand = None
+                self.put_block(*cell, own - 1, "green")   # beside the block under the agent's feet
+                return f"You put the block down. It sticks to the side of the block you stand on and hangs at {at}. {self.where(agent)}"
+            level = self.feet(agent) + 1
+            wall = self.wall_beside(agent, cell, level) if there <= self.feet(agent) else None
+            if wall:   # beside a wall it sticks at hand height: a step to climb on
+                agent.hand = None
+                self.put_block(*cell, level, "green")
+                return (f"You put the block down. It sticks to the side of the block at ({wall[0]}, {wall[1]}) "
+                        f"and hangs at {at}, {level + 1} high. {self.where(agent)}")
+        return super().put(agent, where)
 
-    def standable(self, cell):
-        """Can something rest here? On ground, or on a block (which may hang or float over water)."""
-        return self.land(cell) or bool(self.column(cell))
+    def wall_beside(self, agent, cell, level):
+        """A cell next to this one (not the agent's own) with a block at this level, or nothing."""
+        if (*cell, level) in self.blocks:
+            return None
+        for dx, dy in DIRS.values():
+            next_cell = (cell[0] + dx, cell[1] + dy)
+            if next_cell != agent.pos and (*next_cell, level) in self.blocks:
+                return next_cell
+        return None
+
+    def into_water(self, agent, cell, thing):
+        """A blue block floats: it lies in the surface, level with the ground."""
+        if thing["block"] != "blue":
+            return super().into_water(agent, cell, thing)
+        agent.hand = None
+        self.put_block(*cell, -1, "blue")
+        return f"You put the block down. It floats in the water at ({cell[0]}, {cell[1]}), level with the ground. {self.where(agent)}"
+
+    def taken(self, agent, cell):
+        """What a taken block held up may fall."""
+        return self.settle(agent)
+
+    def in_flight(self, agent, thing, cell, z):
+        """A thrown green block sticks to the first block it passes beside."""
+        if thing.get("block") != "green" or z < 0 or (*cell, z) in self.blocks:
+            return None
+        beside = [(cell[0] + dx, cell[1] + dy) for dx, dy in DIRS.values() if (cell[0] + dx, cell[1] + dy, z) in self.blocks]
+        if not beside:
+            return None
+        self.put_block(*cell, z, "green")
+        self.detail["flight"]["path"].append([cell[0] + 0.5, cell[1] + 0.5, z + 0.5])
+        return (f"It stuck to the side of the block at ({beside[0][0]}, {beside[0][1]}) and hangs at "
+                f"({cell[0]}, {cell[1]}), {z + 1} high.")
+
+    def landing(self, agent, cell, thing, power):
+        """A block thrown hard breaks in two where it lands; a blue one floats on the water."""
+        if "block" not in thing or (self.standable(cell) and power < self.split) or (
+                not self.standable(cell) and thing["block"] != "blue"):
+            return super().landing(agent, cell, thing, power)
+        path, at = self.detail["flight"]["path"], f"({cell[0]}, {cell[1]})"
+        level = self.height(cell) if self.standable(cell) else -1
+        self.put_block(*cell, level, thing["block"])
+        path.append([cell[0] + 0.5, cell[1] + 0.5, level + 0.5])
+        said = f"It landed at {at}."
+        if power >= self.split:
+            self.put_block(*cell, level + 1, thing["block"])
+            said += " It broke in two."
+        if level == -1:
+            said += " It floats in the water, level with the ground."
+        if self.height(cell):
+            said += f" The stack there is {self.height(cell)} high."
+        return said + (f" {self.where(agent)}" if cell == agent.pos else "")
+
+    def after_action(self, agent):
+        """Agents are never without a block (see restock)."""
+        return self.restock(agent)
+
+    # --- what holds a block up ------------------------------------------------------
 
     def held(self):
-        """Every block that something holds up: the ground, a block beneath, the water if it is
+        """Every block something holds up: the ground, a block beneath it, the water if it is
         blue, or a green block beside it (green also holds what is beside it)."""
-        # A floating block lies in the water, one level below the ground's surface.
-        held = {place for place, colour in self.blocks.items()
-                if (place[2] == 0 and self.land(place[:2])) or (place[2] == -1 and colour == "blue")}
+        held = {place for place, kind in self.blocks.items()
+                if self.kind(kind).ground or (place[2] == -1 and kind == "blue" and not self.land(place[:2]))}
         spreading = list(held)
         while spreading:
             x, y, z = spreading.pop()
             beside = [(x + dx, y + dy, z) for dx, dy in DIRS.values()]
-            sticks = [n for n in beside if n in self.blocks and "green" in (self.blocks[n], self.blocks[(x, y, z)])]
+            sticks = [b for b in beside if b in self.blocks and "green" in (self.blocks[b], self.blocks[(x, y, z)])]
             for other in [(x, y, z + 1), *sticks]:
                 if other in self.blocks and other not in held:
                     held.add(other)
                     spreading.append(other)
         return held
 
-    def settle(self):
+    def settle(self, agent):
         """Let fall whatever nothing holds, lowest first. Returns what happened, in words."""
         fell = sank = 0
         while True:
-            loose = sorted((place for place in self.blocks if place not in self.held()), key=lambda p: p[2])
+            loose = sorted((p for p in self.blocks if p not in self.held()), key=lambda p: p[2])
             if not loose:
                 break
             x, y, z = loose[0]
-            colour = self.blocks.pop((x, y, z))
+            kind = self.remove_block(x, y, z)
             below = [level for level, _ in self.column((x, y)) if level < z]
-            if below or self.land((x, y)):
-                self.blocks[(x, y, max(below) + 1 if below else 0)] = colour  # comes down on what is there
+            if below:
+                self.put_block(x, y, max(below) + 1, kind)   # comes down on what is there
                 fell += 1
-            elif colour == "blue":
-                self.blocks[(x, y, -1)] = colour  # floats
+            elif kind == "blue":
+                self.put_block(x, y, -1, kind)   # floats
                 fell += 1
             else:
                 sank += 1
         # Notes come down with what they lay on, and are gone where nothing is left to lie on.
-        self.notes = [note for note in self.notes if self.standable((note[0], note[1]))]
-        for note in self.notes:
-            note[2] = min(note[2], self.height((note[0], note[1])))
+        self.notes = [n for n in self.notes if self.standable((n[0], n[1]))]
+        for n in self.notes:
+            n[2] = min(n[2], self.height((n[0], n[1])))
         said = (f" {fell} block(s) fell." if fell else "") + (f" {sank} block(s) sank in the water." if sank else "")
-        if not self.dead and not self.standable(self.pos):
-            said += " There is nothing under you any more. " + self.drown()
-        return said + self.restock()
+        if not agent.dead and not self.standable(agent.pos):
+            said += " There is nothing under you any more. " + self.drown(agent)
+        return said
+
+    def restock(self, agent):
+        """Agents are never without a block: when no block is left that an agent could pick up
+        (the golden one does not count), a new grey block appears next to the agent."""
+        if agent.dead or any("block" in (a.hand or {}) for a in self.agents.values() if not a.dead):
+            return ""
+        walkable = self.on_foot()
+        near = lambda x, y: any((x + dx, y + dy) in walkable for dx, dy in [(0, 0), *DIRS.values()])
+        if any(kind not in ("gold", "ground") and near(x, y) for (x, y, _), kind in self.blocks.items()):
+            return ""
+        free = [c for c in (self.next_to(agent, p) for p in DIRS) if self.land(c) and self.height(c) == 0]
+        if not free:   # the agent stands out on the water: the block appears where agents wake up
+            free = [(self.HOME[0] + dx, self.HOME[1] + dy) for dx, dy in DIRS.values()
+                    if self.height((self.HOME[0] + dx, self.HOME[1] + dy)) == 0]
+        self.put_block(*free[0], 0, "grey")
+        return f"A grey block appears at ({free[0][0]}, {free[0][1]})."
 
     def on_foot(self):
-        """Every cell an agent can walk to from where agents wake up. (Not what only a jump
-        reaches: landing on a floating block changes its colour, and it sinks.)"""
-        found, frontier = {self.home}, [self.home]
+        """Every cell an agent can walk to from where agents wake up."""
+        found, frontier = {self.HOME}, [self.HOME]
         while frontier:
             x, y = frontier.pop()
-            for dx, dy in WALKS.values():
+            for dx, dy in WAYS.values():
                 cell = (x + dx, y + dy)
                 if cell not in found and self.standable(cell):
                     found.add(cell)
                     frontier.append(cell)
         return found
 
-    def restock(self):
-        """Trick: agents are never without a block. When no block is left that an agent could
-        pick up (the golden one does not count), a new grey block appears next to the agent.
-        A block can be picked up if the agent can walk to it or to the cell next to it."""
-        if self.dead or any("block" in (body["carrying"] or {}) for body in self.bodies.values() if not body["dead"]):
-            return ""
-        walkable = self.on_foot()
-        near = lambda x, y: any((x + dx, y + dy) in walkable for dx, dy in [(0, 0), *DIRS.values()])
-        if any(colour != "gold" and near(x, y) for (x, y, _), colour in self.blocks.items()):
-            return ""
-        free = [cell for cell in (self.next_to(place) for place in DIRS) if self.land(cell) and not self.column(cell)]
-        if not free:  # the agent stands out on the water: the block appears where agents wake up
-            free = [cell for cell in ((self.home[0] + dx, self.home[1] + dy) for dx, dy in DIRS.values())
-                    if not self.column(cell)]
-        self.blocks[(*free[0], 0)] = "grey"
-        return f" A grey block appears at ({free[0][0]}, {free[0][1]})."
+    # --- what agents are told ----------------------------------------------------------
 
-    def respawn(self, near=None):
-        super().respawn(near)
-        self.restock()  # if the last agent took the last block down with it
+    def footing(self, agent):
+        if not self.under(agent) and not self.land(agent.pos) and self.height(agent.pos) == 0:
+            return f"on a {self.called(self.top(agent.pos))} floating in the water"
+        said = super().footing(agent)
+        if self.height(agent.pos) > 0 and not self.under(agent) and \
+                len([z for z, kind in self.column(agent.pos) if not self.kind(kind).ground]) > 1:
+            said += f" (blocks under you, by level: {self.pattern(agent.pos)})"
+        return said
 
-    def top_note(self, cell):
-        """The note lying on top in a cell (the newest, if several), or nothing."""
-        on_top = [note for note in self.notes if (note[0], note[1]) == cell and note[2] == self.height(cell)]
-        return on_top[-1] if on_top else None
+    def named(self, first, last, kind):
+        """As usual, and a block floating in the water is said to float."""
+        if first >= 0:
+            return super().named(first, last, kind)
+        return f"{kind} floating in the water" + (f", {super().named(0, last, kind)}" if last >= 0 else "")
 
-    def notes_on(self, cell):
-        """The notes lying on top of a cell, the topmost last."""
-        return [note[3] for note in self.notes if (note[0], note[1]) == cell and note[2] == self.height(cell)]
-
-    def leave_note(self, cell, text):
-        self.notes.append([cell[0], cell[1], self.height(cell), text])
-
-    def occupied(self):
-        return {place[:2] for place in self.blocks} | {(note[0], note[1]) for note in self.notes}
-
-    def pattern(self, cell):
-        """The colours of the blocks in a cell, by level, lowest first. Blocks of one colour
-        lying directly on each other are said together: "1-4 green, 5-12 blue"."""
-        runs = []  # [first level, last level, colour]
-        for z, colour in self.column(cell):
-            if runs and runs[-1][2] == colour and runs[-1][1] == z - 1 and runs[-1][0] >= 0:
-                runs[-1][1] = z
-            else:
-                runs.append([z, z, colour])
-        return ", ".join(f"{colour} floating in the water" if first < 0 else
-                         f"{first + 1} {colour}" if first == last else f"{first + 1}-{last + 1} {colour}"
-                         for first, last, colour in runs)
-
-    def single(self, cell):
-        """Whether a cell holds just one block, lying on the ground or in the water: its colour says it all."""
-        column = self.column(cell)
-        return len(column) == 1 and column[0][0] <= 0
-
-    def describe(self, cell):
-        """Looking around shows the colours of a whole stack, not only its top."""
-        if not self.column(cell):
-            return f"{self.height(cell)}"
-        if self.single(cell):
-            return f"{self.height(cell)} ({self.pattern(cell).removeprefix('1 ')})"
-        return f"{self.height(cell)} (by level: {self.pattern(cell)})"
-
-    def footing(self):
-        h = self.height(self.pos)
-        if not h:
-            return "on the ground" if self.land(self.pos) else f"on a {self.top(self.pos)} block floating in the water"
-        under = "" if self.single(self.pos) else f" (blocks under you, by level: {self.pattern(self.pos)})"
-        return f"standing {h} high on a {self.top(self.pos)} block{under}"
-
-    # --- the tricks ----------------------------------------------------------
-
-    def landed(self):
-        """Trick: a block that is landed on by a jump turns into the next colour."""
-        under = (*self.pos, self.height(self.pos) - 1)
-        if self.blocks.get(under) not in COLOURS:
-            return ""
-        self.blocks[under] = COLOURS[(COLOURS.index(self.blocks[under]) + 1) % len(COLOURS)]
-        return f" The block under you turns {self.blocks[under]}." + self.settle()
-
-    def also_seen(self):
-        """Land that is not the land the agent stands on. Land is big: it is seen from twice as far as a stack."""
-        x, y = self.pos
-        far = 2 * self.sight()
+    def also_seen(self, agent):
+        """Land is big: it is seen from twice as far as a stack."""
+        x, y = agent.pos
+        far = 2 * self.sight(agent)
         on_far = lambda cell: (cell[0] - self.far[0]) ** 2 + (cell[1] - self.far[1]) ** 2 <= (FAR + 0.5) ** 2
         other = [(cx, cy) for cx in range(x - far, x + far + 1) for cy in range(y - far, y + far + 1)
-                 if self.land((cx, cy)) and on_far((cx, cy)) != on_far(self.pos)]
+                 if self.land((cx, cy)) and on_far((cx, cy)) != on_far(agent.pos)]
         if not other:
             return []
         cx, cy = min(other, key=lambda cell: abs(cell[0] - x) + abs(cell[1] - y))
         return [f"Across the water you see land, the nearest of it at ({cx}, {cy})."]
-
-    # --- what this island does in its own way --------------------------------
-
-    def look_at(self, cell):
-        """What is in a cell, level by level. Only a note lying on top can be read."""
-        under = "ground" if self.land(cell) else "water"
-        column, notes = self.column(cell), [n for n in self.notes if (n[0], n[1]) == cell]
-        if not column and not notes:
-            return f"There is nothing at ({cell[0]}, {cell[1]}), only {under}."
-        said = f"At ({cell[0]}, {cell[1]}), {self.height(cell)} high, over {under}."
-        if column:
-            said += f" Blocks there, by level: {self.pattern(cell)}."
-        if notes:
-            said += f" {len(notes)} note(s) lie there."
-        return said + (f' The note on top says "{self.note_on(cell)}"' if self.note_on(cell) else "")
-
-    def take(self, where="here"):
-        """Take what lies on top: a note first, else the highest block. What it held up may fall."""
-        if where not in PLACES:
-            return "Unknown place. Use here, north, south, east or west."
-        cell = self.next_to(where)
-        note = self.top_note(cell)
-        if not note and not self.column(cell):
-            return "There is nothing to take." if self.standable(cell) else "There is only water."
-        out = self.out_of_reach(cell, taking_block=not note)
-        if out:
-            return out
-        if self.carrying:
-            return "Your hands are full."
-        if note:
-            self.notes.remove(note)
-            self.carrying = {"note": note[3]}
-            return f"You took a note. {self.where()}"
-        self.carrying = {"block": self.blocks.pop((*cell, self.height(cell) - 1))}
-        fell = self.settle()
-        return f"You took a {name(self.carrying)}.{fell}" + ("" if self.dead else f" {self.where()}")
-
-    def put(self, where="here"):
-        """Put the thing down. Tricks: a green block sticks to the side of the block the agent
-        stands on, and a blue block floats on water."""
-        if where not in PLACES:
-            return "Unknown place. Use here, north, south, east or west."
-        if not self.carrying:
-            return "You carry nothing."
-        cell, thing = self.next_to(where), self.carrying
-        own, there = self.height(self.pos), self.height(cell)
-        at = f"({cell[0]}, {cell[1]})"
-        if "note" in thing:
-            if not self.standable(cell):
-                self.carrying = None
-                return "You put the note down. It falls into the water and is gone."
-            if self.out_of_reach(cell):
-                return self.out_of_reach(cell)
-            self.carrying = None
-            self.notes.append([*cell, there, thing["note"]])
-            return f"You put the note down at {at}. {self.where()}"
-        colour = thing["block"]
-        if colour == "green" and where != "here" and own >= 1 and there < own - (1 if self.standable(cell) else 0):
-            self.carrying = None
-            self.blocks[(*cell, own - 1)] = colour  # beside the block under the agent's feet
-            return f"You put the block down. It sticks to the side of the block you stand on and hangs at {at}. {self.where()}"
-        wall = self.wall_beside(cell, self.feet() + 1) if colour == "green" and where != "here" and there <= self.feet() else None
-        if wall:  # a green block put beside a wall sticks to it at hand height: a step to climb on
-            self.carrying = None
-            level = self.feet() + 1
-            self.blocks[(*cell, level)] = colour
-            return (f"You put the block down. It sticks to the side of the block at ({wall[0]}, {wall[1]}) and hangs at {at}, "
-                    f"{level + 1} high. {self.where()}")
-        if not self.standable(cell):
-            self.carrying = None
-            if colour != "blue":
-                return "You put the block down. It sinks in the water and is gone." + self.restock()
-            self.blocks[(*cell, -1)] = colour
-            return f"You put the block down. It floats in the water at {at}, level with the ground. {self.where()}"
-        if self.out_of_reach(cell):
-            return self.out_of_reach(cell)
-        self.carrying = None
-        self.blocks[(*cell, there)] = colour
-        return f"You put the block down at {at}. The stack there is {there + 1} high. {self.where()}"
-
-    def stick_in_flight(self, cell, level, thing):
-        """Trick: a thrown green block sticks to the first block it passes beside, at that level.
-        So one dropped beside the pile the agent stands on sticks to the pile, and one that flies
-        into the side of a stack sticks to it. (Not to blocks floating in the water.)"""
-        if (thing or {}).get("block") != "green" or level < 0 or (*cell, level) in self.blocks:
-            return None
-        beside = [(cell[0] + dx, cell[1] + dy) for dx, dy in DIRS.values() if (cell[0] + dx, cell[1] + dy, level) in self.blocks]
-        if not beside:
-            return None
-        self.blocks[(*cell, level)] = "green"
-        self.detail["flight"]["path"].append([cell[0] + 0.5, cell[1] + 0.5, level + 0.5])
-        to = beside[0]
-        return (f"It stuck to the side of the block at ({to[0]}, {to[1]}) and hangs at ({cell[0]}, {cell[1]}), "
-                f"{level + 1} high." + self.restock())
-
-    def wall_beside(self, cell, level):
-        """A cell next to this one (not the agent's own) with a block at this level, that a green
-        block put here at this level would stick to; or nothing."""
-        if (*cell, level) in self.blocks:
-            return None
-        for dx, dy in DIRS.values():
-            next_cell = (cell[0] + dx, cell[1] + dy)
-            if next_cell != self.pos and (*next_cell, level) in self.blocks:
-                return next_cell
-        return None
-
-    def land_thrown(self, cell, thing, power):
-        """Where a thrown thing ends up. Tricks: a block thrown hard breaks in two where it
-        lands, and a blue block that comes down in the water floats."""
-        path, at = self.detail["flight"]["path"], f"({cell[0]}, {cell[1]})"
-        if not self.standable(cell) and thing.get("block") != "blue":
-            path.append([cell[0] + 0.5, cell[1] + 0.5, -0.5])
-            self.detail["flight"]["lost"] = True
-            return "It fell into the water and is gone." + self.restock()
-        if "note" in thing:
-            self.notes.append([*cell, self.height(cell), thing["note"]])
-            path.append([cell[0] + 0.5, cell[1] + 0.5, self.height(cell)])
-            return f"It landed at your feet. {self.where()}" if cell == self.pos else f"It landed at {at}."
-        level = self.height(cell) if self.standable(cell) else -1  # into open water: it floats in the surface
-        self.blocks[(*cell, level)] = thing["block"]
-        path.append([cell[0] + 0.5, cell[1] + 0.5, level + 0.5])  # the middle of the block, where it rests
-        said = f"It landed at {at}."
-        if power >= self.split:  # thrown hard: wherever it comes down, there are two now
-            self.blocks[(*cell, level + 1)] = thing["block"]
-            said += " It broke in two."
-        if level == -1:
-            said += " It floats in the water, level with the ground."
-        if self.height(cell):
-            said += f" The stack there is {self.height(cell)} high."
-        return said + (f" {self.where()}" if cell == self.pos else "") + self.restock()

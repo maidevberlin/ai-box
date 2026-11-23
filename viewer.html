@@ -523,7 +523,7 @@ async function paintWith(name) {
   painter?.remove();
   paints = name;
   try {
-    const drawing = await import(`/worlds/${name}.js`);
+    const drawing = await import('/worlds/_draw.js');
     painter = drawing.create($('scene'));
     $('hint').textContent = drawing.hint || '';
   } catch {
@@ -713,10 +713,10 @@ async function pictureCards() {
     const box = el('div', 'drawn');
     picture.append(box);
     try {
-      const drawing = await import(`/worlds/${world.name}.js`);
+      const drawing = await import('/worlds/_draw.js');
       const painter = drawing.create(box);
       painter.fit();
-      painter.show({ id: 'new ' + world.name, setup: world.start.setup }, { state: world.start.state }, 0, true);
+      painter.show({ id: 'new ' + world.name, setup: world.start.setup }, { state: world.start.state, blocks: world.start.state.blocks }, 0, true);
       const image = new Image();
       image.src = painter.snapshot();
       image.alt = `${world.title}, as it starts`;

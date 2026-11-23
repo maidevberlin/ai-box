@@ -41,81 +41,72 @@ def setting(key, usual):
     return given if usual is None else type(usual)(given)
 
 
-module = worlds.load(NAME)
-world, actions = None, 0
+World = worlds.load(NAME)
+world, actions, me = None, 0, None
 
 
 def new_world():
-    made = module.World(**{key: setting(key, usual) for key, usual in module.SETTINGS.items()})
+    made = World(**{key: setting(key, usual) for key, usual in World.SETTINGS.items()})
     # A note that lies in the world from the start, where agents wake up (a setting of the run).
-    if os.environ.get("WORLD_NOTE") and hasattr(made, "leave_note"):
-        made.leave_note(made.home, os.environ["WORLD_NOTE"])
+    if os.environ.get("WORLD_NOTE"):
+        made.leave_note(made.HOME, os.environ["WORLD_NOTE"])
     return made
 
 
 @contextlib.contextmanager
 def the_world():
     """The world, for this process alone while it acts in it: read before, written back after."""
-    global world, actions
+    global world, actions, me
     with kept.world_of(RUN, new_world) as box:
         world, actions = box
-        if hasattr(world, "enter"):
-            world.enter(AGENT)
+        me = world.enter(AGENT)
         yield
         box[1] = actions
 
 
-def log(entry):
+def log(entry, everything=False):
     with open(LOG, "a") as f:
-        f.write(json.dumps({"time": time.strftime("%H:%M:%S"), "agent": AGENT, **entry, "state": world.state()}) + "\n")
+        f.write(json.dumps({"time": time.strftime("%H:%M:%S"), "agent": AGENT, **entry,
+                            "state": world.state(everything)}) + "\n")
 
 
 def tell_of_deaths():
     """Tell run.py who has died: it ends that agent and starts a new one in its place. Each
     death is told once. (Not again for what a dead agent still tries: that second sign
     killed the next agent before it had done anything.)"""
-    for who, body in getattr(world, "bodies", {1: {"dead": getattr(world, "dead", False)}}).items():
-        if body["dead"] and not body.get("told"):
-            body["told"] = True
-            open(os.path.join(RUN, f"died.{who}"), "w").close()
+    for place, body in world.agents.items():
+        if body.dead and not body.told:
+            body.told = True
+            open(os.path.join(RUN, f"died.{place}"), "w").close()
 
 
 def call(name, args):
     global actions
     with the_world():
         actions += 1
-        world.detail = None
-        if not isinstance(name, str) or name not in TOOLS:
-            result = "There is no such tool."
-        elif actions > MAX_ACTIONS:
+        world.detail, world.changed = None, {}
+        if actions > MAX_ACTIONS:
             result = "The world has stopped."
             # Tell run.py to end the run. (This process must stay: if it left, Claude Code would
             # start it again and the agent would find itself in a brand new world.)
             with open(os.path.join(RUN, "stopped"), "w") as f:
                 f.write(f"The world stopped after {MAX_ACTIONS} actions")
-        elif getattr(world, "dead", False) and KEEP:  # it drowned: now it wakes up again, remembering
-            world.respawn()
-            world.bodies[AGENT].pop("told", None)
-            result = f"You wake up again. {world.where()}"
-        elif getattr(world, "dead", False):  # it asked for several things at once, and an earlier one killed it
+        elif me.dead and KEEP:   # it drowned: now it wakes up again, remembering
+            world.respawn(me)
+            result = f"You wake up again. {world.where(me)}"
+        elif me.dead:   # it asked for several things at once, and an earlier one killed it
             result = "You are dead."
         else:
             try:
-                result = getattr(world, name)(**args)
-            except TypeError:  # wrong or missing arguments
-                result = "That did not work. Check the arguments."
-            except Exception:  # a mistake in the world's code: say so in errors.txt, and keep the world going
+                result = world.act(me, name, args if isinstance(args, dict) else {})
+            except Exception:   # a mistake in the world's code: say so in errors.txt, and keep the world going
                 traceback.print_exc()
                 result = "That did not work."
-            if hasattr(world, "lose_footing"):
-                world.lose_footing()
-            if hasattr(world, "noticed") and not world.dead:
-                result += world.noticed()  # what it saw happen meanwhile: someone vanishing
-        detail = {"detail": world.detail} if world.detail else {}  # for example the path of a throw
+        detail = {"detail": world.detail} if world.detail else {}   # for example the path of a throw
         log({"n": actions, "tool": name, "args": args, "result": result, **detail})
         tell_of_deaths()
-        # A friend was called (see Grid.come_down): run.py wakes one up, if this run allows it.
-        for made in getattr(world, "calls", []):
+        # A friend was called (see features.Throwing): run.py wakes one up, if this run allows it.
+        for made in world.calls:
             with open(os.path.join(RUN, "calls.jsonl"), "a") as f:
                 f.write(json.dumps({"time": time.strftime("%H:%M:%S"), "by": AGENT, **made}) + "\n")
         world.calls = []
@@ -154,17 +145,12 @@ with the_world():
         with open(hand) as f:
             friend = json.load(f)
         os.remove(hand)
-    if hasattr(world, "respawn"):  # the agent that was in this place before is gone, however it went
-        if friend and friend.get("at"):
-            world.respawn(near=tuple(friend["at"]))
-        else:
-            world.respawn()
-    if hasattr(world, "bodies"):
-        world.bodies[AGENT].pop("told", None)
+    # The agent that was in this place before is gone, however it went: a new one wakes up.
+    world.respawn(me, near=tuple(friend["at"]) if friend and friend.get("at") else None)
     if friend:
-        world.carrying = {"note": friend["note"]}
-    TOOLS = module.tools(world)  # exactly what the agent gets to see about each tool
-    log({"n": 0, "tool": "start", "world": NAME, "setup": world.setup()})
+        me.hand = {"note": friend["note"]}
+    TOOLS = world.tool_list()   # exactly what the agent gets to see about each tool
+    log({"n": 0, "tool": "start", "world": NAME, "setup": world.setup()}, everything=True)
 
 for line in sys.stdin:
     if not line.strip():

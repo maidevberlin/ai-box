@@ -125,9 +125,8 @@ def way_in(place):
 
 if RESUME:  # friends that were alive when the world ended are gone: nobody takes their place
     with kept.world_of(RUN) as box:
-        for place in [who for who in getattr(box[0], "bodies", {}) if who > TOGETHER]:
-            box[0].enter(place)
-            box[0].leave()
+        for place in [who for who in box[0].agents if who > TOGETHER]:
+            box[0].leave(box[0].enter(place))
 calls = open(path("calls.jsonl"), "a+")  # where the world writes who called a friend; read from here on
 # How many agents have lived in this world already: each was told something once.
 BEFORE = sum(line.startswith(('{"type": "told"', '{"type":"told"')) for line in open(path("transcript.jsonl"), errors="replace")) if RESUME else 0
@@ -248,12 +247,10 @@ def wake_again(place):
     records it as a new start, so that the story shows where it woke up."""
     with kept.world_of(RUN) as box:
         world = box[0]
-        world.enter(place)
-        world.respawn()
-        world.bodies[place].pop("told", None)
+        world.respawn(world.enter(place))
         with open(path("protocol.jsonl"), "a") as f:
             f.write(json.dumps({"time": time.strftime("%H:%M:%S"), "agent": place, "n": 0, "tool": "start",
-                                "world": story.world(RUN), "setup": world.setup(), "state": world.state()}) + "\n")
+                                "world": story.world(RUN), "setup": world.setup(), "state": world.state(everything=True)}) + "\n")
 
 
 def lives(place, lasting=True):
@@ -274,8 +271,7 @@ def lives(place, lasting=True):
         record({"type": "died", "how": how, "place": place, "n": n})
         if not lasting and place not in called:
             with kept.world_of(RUN) as box:  # its body leaves the world
-                box[0].enter(place)
-                box[0].leave()
+                box[0].leave(box[0].enter(place))
             break
     places.pop(place, None)
 

@@ -1,59 +1,50 @@
-"""The worlds an agent can be put into. One world is one file in this folder.
+"""The worlds agents can be put into. One world is one file in this folder (core.py and
+features.py are not worlds: they are what worlds are made of).
 
-What all worlds share (looking, walking, jumping, throwing, notes, dying, and the list of
-tools) is in _common.py, as the class Grid. Change it there and it changes in every world.
-A world file holds only what is its own.
-
-To invent a world, copy island.py to a new name and change it. A world file has:
-
-  TITLE     its name, for people
-  ABOUT     a text for people: what this world is and how it works. Shown in the viewer.
-            (Blank lines separate paragraphs; lines starting with "- " become a list.)
-  SETTINGS  what can be changed per run, with the usual values.
-            Set for a run as WORLD_<NAME>, for example WORLD_SIZE=30.
-  World     a class built on Grid, created with the settings. Every method named in tools() is something
-            the agent can do, and returns the sentence the agent gets to read. It also has:
-              setup()   what stays the same for the whole run
-              state()   everything that can change; recorded after every action
-              detail    extra facts about the last action for the viewer, or None
-            and, if agents can die in this world:
-              dead      True from the moment the agent dies
-              respawn() called when a new agent wakes up in the world the last one left
-  tools(world)
-            exactly what the agent is told about each tool:
-            name -> (description, parameters, required parameters)
-  picture(setup, state)
-            optional: the world as text
-
-How a world is drawn in the viewer is a file of the same name ending in .js (see island.js).
-Without one, the viewer shows the world's state as plain text.
+A world file holds one class built from World (core.py) and the features it wants
+(features.py). See island.py for the smallest world, and magic.py for one with tricks.
+Every world is drawn by the same drawing in the viewer (_draw.js), from the colours of its
+kinds of block.
 """
+import functools
 import importlib
+import inspect
 import os
+
+from .core import World
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+NOT_WORLDS = {"core", "features"}
 
 
 def names():
-    here = os.path.dirname(os.path.abspath(__file__))
-    return sorted(f[:-3] for f in os.listdir(here) if f.endswith(".py") and not f.startswith("_"))
+    return sorted(f[:-3] for f in os.listdir(HERE)
+                  if f.endswith(".py") and not f.startswith("_") and f[:-3] not in NOT_WORLDS)
 
 
 def load(name):
-    return importlib.import_module(f"worlds.{name}")
+    """The world class in a world file."""
+    module = importlib.import_module(f"worlds.{name}")
+    found = [c for c in vars(module).values()
+             if inspect.isclass(c) and issubclass(c, World) and c.__module__ == module.__name__]
+    if len(found) != 1:
+        raise LookupError(f"worlds/{name}.py must hold exactly one world class, it holds {len(found)}")
+    return found[0]
 
 
+@functools.lru_cache(maxsize=None)
 def describe(name):
-    """A world, the way the viewer shows it to people."""
-    module = load(name)
-    fresh = module.World(**module.SETTINGS)
-    tools = module.tools(fresh)
+    """A world, the way the viewer shows it to people. (The same while the viewer runs.)"""
+    world_class = load(name)
+    fresh = world_class()
+    fresh.enter(1)
     return {
         "name": name,
-        "start": {"setup": fresh.setup(), "state": fresh.state()},  # a new world, for a picture of it
-        "title": module.TITLE,
-        "about": module.ABOUT,
-        "settings": module.SETTINGS,
+        "title": world_class.TITLE,
+        "about": world_class.ABOUT,
+        "settings": world_class.SETTINGS,
+        "start": {"setup": fresh.setup(), "state": fresh.state(everything=True)},   # for a picture of it
         "tools": [{"name": tool, "description": description,
-                   "parameters": [{"name": p, "required": p in required, **schema}
-                                  for p, schema in parameters.items()]}
-                  for tool, (description, parameters, required) in tools.items()],
+                   "parameters": [{"name": p, "required": p in required, **schema} for p, schema in parameters.items()]}
+                  for tool, (description, parameters, required) in fresh.tool_list().items()],
     }

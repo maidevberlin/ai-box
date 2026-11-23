@@ -1,24 +1,21 @@
-"""The island: the first world. A square island where each cell holds a stack of things.
-How it is drawn is island.js. See worlds/__init__.py for what a world file has to contain.
+"""Island: the plain world. The core and the usual features, and nothing else.
 
-What every world shares (looking, walking, jumping, throwing, notes, dying) is in _common.py.
-This file holds only what is the island's own: how its things are stored, and take and put.
-
-Each cell holds a stack of things (often an empty one), and the agent stands on top of the
-stack in its cell. A thing is a block, which is one high, or a note, which is flat: it lies
-in a stack without making it higher.
+The smallest example of a world: the blocks it is made of, its settings, and make().
 """
 import random
 
-from ._common import DIRS, Grid, name, tools  # noqa: F401 (tools is what the agent is told)
+from .core import Kind, World
+from .features import Carrying, Clock, Jumping, Looking, Throwing, Walking, Writing
 
-BLOCK = "block"  # a thing is either this, or a note: {"note": "what it says"}
 
-TITLE = "Island"
-ABOUT = """\
-A flat, square island surrounded by water. The agent starts in the middle. Blocks lie
-scattered around at random; every cell of the island holds a stack of things, usually an
-empty one. The agent stands on top of whatever is in its cell.
+class Island(Looking, Clock, Writing, Walking, Jumping, Carrying, Throwing, World):
+    TITLE = "Island"
+    ABOUT = """\
+A flat, square island surrounded by water. The agent starts in the middle. A few grey
+blocks lie scattered around at random. The agent stands on top of whatever is in its cell.
+
+This is the plain world: only the core and the usual features, with no tricks of its own.
+Other worlds are built from the same parts.
 
 The agent is not told any of this. It has to find out by looking and trying.
 
@@ -44,7 +41,7 @@ The agent is not told any of this. It has to find out by looking and trying.
 - Putting a block under its own feet lifts it; taking that block lowers it.
 - A note is a thing like a block, but flat: it has no height. Writing one puts it in the
   agent's hand. From there it can be put down, taken again and thrown, and it can lie on
-  the ground, on a stack, or between blocks. It never makes a stack higher.
+  the ground or on a stack. It never makes a stack higher.
 - Looking around shows where stacks are, how high, and how many notes lie on top. Of the
   top note it shows the first three words, not the rest, and not what a stack is made of.
 - For that the agent has to look at something: at what is in its hand, or at the stack in
@@ -76,149 +73,25 @@ The agent is not told any of this. It has to find out by looking and trying.
 - Time is real: the clock shows the actual time of day.
 - (0, 0) is the south-west corner. North makes y bigger, east makes x bigger, as on a map.
 """
-# What can be changed per run, with the usual values. Set as WORLD_SIZE=30 and so on.
-SETTINGS = {
-    "size": 20,    # the island is size x size cells
-    "blocks": 10,  # how many blocks lie around at the start
-    "view": 3,     # how far the agent sees from the ground
-    "jump": 2,     # the strongest jump, in levels
-    "seed": None,  # the same seed gives the same starting world
-}
+    # What can be changed per run, with the usual values. Set as WORLD_SIZE=30 and so on.
+    SETTINGS = {
+        "size": 20,    # the island is size x size cells
+        "loose": 10,   # how many blocks lie around at the start
+        "view": 3,     # how far an agent sees from the ground
+        "jump_height": 2,  # the strongest jump, in levels
+        "seed": None,  # the same seed gives the same starting world
+    }
+    KINDS = {
+        "ground": Kind(colour="#93c47d", ground=True),
+        "grey": Kind(colour="#8a919c", called="block"),
+    }
 
-
-class World(Grid):
-    def __init__(self, size, blocks, view, jump, seed):
-        super().__init__(view, jump, home=(size // 2, size // 2))
-        self.settings = {"size": size, "blocks": blocks, "view": view, "jump": jump, "seed": seed}
-        self.size = size          # the island is size x size cells
-        self.stacks = {}          # (x, y) -> the things stacked there, bottom first
-        rng = random.Random(seed)
-        for _ in range(blocks):
-            self.add((rng.randrange(size), rng.randrange(size)), BLOCK)
-
-    def setup(self):
-        """What stays the same for the whole run."""
-        return {**self.settings, "north": DIRS["north"][1]}
-
-    def state(self):
-        """A snapshot of everything that can change, recorded after every action."""
-        return {
-            "pos": list(self.pos),
-            "carrying": self.carrying,
-            "dead": self.dead,
-            "agents": self.everyone(),
-            "view": self.sight(),
-            "stacks": [[x, y, things] for (x, y), things in sorted(self.stacks.items())],
-        }
-
-    # --- how the island keeps its things ------------------------------------
-
-    def standable(self, cell):
-        return 0 <= cell[0] < self.size and 0 <= cell[1] < self.size
-
-    def height(self, cell):
-        """How high a stack is: its blocks. Notes are flat and do not count."""
-        return self.stacks.get(cell, []).count(BLOCK)
-
-    def top(self, cell):
-        """The thing on top of a stack, or nothing."""
-        return self.stacks[cell][-1] if cell in self.stacks else None
-
-    def notes_on(self, cell):
-        """The notes lying on top of a stack, down to the first block, the topmost last."""
-        things = self.stacks.get(cell, [])
-        above = len(things) - 1 - things[::-1].index(BLOCK) if BLOCK in things else -1
-        return [thing["note"] for thing in things[above + 1:]]
-
-    def occupied(self):
-        return self.stacks.keys()
-
-    def describe(self, cell):
-        return str(self.height(cell))
-
-    def add(self, cell, thing):
-        self.stacks.setdefault(cell, []).append(thing)
-
-    def remove(self, cell):
-        thing = self.stacks[cell].pop()
-        if not self.stacks[cell]:
-            del self.stacks[cell]
-        return thing
-
-    def leave_note(self, cell, text):
-        self.add(cell, {"note": text})
-
-    def high(self, cell, thing):
-        """After a block came down somewhere: how high that stack is now. A note changes nothing."""
-        return f"The stack there is {self.height(cell)} high. " if thing == BLOCK else ""
-
-    # --- what the island does in its own way --------------------------------
-
-    def look_at(self, cell):
-        """What a stack is made of, bottom first. Only a note on top can be read."""
-        if not self.standable(cell):
-            return "There is only water."
-        things = self.stacks.get(cell)
-        if not things:
-            return f"There is nothing at ({cell[0]}, {cell[1]}), only ground."
-        made = ", ".join(name(thing) for thing in things)
-        read = f' The note on top says "{self.note_on(cell)}"' if self.note_on(cell) else ""
-        return (f"At ({cell[0]}, {cell[1]}), {self.height(cell)} high. "
-                f"What lies there, from the bottom: {made}.{read}")
-
-    def reach(self, place, taking=False):
-        """The cell take/put aims at, or the sentence saying why it cannot be reached."""
-        if place not in ("here", *DIRS):
-            return "Unknown place. Use here, north, south, east or west."
-        cell = self.next_to(place)
-        if not self.standable(cell):
-            return "There is only water."
-        return self.out_of_reach(cell, taking and self.top(cell) == BLOCK) or cell
-
-    def take(self, where="here"):
-        """Take the top thing of a stack. Taking the one under your feet lowers you."""
-        cell = self.reach(where, taking=True)
-        if isinstance(cell, str):
-            return cell
-        if self.carrying:
-            return "Your hands are full."
-        if cell not in self.stacks:
-            return "There is nothing to take."
-        self.carrying = self.remove(cell)
-        return f"You took a {name(self.carrying)}. {self.where()}"
-
-    def put(self, where="here"):
-        """Put the thing on top of a stack. Putting it under your own feet lifts you."""
-        cell = self.reach(where)
-        if isinstance(cell, str):
-            return cell
-        if not self.carrying:
-            return "You carry nothing."
-        thing, self.carrying = self.carrying, None
-        self.add(cell, thing)
-        return f"You put the {name(thing)} down at ({cell[0]}, {cell[1]}). {self.high(cell, thing)}{self.where()}"
-
-    def land_thrown(self, cell, thing, power):
-        """A thrown thing lands on top of what is there. In the water it is gone."""
-        path = self.detail["flight"]["path"]
-        if not self.standable(cell):
-            path.append([cell[0] + 0.5, cell[1] + 0.5, -0.5])
-            self.detail["flight"]["lost"] = True
-            return "It fell into the water and is gone."
-        self.add(cell, thing)
-        rest = self.height(cell) - (0.5 if thing == BLOCK else 0)  # the middle of a block, or flat on top
-        path.append([cell[0] + 0.5, cell[1] + 0.5, rest])
-        if cell == self.pos:
-            return f"It landed at your feet. {self.where()}"
-        return f"It landed at ({cell[0]}, {cell[1]}). {self.high(cell, thing)}".strip()
-
-
-def picture(setup, state):
-    """The island as text: digits are stack heights, @ is the agent, north is up."""
-    size = setup["size"]
-    # Runs from before notes were things recorded only the height of each stack, as "blocks".
-    heights = [(x, y, things.count(BLOCK)) for x, y, things in state["stacks"]] if "stacks" in state else state["blocks"]
-    cells = {(x, y): str(min(n, 9)) for x, y, n in heights}
-    cells[tuple(state["pos"])] = "@"
-    rows = range(size) if setup["north"] < 0 else reversed(range(size))
-    return "\n".join("  " + " ".join(cells.get((x, y), ".") for x in range(size)) for y in rows)
+    def make(self):
+        """A square of ground, with (0, 0) at its south-west corner, and blocks lying around."""
+        self.HOME = (self.size // 2, self.size // 2)
+        for x, y in self.square(self.size, middle=self.HOME):
+            self.put_block(x, y, -1, "ground")
+        rng = random.Random(self.seed)
+        for _ in range(self.loose):
+            cell = (rng.randrange(self.size), rng.randrange(self.size))
+            self.put_block(*cell, self.height(cell), "grey")
