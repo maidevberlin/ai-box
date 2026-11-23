@@ -68,7 +68,8 @@ A world is one Python file in `worlds/`, holding one class. It is built from:
 
 It adds its own kinds of block, its own tools (any method marked `@tool`), and its own
 rules (by overriding a method). [worlds/island.py](worlds/island.py) is the smallest world,
-[worlds/magic.py](worlds/magic.py) one with tricks. No drawing is needed: every world is drawn
+[worlds/magic.py](worlds/magic.py) one with tricks. A step-by-step guide (work in progress, not tested yet) is in
+[docs/making-a-world.md](docs/making-a-world.md). No drawing is needed: every world is drawn
 from the colours of its kinds of block.
 
 ## How it is built
