@@ -15,6 +15,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -23,7 +24,9 @@ import story
 import worlds
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PORT = 8765
+# The port is shared by every user of the computer: a second user's viewer cannot use one that
+# is taken, and would otherwise end up looking at the first user's runs. PORT=8766 picks another.
+PORT = int(os.environ.get("PORT") or 8765)
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}  # the only names this page is served under
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}$")
 DRAWING = re.compile(r"^/worlds/([a-z0-9_]+)\.js$")
@@ -166,5 +169,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        sys.exit(f"Port {PORT} is already in use, maybe by another viewer (another user's, too).\n"
+                 f"What http://127.0.0.1:{PORT} shows is then not this viewer's runs.\n"
+                 f"Start this one on another port, for example:  PORT={PORT + 1} ./viewer.py")
     print(f"Viewer: http://127.0.0.1:{PORT}   (Ctrl+C to stop)")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    server.serve_forever()

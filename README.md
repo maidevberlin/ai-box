@@ -32,6 +32,9 @@ behaviour appeared in [BEHAVIOURS.md](BEHAVIOURS.md).
 Then open http://127.0.0.1:8765, press "New run", pick a world and start it. Runs are
 kept in `runs/`, one folder each.
 
+The port is shared by all users of a computer. If another viewer already uses it (also
+another user's), start yours on a different one: `PORT=8766 ./viewer.py`.
+
 A run can also be started without the page:
 
 ```
