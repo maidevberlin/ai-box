@@ -82,7 +82,7 @@ The agent is not told any of this. It has to find out by looking and trying.
         "seed": None,  # the same seed gives the same starting world
     }
     KINDS = {
-        "ground": Kind(colour="#93c47d", ground=True),
+        "ground": Kind(colour="#4f8f34", ground=True),
         "grey": Kind(colour="#8a919c", called="block"),
     }
 

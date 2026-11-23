@@ -133,6 +133,13 @@
   .step.act { padding-top: 5px; padding-bottom: 5px; }
   .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
   .step.act .text { color: var(--muted); font-size: 12.5px; }
+  /* The same action several times in a row: one row, which opens to show every call. */
+  .fold { display: flex; flex-direction: column; gap: 6px; }
+  .fold > .head { display: none; }
+  .fold.many > .head { display: block; }
+  .fold.many:not(.open) > .step:not(.head) { display: none; }
+  .fold.open { padding-left: 8px; border-left: 1px dashed var(--line); }
+  .head .label::before { content: '▸ '; } .fold.open > .head .label::before { content: '▾ '; }
   .step.stop, .step.memory { text-align: center; color: var(--muted); font-size: 12.5px; }
   .step.death { text-align: center; color: var(--stop); font-weight: 600; border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 8px; }
 
@@ -845,7 +852,8 @@ function logRow(steps, i, marked, striking) {
     row.append(star);
   }
   for (const mark of (marked[i] || []).filter(shown)) {   // what the reviewer saw here
-    const tag = el('span', `tag ${groupOf(mark.behaviour)}`, mark.behaviour.replaceAll('_', ' '),
+    const judged = mark.valence && mark.valence !== 'neutral' ? ` · ${mark.valence}` : '';
+    const tag = el('span', `tag ${groupOf(mark.behaviour)}`, mark.behaviour.replaceAll('_', ' ') + judged,
                    el('i', '', ' ' + '●'.repeat(mark.interest || 3)));
     tag.title = `${mark.what} (${meaning(mark.behaviour)})`;
     row.append(tag);
@@ -855,25 +863,73 @@ function logRow(steps, i, marked, striking) {
   return row;
 }
 
+// The same action several times in a row is folded into one row, like the reviewers read it
+// (story.same_kind in story.py). A click on that row opens it.
+const sameKind = (a, b) => a.kind === 'act' && b.kind === 'act' && a.tool === b.tool
+  && a.agent === b.agent && a.place === b.place;
+
+function placeRow(steps, i, row) {
+  const before = logRows[i - 1], step = steps[i];
+  if (before?.fold && sameKind(steps[i - 1], step)) row.fold = before.fold;
+  else if (step.kind === 'act') {
+    const fold = { box: el('div', 'fold'), head: el('div', `step act head`), rows: [], open: false, first: i };
+    if (story.together > 1) fold.head.classList.add(`place${step.place}`);
+    fold.head.onclick = () => { fold.open = !fold.open; fold.box.classList.toggle('open', fold.open); draw(); };
+    fold.box.append(fold.head);
+    $('log').append(fold.box);
+    row.fold = fold;
+  } else return $('log').append(row);
+  row.fold.rows.push(row);
+  row.fold.box.append(row);
+  drawFold(steps, row.fold);
+}
+
+function drawFold(steps, fold) {
+  const rows = fold.rows, first = steps[fold.first], last = steps[fold.first + rows.length - 1];
+  fold.box.classList.toggle('many', rows.length > 1);
+  if (rows.length < 2) return;
+  const agent = story.together > 1 ? `Agent ${agentAt(fold.first)}` : 'Agent';
+  const calls = rows.map((_, k) => Object.values(steps[fold.first + k].args).join(' ') || '–').join(' · ');
+  // What the reviewer marked inside shows on the folded row too.
+  const tags = rows.flatMap(row => [...row.querySelectorAll('.tag')].map(tag => tag.cloneNode(true)));
+  fold.head.className = `step act head${story.together > 1 ? ` place${first.place}` : ''}`;
+  for (const row of rows) for (const c of row.classList) if (c === 'marked' || c.startsWith('g-')) fold.head.classList.add(c);
+  if (logNow === fold.head) fold.head.classList.add('now');
+  fold.head.replaceChildren(el('div', 'label', `${agent} does ${first.tool} ${rows.length} times`),
+                            el('div', 'call', calls), el('div', 'text', last.result), ...tags);
+}
+
+function dropLastRow(steps) {
+  const row = logRows.pop();
+  row.remove();
+  if (!row.fold) return;
+  row.fold.rows.pop();
+  if (row.fold.rows.length) drawFold(steps, row.fold);
+  else row.fold.box.remove();
+}
+
 function drawLog(steps) {
   const marked = marksByStep(), striking = story.review?.striking;
   drawMarks();
   const box = $('log');
   // What every row depends on besides its own step: the run, its review, and which marks are shown.
   const of = JSON.stringify([story.id, story.done, !!story.review, showFrom]);
-  if (of !== logOf || logRows.length > steps.length || box.children.length !== logRows.length) {
+  if (of !== logOf || logRows.length > steps.length || (logRows.length && !box.contains(logRows.at(-1)))) {
     logOf = of; logRows = []; logNow = null;
     box.replaceChildren();
   }
   // The last row may show a step that was still in progress, so it is built again with the new ones.
-  if (logRows.length && (!story.done || logRows.length < steps.length)) logRows.pop().remove();
-  const added = [];
-  for (let i = logRows.length; i < steps.length; i++) added.push(logRow(steps, i, marked, striking));
-  logRows.push(...added);
-  box.append(...added);
-  if (logNow !== logRows[at]) {
+  if (logRows.length && (!story.done || logRows.length < steps.length)) dropLastRow(steps);
+  for (let i = logRows.length; i < steps.length; i++) {
+    const row = logRow(steps, i, marked, striking);
+    logRows.push(row);
+    placeRow(steps, i, row);
+  }
+  // A step inside a closed fold is shown by the folded row.
+  const fold = logRows[at]?.fold, target = fold && fold.rows.length > 1 && !fold.open ? fold.head : logRows[at];
+  if (logNow !== target) {
     logNow?.classList.remove('now');
-    logNow = logRows[at];
+    logNow = target;
     logNow?.classList.add('now');
   }
   // Keep the current step in sight by scrolling the conversation only, never the whole page.

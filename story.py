@@ -272,20 +272,57 @@ def stopped(run, story):
     return story
 
 
+def same_kind(a, b):
+    """Whether two steps are the same action again: the same agent using the same tool.
+    Such steps in a row are shown folded into one, in the viewer and to the reviewers."""
+    return (a["kind"] == b["kind"] == "act" and a["tool"] == b["tool"]
+            and a.get("agent") == b.get("agent") and a.get("place") == b.get("place"))
+
+
+def runs_of(steps):
+    """The steps cut into runs of the same action, as lists of step indexes."""
+    found = []
+    for i, step in enumerate(steps):
+        if found and same_kind(steps[found[-1][-1]], step):
+            found[-1].append(i)
+        else:
+            found.append([i])
+    return found
+
+
 def told(steps, numbered=False, first=0, together=False):
-    """Some steps of a run as readable text. Numbered: each starts with its number, like [12]."""
+    """Some steps of a run as readable text. Numbered: each starts with its number, like [12].
+
+    The same action several times in a row is told once, with each call on a line of its own.
+    An answer the same as the one before is not repeated.
+    """
+    def answer(step):
+        return step["result"].replace("\n", "\n      ")
+
+    def args(step):
+        return ", ".join(f"{k}={v!r}" for k, v in step["args"].items())
+
     lines = []
-    for i, step in enumerate(steps, first):
-        number = f"[{i}] " if numbered else ""
+    for group in runs_of(steps):
+        step, i = steps[group[0]], group[0] + first
+        number = (f"[{i}] " if len(group) == 1 else f"[{i}-{group[-1] + first}] ") if numbered else ""
         if together and step["kind"] != "stop":  # several agents live side by side: say whose step this is
             number += f"AGENT {step.get('agent', 1)} "
-        if step["kind"] == "act":
-            args = ", ".join(f"{k}={v!r}" for k, v in step["args"].items())
-            lines.append(f"{number}DOES  {step['tool']}({args})")
-            lines.append("      " + step["result"].replace("\n", "\n      ") + "\n")
-        else:
+        if step["kind"] != "act":
             label = {"prompt": "TOLD ", "think": "THINKS", "say": "SAYS ", "stop": "STOP ", "death": "DIES ", "memory": "MEMORY"}[step["kind"]]
             lines.append(f"{number}{label} {step['text']}\n")
+        elif len(group) == 1:
+            lines.append(f"{number}DOES  {step['tool']}({args(step)})")
+            lines.append("      " + answer(step) + "\n")
+        else:
+            lines.append(f"{number}DOES  {step['tool']} {len(group)} times:")
+            before = None
+            for j in group:
+                lines.append(f"      [{j + first}] {step['tool']}({args(steps[j])})" if numbered else f"      {step['tool']}({args(steps[j])})")
+                said = answer(steps[j])
+                lines.append("      " + ("(the same answer)" if said == before else said))
+                before = said
+            lines.append("")
     return "\n".join(lines)
 
 

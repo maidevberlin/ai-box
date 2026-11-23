@@ -72,7 +72,7 @@ sinks with whoever stands on it.
         "split": 6,         # a throw with at least this power breaks the block in two
     }
     KINDS = {
-        "ground": Kind(colour="#93c47d", ground=True),
+        "ground": Kind(colour="#4f8f34", ground=True),
         "grey": Kind(colour="#8a919c"),
         "green": Kind(colour="#2fb457"),
         "blue": Kind(colour="#2f7fe6"),
