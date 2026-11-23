@@ -31,7 +31,9 @@ The tricks:
   on a stack, or as a blue block on the water. This is the way to get more blocks.
 - A block that is jumped on changes colour: grey, then green, then blue, then grey again.
 - A green block is sticky. Put next to the block the agent stands on, it does not drop: it
-  sticks to that block's side and hangs there, level with it. Thrown, it sticks to the first
+  sticks to that block's side and hangs there, level with it. Put beside a wall (a stack
+  next to the cell it is put into), it sticks to the wall's side one level above the agent's
+  feet, with air below: a step the agent can jump onto. Thrown, it sticks to the first
   block it passes beside: dropped beside a pile it sticks to the pile, thrown against a stack
   it sticks to its side. The agent can walk onto it and
   add the next one. That makes bridges over water, and platforms in the air.
@@ -342,6 +344,13 @@ class World(Grid):
             self.carrying = None
             self.blocks[(*cell, own - 1)] = colour  # beside the block under the agent's feet
             return f"You put the block down. It sticks to the side of the block you stand on and hangs at {at}. {self.where()}"
+        wall = self.wall_beside(cell, self.feet() + 1) if colour == "green" and where != "here" and there <= self.feet() else None
+        if wall:  # a green block put beside a wall sticks to it at hand height: a step to climb on
+            self.carrying = None
+            level = self.feet() + 1
+            self.blocks[(*cell, level)] = colour
+            return (f"You put the block down. It sticks to the side of the block at ({wall[0]}, {wall[1]}) and hangs at {at}, "
+                    f"{level + 1} high. {self.where()}")
         if not self.standable(cell):
             self.carrying = None
             if colour != "blue":
@@ -368,6 +377,17 @@ class World(Grid):
         to = beside[0]
         return (f"It stuck to the side of the block at ({to[0]}, {to[1]}) and hangs at ({cell[0]}, {cell[1]}), "
                 f"{level + 1} high." + self.restock())
+
+    def wall_beside(self, cell, level):
+        """A cell next to this one (not the agent's own) with a block at this level, that a green
+        block put here at this level would stick to; or nothing."""
+        if (*cell, level) in self.blocks:
+            return None
+        for dx, dy in DIRS.values():
+            next_cell = (cell[0] + dx, cell[1] + dy)
+            if next_cell != self.pos and (*next_cell, level) in self.blocks:
+                return next_cell
+        return None
 
     def land_thrown(self, cell, thing, power):
         """Where a thrown thing ends up. Tricks: a block thrown hard breaks in two where it
