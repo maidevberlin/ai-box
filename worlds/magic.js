@@ -171,6 +171,7 @@ export function create(box) {
     renderer.setSize(box.clientWidth, box.clientHeight);
     camera.aspect = box.clientWidth / box.clientHeight;
     camera.updateProjectionMatrix();
+    agents.resize(box.clientWidth, box.clientHeight);
     wake();
   }
   const resizing = new ResizeObserver(fit);
@@ -200,6 +201,7 @@ export function create(box) {
       flying.visible = !(flight.lost && along >= last);   // one that fell into the water disappears
     }
     renderer.render(scene, camera);
+    agents.render();   // the bubbles over the picture
   }
 
   function remove() {

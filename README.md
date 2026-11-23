@@ -55,6 +55,8 @@ with several agents add up. The page shows what each run used.
 Several agents can live in a world at the same time, and an agent can call a friend. Each
 world explains its rules on the start page.
 
+Ideas for more worlds are collected in [docs/world-ideas.md](docs/world-ideas.md).
+
 ## Adding a world
 
 A world is one Python file in `worlds/` (what happens) and one JavaScript file next to it

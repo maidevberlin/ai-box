@@ -6,3 +6,7 @@ Source and home of the project: https://github.com/maidevberlin/ai-box
 
 If you use, copy, change or build on AI Box, keep this notice and the link to the
 project with it, as the Apache License 2.0 (section 4) asks.
+
+The robot figure (worlds/assets/robot.glb) is "RobotExpressive" by Tomás Laulhé
+(https://www.patreon.com/quaternius), with changes by Don McCurdy, from the three.js
+examples. It is free to use under CC0 1.0.

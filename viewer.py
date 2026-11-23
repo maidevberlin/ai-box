@@ -30,6 +30,7 @@ PORT = int(os.environ.get("PORT") or 8765)
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}  # the only names this page is served under
 RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}$")
 DRAWING = re.compile(r"^/worlds/([a-z0-9_]+)\.js$")
+ASSET = re.compile(r"^/worlds/assets/([a-z0-9_-]+\.(glb|png|jpg))$")
 MODELS = ["opus", "fable", "sonnet", "haiku"]  # offered in the page; the first is the default
 
 
@@ -43,10 +44,12 @@ def last(ids, name, otherwise):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def send(self, body, content_type="application/json", status=200):
+    def send(self, body, content_type="application/json", status=200, keep=False):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        if keep:  # (a model or picture: the browser may keep it for a day instead of loading it again)
+            self.send_header("Cache-Control", "max-age=86400")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -57,6 +60,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/":
             with open(os.path.join(HERE, "viewer.html"), "rb") as f:
                 return self.send(f.read(), "text/html; charset=utf-8")
+        asset = ASSET.match(self.path)   # a model or picture a drawing uses (worlds/assets/)
+        if asset and os.path.isfile(os.path.join(HERE, "worlds", "assets", asset[1])):
+            with open(os.path.join(HERE, "worlds", "assets", asset[1]), "rb") as f:
+                kind = {"glb": "model/gltf-binary", "png": "image/png", "jpg": "image/jpeg"}.get(asset[2], "application/octet-stream")
+                return self.send(f.read(), kind, keep=True)
         drawing = DRAWING.match(self.path)
         if drawing and os.path.exists(os.path.join(HERE, "worlds", drawing[1] + ".js")):
             with open(os.path.join(HERE, "worlds", drawing[1] + ".js"), "rb") as f:
