@@ -137,8 +137,10 @@ export function crowd(scene, cube, dress, camera, box) {
     const { kind, start: began } = f.anim, t = Math.min((now - began) / LASTS[kind], 1);
     const ease = 1 - (1 - t) ** 3;
     let lift = 0;
-    f.beam.position.copy(f.base).add(new THREE.Vector3(0, 2, 0));
-    f.ring.position.copy(f.base).add(new THREE.Vector3(0, kind === 'sink' ? -0.15 : 0.03, 0));
+    f.beam.position.copy(f.base);
+    f.beam.position.y += 2;
+    f.ring.position.copy(f.base);
+    f.ring.position.y += kind === 'sink' ? -0.15 : 0.03;
     if (kind === 'wake') {          // grows out of a beam of light that then fades
       const grow = t < 0.75 ? ease * 1.12 : 1.12 - (t - 0.75) / 0.25 * 0.12;   // a little too big, then settles
       f.group.scale.setScalar(Math.max(0.01, Math.min(grow, 1.12)));
@@ -198,6 +200,7 @@ export function crowd(scene, cube, dress, camera, box) {
   // Each figure glides to its new place instead of jumping there, and its bubble goes with it.
   // Bubbles of agents that stand close together would cover each other: the newer one stays
   // above its agent's head, an older one moves up out of its way.
+  const head = new THREE.Vector3();   // (kept, not made new for every frame)
   const glide = () => {
     const placed = [];
     const all = Object.values(figures);
@@ -205,12 +208,15 @@ export function crowd(scene, cube, dress, camera, box) {
     for (const f of all) {
       f.base.lerp(f.target, 0.18);
       const lift = f.anim ? animate(f, now) : 0;
-      f.group.position.copy(f.base).add(new THREE.Vector3(0, lift, 0));
+      f.group.position.copy(f.base);
+      f.group.position.y += lift;
     }
     if (!camera || !box) return;
     const order = all.filter(f => !f.bubble.hidden).sort((a, b) => a.bubble.classList.contains('old') - b.bubble.classList.contains('old'));
     for (const f of order) {
-      const head = f.group.position.clone().add(new THREE.Vector3(0, f.carried.visible ? 2.5 : 1.8, 0)).project(camera);
+      head.copy(f.group.position);
+      head.y += f.carried.visible ? 2.5 : 1.8;
+      head.project(camera);
       f.bubble.style.visibility = head.z > 1 ? 'hidden' : '';   // behind the camera
       const x = (head.x + 1) / 2 * box.clientWidth, w = f.bubble.offsetWidth, h = f.bubble.offsetHeight;
       let y = (1 - head.y) / 2 * box.clientHeight;

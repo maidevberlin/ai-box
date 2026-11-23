@@ -27,10 +27,14 @@ export function create(box) {
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 1000);
   const controls = new OrbitControls(camera, renderer.domElement);
   // The picture is only drawn while something moves: drawing it 60 times a second all the
-  // time kept the whole computer busy. Anything that changes it calls wake().
-  let awake = 0;
-  const wake = () => { awake = performance.now() + 1500; };   // long enough for a throw and a glide
-  controls.addEventListener('change', wake);
+  // time kept the whole computer busy. Anything that changes it calls wake(), which starts
+  // drawing for a moment; when nothing moves any more, drawing stops (see frame).
+  let awake = 0, drawing = false;
+  const wake = () => {
+    awake = performance.now() + 1500;   // long enough for a throw and a glide
+    if (!drawing) { drawing = true; renderer.setAnimationLoop(frame); }
+  };
+  controls.addEventListener('change', wake);   // turning or zooming
   controls.maxPolarAngle = Math.PI / 2 - 0.05;   // never look from below the ground
   scene.background = new THREE.Color(COLORS.sky);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.7));
@@ -51,6 +55,7 @@ export function create(box) {
 
   const water = new THREE.Mesh(cube, solid('water'));
   const things = new THREE.Group();   // blocks and notes
+  const pool = [];   // their meshes, used again from step to step
   const agents = crowd(scene, cube, (mesh, thing) => shape(mesh, thing), camera, box);   // the agents: see _agents.js
   const north = letter('N');
   // A thrown thing in the air. When it lands it stays put and stands in for the thing that landed.
@@ -84,7 +89,7 @@ export function create(box) {
     const cells = [];
     for (let x = -radius; x <= farX + farRadius; x++)
       for (let y = -radius; y <= radius; y++) if (onLand(x, y)) cells.push([x, y]);
-    if (land) scene.remove(land);
+    if (land) { scene.remove(land); land.material.dispose(); land.dispose(); }   // the last run's, freed
     land = new THREE.InstancedMesh(cube, solid('land'), cells.length);
     cells.forEach(([x, y], i) => {
       const at = place(x, y, -0.2);
@@ -121,23 +126,27 @@ export function create(box) {
     const rest = flight && !flight.lost && step.flight.path.at(-1);
     const landing = (x, y, up) => rest && Math.floor(rest[0]) === x && Math.floor(rest[1]) === y && Math.abs(rest[2] - up) < 0.6;
 
-    things.clear();
+    let used = 0;   // meshes for the things lying around are kept, and used again for the next step
+    const mesh = () => {
+      if (!pool[used]) { pool[used] = new THREE.Mesh(cube); things.add(pool[used]); }
+      pool[used].visible = true;
+      return pool[used++];
+    };
     for (const [x, y, z, colour] of state.blocks) {
       if (landing(x, y, z + 0.5) && !isNote(step.flight.what)) continue;
-      const mesh = new THREE.Mesh(cube);
-      shape(mesh, { block: colour });   // a small gap between blocks, so each one stays visible
-      mesh.position.copy(place(x, y, z + 0.5));
-      things.add(mesh);
+      const one = mesh();
+      shape(one, { block: colour });   // a small gap between blocks, so each one stays visible
+      one.position.copy(place(x, y, z + 0.5));
     }
     const lying = {};   // how many notes already lie at a spot, so they pile up visibly
     state.notes.forEach(([x, y, level], i) => {
       if (i === state.notes.length - 1 && landing(x, y, level) && isNote(step.flight.what)) return;
       const n = lying[[x, y, level]] = (lying[[x, y, level]] || 0) + 1;
-      const mesh = new THREE.Mesh(cube);
-      shape(mesh, 'note');
-      mesh.position.copy(place(x, y, level + SHEET * (n - 0.4)));
-      things.add(mesh);
+      const one = mesh();
+      shape(one, 'note');
+      one.position.copy(place(x, y, level + SHEET * (n - 0.4)));
     });
+    for (let i = used; i < pool.length; i++) pool[i].visible = false;   // not needed at this step
     // Runs from before several agents could live side by side recorded only the one.
     agents.show(state.agents || [{ id: 1, pos: state.pos, height: state.height, carrying: state.carrying, dead: state.dead, view: state.view }],
                 place, fresh);
@@ -156,18 +165,32 @@ export function create(box) {
   }
 
   // The drawing always fills its box, whatever size the window gives it.
-  const resizing = new ResizeObserver(() => {
+  function fit() {
+    if (!box.clientWidth || !box.clientHeight) return;
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(box.clientWidth, box.clientHeight);
     camera.aspect = box.clientWidth / box.clientHeight;
     camera.updateProjectionMatrix();
     wake();
-  });
+  }
+  const resizing = new ResizeObserver(fit);
   resizing.observe(box);
 
-  renderer.setAnimationLoop(() => {
-    controls.update();   // turning or zooming wakes the picture up
-    if (performance.now() > awake && !agents.busy()) return;
+  // The picture as it is now, as an image (for the cards of the new-world screen).
+  function snapshot() {
+    controls.update();
+    agents.glide();
+    renderer.render(scene, camera);
+    return renderer.domElement.toDataURL('image/png');
+  }
+
+  function frame() {
+    if (performance.now() > awake && !agents.busy()) {   // nothing moves: stop drawing until woken
+      drawing = false;
+      renderer.setAnimationLoop(null);
+      return;
+    }
+    controls.update();   // points the camera at its target, also after the world placed it
     agents.glide();
     if (flight) {                         // move the thrown thing along its recorded path
       const last = flight.points.length - 1;
@@ -177,15 +200,17 @@ export function create(box) {
       flying.visible = !(flight.lost && along >= last);   // one that fell into the water disappears
     }
     renderer.render(scene, camera);
-  });
+  }
 
   function remove() {
     renderer.setAnimationLoop(null);
     resizing.disconnect();
+    controls.dispose();
     renderer.dispose();
+    renderer.forceContextLoss();   // give the browser its drawing context back at once
     renderer.domElement.remove();
     agents.remove();
   }
 
-  return { show, facts, notes, remove };
+  return { show, facts, notes, remove, fit, snapshot };
 }

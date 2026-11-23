@@ -193,7 +193,7 @@
   .world:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
   .world.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--tint); }
   .world .picture { position: relative; aspect-ratio: 16 / 10; background: var(--soft); }
-  .world .picture canvas { position: absolute; inset: 0; }
+  .world .picture img, .world .picture .drawn { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .world .picked { position: absolute; right: 10px; top: 10px; z-index: 1; width: 24px; height: 24px; border-radius: 50%;
                    background: var(--accent); color: var(--on-accent); display: none; place-items: center; font-size: 13px; font-weight: 700; }
   .world.on .picked { display: grid; }
@@ -422,8 +422,16 @@ const lasted = s => s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` :
 // ---------------------------------------------------------------- data
 
 // The list of runs on the left: name and rating (once reviewed), which agent it was, when it started.
-async function listRuns() {
-  const answer = await api('/api/runs');
+// The list of runs is read every few seconds. It is only taken apart and drawn again when
+// something in it changed, or when another run is on screen.
+let listedText = '', listedAnswer = null, listedFor = '';
+async function listRuns(force = false) {
+  const text = await fetch('/api/runs').then(r => r.text());
+  const changed = text !== listedText;
+  if (changed) { listedText = text; listedAnswer = JSON.parse(text); }
+  const answer = listedAnswer, showing = `${draft} ${story?.id}`;
+  if (!force && !changed && showing === listedFor) return answer.runs;
+  listedFor = showing;
   ({ worlds, models: agents, prompt: lastPrompt, system: lastSystem, behaviours } = answer);
   // A new world starts out like the newest run: the same world, the same kind of agent.
   const newest = answer.runs[0];
@@ -445,7 +453,7 @@ async function listRuns() {
   $('runs').replaceChildren(...cards);
   return answer.runs;
 }
-setInterval(listRuns, LIST);
+setInterval(() => document.hidden || listRuns(), LIST);   // (not while the tab is in the background)
 
 async function loadRuns(pick) {
   const runs = await listRuns();
@@ -471,12 +479,17 @@ async function show(id, step = 0) {
 
 // Live runs grow: re-read the run on screen until it is done.
 setInterval(async () => {
-  if (!story || story.done) return;
-  const fresh = await api('/api/runs/' + story.id);
+  if (!story || story.done || document.hidden) return;   // (a tab in the background waits)
+  // Only what is new: the steps from the last one known on (the last may have finished since).
+  const known = story.steps.length, from = Math.max(known - 1, 0);
+  const fresh = await api(`/api/runs/${story.id}?from=${from}`);
+  if (fresh.id !== story.id || !fresh.steps) return;   // another run is on screen by now
   if (fresh.world && !story.world) await paintWith(fresh.world);   // the world has just started
+  const steps = story.steps.slice(0, fresh.from).concat(fresh.steps);
   // Anything new? More steps, a step that finished, or the agent stopping or going on.
-  const mark = s => JSON.stringify([s.done, s.steps?.length, s.steps?.at(-1)]);
-  if (fresh.id === story.id && mark(fresh) !== mark(story)) { story = fresh; draw(); }
+  const changed = fresh.done !== story.done || steps.length !== known
+    || JSON.stringify(steps.at(-1)) !== JSON.stringify(story.steps.at(-1));
+  if (changed) { story = { ...fresh, steps }; draw(); }
   if (fresh.done) listRuns();   // the finished run now has a name
 }, POLL);
 
@@ -485,7 +498,7 @@ setInterval(async () => {
 // speeds up: the further behind, the shorter the tick, until it has caught up.
 function tick() {
   let behind = 0;
-  if (playing && story && !draft) {
+  if (playing && story && !draft && !document.hidden) {   // a tab in the background does not play on
     if (at < story.steps.length - 1) { at++; draw(); }
     else if (story.done) { playing = false; draw(); }
     if (!story.done) behind = story.steps.length - 1 - at;
@@ -678,12 +691,32 @@ function worldCard(world) {
     el('div', 'words', el('b', '', world.title), el('p', '', world.about.trim().split(/\n\s*\n/)[0].replace(/\s+/g, ' '))));
   card.type = 'button';
   card.onclick = () => { chosen.world = world.name; draw(); };
-  // The picture is the world's own drawing of a world that has just started.
-  import(`/worlds/${world.name}.js`).then(drawing => {
-    const painter = drawing.create(picture);
-    painter.show({ id: 'new ' + world.name, setup: world.start.setup }, { state: world.start.state }, 0, true);
-  }).catch(() => picture.append(el('pre', '', 'No picture of this world.')));
+  card.picture = picture;
   return card;
+}
+
+// The picture on a card is the world's own drawing of a world that has just started, taken
+// once as a still image. (A live 3D view per card kept a drawing context busy for each.)
+// One card after the other, once the cards are on the screen and have their size.
+async function pictureCards() {
+  for (const world of worlds) {
+    const picture = previews[world.name].picture;
+    if (picture.dataset.done || !picture.clientWidth) continue;
+    picture.dataset.done = 'yes';
+    const box = el('div', 'drawn');
+    picture.append(box);
+    try {
+      const drawing = await import(`/worlds/${world.name}.js`);
+      const painter = drawing.create(box);
+      painter.fit();
+      painter.show({ id: 'new ' + world.name, setup: world.start.setup }, { state: world.start.state }, 0, true);
+      const image = new Image();
+      image.src = painter.snapshot();
+      image.alt = `${world.title}, as it starts`;
+      painter.remove();
+      box.replaceWith(image);
+    } catch { box.replaceWith(el('pre', '', 'No picture of this world.')); }
+  }
 }
 
 let createShows = '';   // which worlds and which choice the screen was built for
@@ -693,6 +726,7 @@ function drawCreate() {
   if (!draft) return;
   for (const world of worlds) previews[world.name] ||= worldCard(world);
   if ($('worldCards').children.length !== worlds.length) $('worldCards').replaceChildren(...worlds.map(w => previews[w.name]));
+  requestAnimationFrame(pictureCards);
   for (const world of worlds) previews[world.name].classList.toggle('on', world.name === chosen.world);
   if (createShows !== chosen.world) {   // not rebuilt on every update, so that it stays open and scrolled
     createShows = chosen.world;

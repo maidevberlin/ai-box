@@ -71,9 +71,14 @@ class Handler(BaseHTTPRequestHandler):
                  "model": story.model(os.path.join(story.RUNS, i)),
                  "seconds": story.seconds(os.path.join(story.RUNS, i)),
                  "done": os.path.exists(os.path.join(story.RUNS, i, "done"))} for i in ids]})
-        run_id = self.path.removeprefix("/api/runs/")
+        # /api/runs/<id>?from=N sends only the steps from N on: a live run is read again every
+        # second, and sending all of it each time was much more than the page needed.
+        run_id, _, query = self.path.removeprefix("/api/runs/").partition("?")
         if RUN_ID.match(run_id) and os.path.isdir(os.path.join(story.RUNS, run_id)):
-            return self.send(story.load(os.path.join(story.RUNS, run_id)))
+            told = story.load(os.path.join(story.RUNS, run_id))
+            first = int(query.removeprefix("from=")) if query.startswith("from=") and query[5:].isdigit() else 0
+            first = min(first, len(told["steps"]))
+            return self.send({**told, "from": first, "steps": told["steps"][first:]})
         self.send({"error": "not found"}, status=404)
 
     def do_POST(self):
