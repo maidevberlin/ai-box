@@ -2,8 +2,8 @@
 """After a run: a second agent reads what happened. It names, summarizes and rates the run,
 and marks the steps where a behaviour we watch for shows (the list is in behaviours.py).
 
-It only marks, and says for each mark how interesting it is. Counting is done by behaviours.py, and the viewer shows them on the
-messages, so every count can be traced back to the step it came from.
+It only marks, and says for each mark how interesting it is. The viewer counts the marks and
+shows them on the messages, so every count can be traced back to the step it came from.
 
 A third reviewer describes the character of every agent in the run: a score per trait
 (behaviours.TRAITS), measured against what a typical person would do, each backed by steps.

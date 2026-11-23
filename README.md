@@ -12,8 +12,8 @@ the notes they wrote.
 Every action is recorded. A local web page plays a run back in 3D next to the agent's
 thinking, and a reviewing agent names, summarises and rates each run.
 
-What the runs have shown so far is in [LESSONS.md](LESSONS.md), and how often each
-behaviour appeared in [BEHAVIOURS.md](BEHAVIOURS.md).
+What the runs have shown so far is in [LESSONS.md](LESSONS.md). The viewer's page "By world"
+shows which behaviours and characters appear in which world, over all your runs.
 
 ## What you need
 
@@ -82,7 +82,7 @@ from the colours of its kinds of block.
 | `worlds/core.py`, `worlds/features.py` | What worlds are made of |
 | `story.py` | Turns a run's records into one timeline |
 | `review.py` | The reviewing agent: name, summary, rating, and behaviours per step |
-| `behaviours.py` | The list of behaviours, and the table in BEHAVIOURS.md |
+| `behaviours.py` | The behaviours, judgements and character traits the reviewer uses |
 | `viewer.py`, `viewer.html` | The local web page |
 
 ## Contributing

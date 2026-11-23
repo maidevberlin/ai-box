@@ -67,6 +67,21 @@ def seconds(run):
     return round((os.path.getmtime(done) if os.path.exists(done) else time.time()) - began)
 
 
+_actions = {}   # run folder -> (when its protocol last changed, how many actions it holds)
+
+
+def actions(run):
+    """How many actions the agents of a run took (for comparing runs of different lengths)."""
+    path = os.path.join(run, "protocol.jsonl")
+    if not os.path.exists(path):
+        return 0
+    changed = os.path.getmtime(path)
+    if _actions.get(run, (None,))[0] != changed:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            _actions[run] = (changed, sum(1 for line in f if '"tool": "start"' not in line[:200]))
+    return _actions[run][1]
+
+
 def world(run):
     """Which world the run took place in. Runs from before there was a choice were on the island."""
     return first_line(run, "protocol.jsonl").get("world", "island")

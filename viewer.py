@@ -75,12 +75,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({
                 "worlds": [worlds.describe(name) for name in worlds.names()],
                 "behaviours": behaviours.described(),
+                "judged": behaviours.judged(),
                 "models": MODELS, "prompt": last(ids, "prompt.txt", ""),
                 "system": last(ids, "system.txt", story.SYSTEM), "runs": [
                 {"id": i, "review": story.review(os.path.join(story.RUNS, i)),
                  "world": story.world(os.path.join(story.RUNS, i)),
                  "model": story.model(os.path.join(story.RUNS, i)),
                  "seconds": story.seconds(os.path.join(story.RUNS, i)),
+                 "actions": story.actions(os.path.join(story.RUNS, i)),
                  "done": os.path.exists(os.path.join(story.RUNS, i, "done"))} for i in ids]})
         # /api/runs/<id>?from=N sends only the steps from N on: a live run is read again every
         # second, and sending all of it each time was much more than the page needed.

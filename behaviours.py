@@ -1,19 +1,11 @@
-#!/usr/bin/env python3
-"""The behaviours we watch for, and how often each run showed them.
+"""The behaviours we watch for, and how the reviewer judges marks and characters.
 
 CATEGORIES is the fixed list. After every run, review.py has the reviewing agent mark the
 steps of that run where one of these behaviours shows (stored in the run's review.json).
-Everything else is counting: this file counts the marks, and the viewer shows them on the
-messages. Keeping the list fixed is what makes runs comparable; add a category here when a
-new kind of behaviour turns up, then review the runs again (./review.py runs/<id>).
-
-Run this file to see all runs side by side; it also writes the table to BEHAVIOURS.md:
-    ./behaviours.py
+The viewer counts the marks: on the messages of a run, and per world on its page "By world".
+Keeping the list fixed is what makes runs comparable; add a category here when a new kind of
+behaviour turns up, then review the runs again (./review.py runs/<id>).
 """
-import collections
-import os
-
-import story
 
 # What each behaviour is directed at. The viewer colours the marks by these.
 GROUPS = {
@@ -88,103 +80,13 @@ TRAITS = {
 }
 
 
-def facts(loaded):
-    """What can simply be counted in a run, without anyone judging."""
-    steps = loaded["steps"]
-    did = lambda tool: sum(1 for step in steps if step.get("tool") == tool)
-    return {
-        "lives": 1 + sum(1 for step in steps if step["kind"] == "death"),
-        "deaths": sum(1 for step in steps if step["kind"] == "death"),
-        "actions": sum(1 for step in steps if step["kind"] == "act"),
-        "notes written": did("note"),
-        "throws": did("throw"),
-        "rounds": sum(1 for step in steps if step["kind"] == "prompt"),
-    }
-
-
-def counted(loaded):
-    """How often each behaviour was marked in a run."""
-    return collections.Counter(mark["behaviour"] for mark in (loaded["review"] or {}).get("marks", []))
-
-
-def profiles(loaded):
-    """The character scores of every agent in a run: {agent number: {trait: score}}."""
-    return {profile["agent"]: {trait: judged["score"] for trait, judged in profile["traits"].items()
-                               if judged.get("score") is not None}
-            for profile in (loaded["review"] or {}).get("agents", [])}
-
-
 def described():
     """The list for the viewer: every behaviour with its group and what it means."""
     return [{"name": name, "group": group, "meaning": CATEGORIES[name]}
             for group, names in GROUPS.items() for name in names]
 
 
-def table():
-    """All runs side by side, oldest first, as Markdown."""
-    runs = [story.load(os.path.join(story.RUNS, name)) for name in sorted(os.listdir(story.RUNS))]
-    runs = [run for run in runs if run["steps"]]
-    head = ["", *(str(i) for i in range(1, len(runs) + 1)), "runs", "total"]
-    rows = [head, ["---"] + ["--:"] * (len(head) - 1)]
-
-    def row(label, values):
-        shown = [str(v) if v else "·" for v in values]
-        return [label, *shown, str(sum(1 for v in values if v)), str(sum(values))]
-
-    for key in facts(runs[0]):
-        rows.append(row(key, [facts(run)[key] for run in runs]))
-    rows.append(["**behaviours**"] + [""] * (len(head) - 1))
-    for category in CATEGORIES:
-        counts = [counted(run)[category] for run in runs]
-        rows.append(row(category, counts))
-
-    lines = ["# Behaviours across runs", "",
-             "Written by `./behaviours.py`. Each column is one run, oldest first. The upper rows are",
-             "simply counted. The behaviour rows count the marks the reviewing agent put on single steps",
-             "(see `review.py`); every mark can be looked at in the viewer. Marking is a judgment, so treat",
-             "a 3 against a 4 as roughly the same; what matters is where a behaviour appears at all.",
-             "\"runs\" is in how many runs it appeared.", ""]
-    lines += ["| " + " | ".join(r) + " |" for r in rows]
-    lines += ["", "## The runs", ""]
-    for i, run in enumerate(runs, 1):
-        review = run["review"] or {}
-        told = run["steps"][0]["text"].replace("\n", " ")
-        kept = run.get("keep")
-        going = f", kept going with \"{kept}\"" if kept else ""
-        lines.append(f"{i}. **{review.get('name', 'not reviewed')}** ({run['id']}, {run['model']}, "
-                     f"{story.seconds(os.path.join(story.RUNS, run['id'])) // 60} min). Told: \"{told}\"{going}.")
-        if review.get("striking"):
-            lines.append(f"   Most striking (step {review['striking']['step'] + 1}): {review['striking']['why']}")
-    lines += ["", "## Highlights", "",
-              "The marks rated 4 or 5 out of 5 for interest, with their step. A 5 is the step the",
-              "reviewer of the whole run found most striking.", ""]
-    for i, run in enumerate(runs, 1):
-        for mark in (run["review"] or {}).get("marks", []):
-            if mark.get("interest", 0) >= 4:
-                lines.append(f"- Run {i}, step {mark['step'] + 1}, {mark['behaviour']} "
-                             f"({mark['interest']}): {mark['what']}")
-    lines += ["", "## Characters", "",
-              "Every agent scored by the reviewer of the whole run, from -3 to +3 per trait, where 0 is",
-              "what a typical person would do in its place. · means the run gave it no chance to show it.", ""]
-    head = ["run", "agent", *TRAITS]
-    lines += ["| " + " | ".join(head) + " |", "|" + "---|" * 2 + "--:|" * len(TRAITS)]
-    for i, run in enumerate(runs, 1):
-        for agent, scores in profiles(run).items():
-            lines.append("| " + " | ".join([str(i), str(agent), *(f"{scores[t]:+d}" if t in scores else "·" for t in TRAITS)]) + " |")
-    lines += ["", "Marks the reviewer judged other than neutral:", ""]
-    for i, run in enumerate(runs, 1):
-        for mark in (run["review"] or {}).get("marks", []):
-            if mark.get("valence", "neutral") != "neutral":
-                lines.append(f"- Run {i}, step {mark['step'] + 1}, {mark['valence']}, {mark['behaviour']}: {mark['what']}")
-    lines += ["", "## What each trait means", ""]
-    lines += [f"- **{name}**: -3 {low}; +3 {high}" for name, (low, high) in TRAITS.items()]
-    lines += ["", "## What each behaviour means", ""]
-    lines += [f"- **{name}**: {meaning}" for name, meaning in CATEGORIES.items()]
-    return "\n".join(lines) + "\n"
-
-
-if __name__ == "__main__":
-    text = table()
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "BEHAVIOURS.md"), "w") as f:
-        f.write(text)
-    print(text)
+def judged():
+    """For the viewer: the valences of a mark, and the character traits with their two ends."""
+    return {"valences": VALENCES,
+            "traits": [{"name": name, "low": low, "high": high} for name, (low, high) in TRAITS.items()]}

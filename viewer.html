@@ -237,13 +237,62 @@
   #hints button.on { background: var(--tint); }
   #hints code { color: var(--text); font-size: 13px; }
 
+  /* ---- by world: what the reviewer found in each world, over all its runs ---- */
+  #byWorld { border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: none; color: var(--text);
+             font-weight: 600; margin: 0 4px 12px; }
+  #byWorld.on { background: var(--tint); border-color: var(--tint); }
+  #patterns[hidden] { display: none; }
+  #patterns { grid-column: 2 / 4; display: flex; flex-direction: column; overflow: hidden; }
+  #patterns > header { padding: 20px 26px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 16px;
+                       align-items: flex-end; flex-wrap: wrap; }
+  #patterns > header > div:first-child { flex: 1; min-width: 260px; }
+  #patterns h1 { margin: 0; font-size: 22px; }
+  #patterns > header p { margin: 4px 0 0; color: var(--muted); max-width: 80ch; }
+  #patternsBody { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 26px; display: flex; flex-direction: column; gap: 22px; }
+  #patternsBody h2 { margin: 0 0 4px; font-size: 16px; }
+  #patternsBody .quiet { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  .grid { border-collapse: separate; border-spacing: 2px; font-size: 12.5px; }
+  .grid th { font-weight: 600; text-align: left; padding: 4px 8px; white-space: nowrap; }
+  .grid thead th { text-align: center; vertical-align: bottom; }
+  .grid thead th small { display: block; color: var(--muted); font-weight: 400; }
+  .grid .part th { padding-top: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .grid .part i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); margin-right: 6px; }
+  .grid td.cell { min-width: 92px; height: 26px; text-align: center; border-radius: 6px; cursor: pointer;
+                  font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--accent) var(--fill), var(--soft)); }
+  .grid td.cell.dark { color: var(--on-accent); font-weight: 600; }
+  .grid td.cell.none { color: var(--muted); background: var(--soft); opacity: .6; cursor: default; }
+  .grid td.cell.on { outline: 2px solid var(--text); outline-offset: -2px; }
+  .grid td.strip { min-width: 180px; padding: 0 4px; }
+  .grid td.strip svg { display: block; width: 100%; height: 46px; overflow: visible; }
+  .grid .ends { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+  .strip .mid { stroke: var(--line); stroke-dasharray: 3 3; }
+  .strip .axis { stroke: var(--line); }
+  .strip circle { fill: var(--muted); stroke: var(--panel); stroke-width: 2; cursor: pointer; }
+  .strip circle:hover { fill: var(--text); }
+  .strip .mean { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+  .strip text { fill: var(--muted); font-size: 10px; }
+  .scale { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .scale span.bar { width: 160px; height: 10px; border-radius: 99px;
+                    background: linear-gradient(90deg, var(--soft), var(--accent)); }
+  #moments { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+  #moments:empty { display: none; }
+  #moments h3 { margin: 0 0 4px; font-size: 14px; }
+  .moment { display: flex; gap: 10px; align-items: baseline; text-align: left; border: 0; background: var(--soft);
+            border-radius: 8px; padding: 6px 10px; }
+  .moment:hover { background: var(--tint); }
+  .moment .where { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #tip { position: fixed; z-index: 9; pointer-events: none; max-width: 320px; background: var(--panel); color: var(--text);
+         border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12.5px;
+         box-shadow: 0 6px 24px rgba(0, 0, 0, .25); }
+  #tip[hidden] { display: none; }
+
   @media (max-width: 1000px) {
     body { height: auto; grid-template-columns: minmax(0, 1fr); }
     #runs { flex-direction: row; overflow-x: auto; }
     .run { min-width: 200px; }
     #view { min-height: 60vw; }
     #side { max-height: 80vh; }
-    #create { grid-column: auto; overflow: visible; }
+    #create, #patterns { grid-column: auto; overflow: visible; }
     #createBody { grid-template-columns: minmax(0, 1fr); overflow: visible; padding: 16px; }
   }
 </style>
@@ -258,6 +307,7 @@
   <nav class="panel" id="sidebar" aria-label="Runs">
     <div id="brand"><span></span>AI Box</div>
     <button id="new">+ New run</button>
+    <button id="byWorld">By world</button>
     <div id="runs"></div>
   </nav>
 
@@ -304,6 +354,20 @@
       <div id="hints" hidden></div>
     </form>
   </section>
+
+  <!-- What the reviewer found, world by world: takes the place of the world and the conversation. -->
+  <section class="panel" id="patterns" hidden>
+    <header>
+      <div>
+        <h1>By world</h1>
+        <p>What emerges where: the behaviours the reviewer marked and the characters it saw, over all
+           reviewed runs of each world.</p>
+      </div>
+      <div class="segments" id="patternModel" role="group" aria-label="Which agents"></div>
+    </header>
+    <div id="patternsBody"></div>
+  </section>
+  <div id="tip" hidden></div>
 
   <!-- Setting up a new world: takes the place of the world and the conversation. -->
   <form class="panel" id="create" hidden>
@@ -397,6 +461,8 @@ let story = null;         // the run on screen, as delivered by /api/runs/<id>
 let at = 0;               // index of the step on screen
 let playing = false;
 let draft = false;        // a new run is being written and has not started
+let patterns = false;     // the page "by world" is open
+let judged = { valences: {}, traits: [] };   // how the reviewer judges marks, and the traits of a character
 let lastPrompt = '';      // what the newest run's agents were told: the suggestion for a new one
 let lastSystem = '';      // ... and what they knew
 let worlds = [];          // every world there is, with its description and tools
@@ -443,10 +509,10 @@ async function listRuns(force = false) {
   const text = await fetch('/api/runs').then(r => r.text());
   const changed = text !== listedText;
   if (changed) { listedText = text; listedAnswer = JSON.parse(text); }
-  const answer = listedAnswer, showing = `${draft} ${story?.id}`;
+  const answer = listedAnswer, showing = `${draft} ${patterns} ${story?.id}`;
   if (!force && !changed && showing === listedFor) return answer.runs;
   listedFor = showing;
-  ({ worlds, models: agents, prompt: lastPrompt, system: lastSystem, behaviours } = answer);
+  ({ worlds, models: agents, prompt: lastPrompt, system: lastSystem, behaviours, judged } = answer);
   // A new world starts out like the newest run: the same world, the same kind of agent.
   const newest = answer.runs[0];
   chosen.world ||= worlds.find(world => world.name === newest?.world)?.name || worlds[0]?.name;
@@ -458,13 +524,14 @@ async function listRuns(force = false) {
                      worlds.length > 1 && el('span', 'chip', worldInfo(world)?.title || world),
                      model && el('span', 'chip', model.split('-')[0]),   // "opus" is enough here
                      el('span', 'when', `${started(id)} · ${lasted(seconds)}`));
-    const card = el('button', 'run' + (!draft && story?.id === id ? ' on' : ''), name, facts);
+    const card = el('button', 'run' + (!draft && !patterns && story?.id === id ? ' on' : ''), name, facts);
     card.onclick = () => select(id);
     return card;
   });
   if (draft) cards.unshift(el('button', 'run on', el('div', 'name', el('span', '', 'New run')),
                               el('div', 'facts', 'not started yet')));
   $('runs').replaceChildren(...cards);
+  if (patterns) drawPatterns();
   return answer.runs;
 }
 setInterval(() => document.hidden || listRuns(), LIST);   // (not while the tab is in the background)
@@ -476,7 +543,7 @@ async function loadRuns(pick) {
 }
 
 async function select(id) {
-  playing = draft = aboutOpen = false;
+  playing = draft = aboutOpen = patterns = false;
   $('say').value = '';
   await show(id);
   listRuns();
@@ -583,7 +650,7 @@ function drawAbout() {
 
 function draw(newRun = false) {
   drawCreate();
-  if (draft || !story) return;
+  if (draft || patterns || !story) return;
   drawComposer();
   drawAbout();
   const steps = story.steps, step = steps[at], r = story.review, info = worldInfo(story.world);
@@ -736,7 +803,9 @@ async function pictureCards() {
 let createShows = '';   // which worlds and which choice the screen was built for
 function drawCreate() {
   $('create').hidden = !draft;
-  $('stage').hidden = $('side').hidden = draft;
+  $('patterns').hidden = !patterns;
+  $('byWorld').classList.toggle('on', patterns);
+  $('stage').hidden = $('side').hidden = draft || patterns;
   if (!draft) return;
   for (const world of worlds) previews[world.name] ||= worldCard(world);
   if ($('worldCards').children.length !== worlds.length) $('worldCards').replaceChildren(...worlds.map(w => previews[w.name]));
@@ -771,6 +840,7 @@ $('create').addEventListener('input', () => draft && drawCreate());
 
 async function newRun() {
   draft = true;
+  patterns = false;
   playing = false;
   $('say').value = '';
   $('system').dataset.untouched = '';
@@ -945,6 +1015,177 @@ function jump(to) {
   draw();
 }
 
+// ---------------------------------------------------------------- by world
+// Every reviewed run, grouped by its world. Behaviours are counted per 100 actions, so that
+// long and short runs, and worlds with many or few runs, can be compared. The characters are
+// every agent's scores, each a dot; the line is their mean. 0 is what a typical person would do.
+
+let patternModel = 'all';      // only runs of this kind of agent ("all": every run)
+let patternPick = null;        // the cell whose moments are listed: { world, key }
+let patternsShow = '';         // what the page was drawn from
+
+async function openPatterns() {
+  patterns = true; draft = playing = false;
+  await listRuns(true);
+  drawCreate();
+}
+
+function tip(target, text) {   // a hover note for a mark in a chart
+  target.addEventListener('mousemove', e => {
+    const box = $('tip');
+    box.textContent = text;
+    box.hidden = false;
+    box.style.left = Math.min(e.clientX + 14, innerWidth - box.offsetWidth - 8) + 'px';
+    box.style.top = (e.clientY + 16 + box.offsetHeight > innerHeight ? e.clientY - box.offsetHeight - 10 : e.clientY + 16) + 'px';
+  });
+  target.addEventListener('mouseleave', () => { $('tip').hidden = true; });
+}
+
+async function openMoment(id, step) {
+  await select(id);
+  jump(step);
+}
+
+function drawPatterns() {
+  const all = (listedAnswer?.runs || []).filter(run => run.review && run.done);
+  const kinds = [...new Set(all.map(run => run.model?.split('-')[0]).filter(Boolean))].sort();
+  const runs = all.filter(run => patternModel === 'all' || run.model?.startsWith(patternModel));
+  const key = JSON.stringify([listedText.length, listedText.slice(-200), patternModel, patternPick]);
+  if (key === patternsShow) return;
+  patternsShow = key;
+
+  $('patternModel').replaceChildren(...['all', ...kinds].map(kind => {
+    const button = el('button', kind === patternModel ? 'on' : '', kind === 'all' ? 'All agents' : kind);
+    button.type = 'button';
+    button.onclick = () => { patternModel = kind; patternPick = null; drawPatterns(); };
+    return button;
+  }));
+  if (!runs.length) return $('patternsBody').replaceChildren(el('p', 'quiet', 'No reviewed runs yet.'));
+
+  // The worlds that have runs, in the order of the start screen.
+  const here = worlds.filter(world => runs.some(run => run.world === world.name)).map(world => {
+    const own = runs.filter(run => run.world === world.name);
+    return { name: world.name, title: world.title, runs: own, actions: own.reduce((n, run) => n + (run.actions || 0), 0),
+             marks: own.flatMap(run => (run.review.marks || []).map(mark => ({ ...mark, run }))) };
+  });
+  const rate = (world, n) => world.actions ? n / world.actions * 100 : 0;
+
+  // ---- behaviours: one row each, one column per world
+  const groupNames = { world: 'Towards the world', others: 'Towards others', self: 'Towards itself', person: 'Towards you' };
+  const rows = [];
+  for (const [group, title] of Object.entries(groupNames))
+    rows.push({ part: title, tone: `g-${group}` },
+              ...behaviours.filter(b => b.group === group).map(b => ({
+                key: b.name, label: b.name.replaceAll('_', ' '), meaning: b.meaning,
+                of: mark => mark.behaviour === b.name })));
+  rows.push({ part: 'How the reviewer judged them' },
+            ...Object.entries(judged.valences).filter(([name]) => name !== 'neutral').map(([name, meaning]) => ({
+              key: 'valence:' + name, label: name, meaning, of: mark => mark.valence === name })));
+  const counted = rows.map(row => row.part ? row : { ...row, counts: here.map(world => world.marks.filter(row.of)) });
+  const unseen = counted.filter(row => !row.part && row.counts.every(list => !list.length));
+  const shownRows = counted.filter(row => row.part || row.counts.some(list => list.length));
+  const top = Math.max(0.0001, ...shownRows.filter(row => !row.part)
+    .flatMap(row => row.counts.map((list, k) => rate(here[k], list.length))));
+
+  const head = el('tr', '', el('th', ''), ...here.map(world => el('th', '', world.title,
+    el('small', '', `${world.runs.length} run${world.runs.length === 1 ? '' : 's'} · ${world.actions} actions`))));
+  const body = shownRows.map(row => {
+    if (row.part) {
+      // (a heading with no behaviour seen under it is left out)
+      return el('tr', 'part', el('th', row.tone || '', row.tone && el('i'), row.part));
+    }
+    const label = el('th', '', row.label);
+    tip(label, row.meaning);
+    return el('tr', '', label, ...row.counts.map((list, k) => {
+      const world = here[k], value = rate(world, list.length);
+      if (!list.length) return el('td', 'cell none', '·');
+      const share = value / top, runsWith = new Set(list.map(mark => mark.run.id)).size;
+      const cell = el('td', 'cell' + (share > .55 ? ' dark' : '')
+                      + (patternPick?.world === world.name && patternPick?.key === row.key ? ' on' : ''),
+                      value >= 10 ? value.toFixed(0) : value.toFixed(1));
+      cell.style.setProperty('--fill', `${Math.round(12 + share * 88)}%`);
+      tip(cell, `${world.title} · ${row.label}: ${list.length} mark${list.length === 1 ? '' : 's'} in ${runsWith} of `
+              + `${world.runs.length} runs, ${value.toFixed(1)} per 100 actions. Click to see them.`);
+      cell.onclick = () => { patternPick = { world: world.name, key: row.key }; drawPatterns(); };
+      return cell;
+    }));
+  });
+  // Drop group headings that ended up with nothing under them.
+  const tidy = body.filter((tr, k) => !(tr.className === 'part' && (k + 1 === body.length || body[k + 1].className === 'part')));
+
+  // ---- the moments behind the picked cell
+  const picked = patternPick && counted.find(row => row.key === patternPick.key);
+  const pickedWorld = patternPick && here.findIndex(world => world.name === patternPick.world);
+  const moments = picked && pickedWorld >= 0 ? picked.counts[pickedWorld] : [];
+  const momentList = el('div', '', ...(moments.length ? [
+    el('h3', '', `${picked.label} in ${here[pickedWorld].title}: ${moments.length}`),
+    ...[...moments].sort((a, b) => b.interest - a.interest).map(mark => {
+      const row = el('button', 'moment', el('span', 'stars', '★'.repeat(mark.interest), el('i', '', '★'.repeat(5 - mark.interest))),
+                     el('span', '', mark.what),
+                     el('span', 'where', `${mark.run.review.name} · step ${mark.step + 1}`));
+      row.onclick = () => openMoment(mark.run.id, mark.step);
+      return row;
+    })] : []));
+  momentList.id = 'moments';
+
+  const behaviourPart = el('section', '',
+    el('h2', '', 'Behaviours'),
+    el('p', 'quiet', 'How often the reviewer marked each behaviour, per 100 actions of the agents in that world. '
+         + 'Hover for the counts, click a number to list the moments.'),
+    el('table', 'grid', el('thead', '', head), el('tbody', '', ...tidy)),
+    el('div', 'scale', '0', el('span', 'bar'), `${top >= 10 ? top.toFixed(0) : top.toFixed(1)} per 100 actions`),
+    unseen.length ? el('p', 'quiet', 'Not seen yet: ' + unseen.map(row => row.label).join(', ') + '.') : null,
+    momentList);
+
+  // ---- characters: one row per trait, a strip per world with a dot per agent
+  const W = 200, X = score => W / 2 + score * 30;
+  const traitRows = judged.traits.map(trait => {
+    const low = trait.low.split(':')[0], high = trait.high.split(':')[0];
+    const label = el('th', '', trait.name, el('span', 'ends', `${low} ↔ ${high}`));
+    tip(label, `−3 ${trait.low}\n+3 ${trait.high}\n0 is what a typical person would do.`);
+    return el('tr', '', label, ...here.map(world => {
+      const scored = world.runs.flatMap(run => (run.review.agents || []).map(profile => ({ run, profile, judged: profile.traits?.[trait.name] })))
+        .filter(item => item.judged && item.judged.score != null);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', `0 0 ${W} 46`);
+      svg.setAttribute('class', 'strip');
+      const add = (tag, attrs) => {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+        svg.append(node);
+        return node;
+      };
+      add('line', { x1: X(-3), x2: X(3), y1: 19, y2: 19, class: 'axis' });
+      add('line', { x1: X(0), x2: X(0), y1: 4, y2: 34, class: 'mid' });
+      if (!scored.length) {
+        const none = add('text', { x: X(0) + 4, y: 14 });
+        none.textContent = 'not shown';
+        return el('td', 'strip', svg);
+      }
+      const mean = scored.reduce((n, item) => n + item.judged.score, 0) / scored.length;
+      add('line', { x1: X(mean), x2: X(mean), y1: 6, y2: 32, class: 'mean' });
+      const atScore = {};
+      for (const item of scored) {   // agents with the same score sit above each other
+        const k = (atScore[item.judged.score] = (atScore[item.judged.score] || 0) + 1) - 1;
+        const dot = add('circle', { cx: X(item.judged.score), cy: 19 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 6, r: 5 });
+        tip(dot, `${item.run.review.name}, agent ${item.profile.agent}: ${item.judged.score > 0 ? '+' : ''}${item.judged.score}. ${item.judged.why}`);
+        dot.onclick = () => openMoment(item.run.id, item.judged.steps?.[0] ?? 0);
+      }
+      const value = add('text', { x: W - 2, y: 45, 'text-anchor': 'end' });
+      value.textContent = `mean ${mean > 0 ? '+' : ''}${mean.toFixed(1)} · ${scored.length}`;
+      return el('td', 'strip', svg);
+    }));
+  });
+  const characterPart = el('section', '',
+    el('h2', '', 'Characters'),
+    el('p', 'quiet', 'Every agent the reviewer scored, from −3 to +3 against a typical person (the dashed line). '
+         + 'A dot is one agent, the blue line the mean. Hover a dot for why, click it to go to the run.'),
+    el('table', 'grid', el('thead', '', el('tr', '', el('th', ''), ...here.map(world => el('th', '', world.title)))),
+       el('tbody', '', ...traitRows)));
+
+  $('patternsBody').replaceChildren(behaviourPart, characterPart);
+}
+
 // ---------------------------------------------------------------- buttons
 
 $('play').onclick = () => {
@@ -1040,6 +1281,7 @@ for (const input of [$('say'), $('system')]) {
   });
 }
 $('new').onclick = newRun;
+$('byWorld').onclick = openPatterns;
 $('notesButton').onclick = () => { notesOpen = !notesOpen; notesShown = ''; draw(); };
 
 // Open on the newest run, or on the one named in the address: #<run id>/<step number>/play
@@ -1047,6 +1289,7 @@ $('notesButton').onclick = () => { notesOpen = !notesOpen; notesShown = ''; draw
 //  #<run id>/<step>/notes the notes lying in it.)
 const [run, step, extra] = location.hash.slice(1).split('/');
 if (run === 'new') listRuns().then(newRun);
+else if (run === 'worlds') listRuns().then(openPatterns);
 else loadRuns(run).then(() => {
   if (run && step) jump(step - 1);
   if (extra === 'play') playing = true;

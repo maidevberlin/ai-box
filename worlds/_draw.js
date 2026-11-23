@@ -23,18 +23,22 @@ const COLORS = dark ? { sky: 0x10161b, water: 0x1d4257, note: 0xf3df8a } : { sky
 export const hint = 'Drag to turn · scroll to zoom';
 
 // The blocks of the world at a step: from the last step with all blocks, with every change after it.
-// Going forward one step at a time only applies that step's changes.
+// Going forward one step at a time only applies that step's changes. In a live run a step first
+// comes "in progress", without its changes, and is replaced when it is done: blocks worked out
+// from the unfinished step are not built on (known.step is the very step they came from).
 function blocksAt(story, index, known) {
-  if (known && known.story === story.id && known.index === index - 1) {
+  if (known && known.story === story.id && known.step === story.steps[index]) return known;
+  if (known && known.story === story.id && known.index === index - 1 && known.step === story.steps[index - 1]) {
     apply(known.blocks, story.steps[index]);
     known.index = index;
+    known.step = story.steps[index];
     return known;
   }
   let from = index;
   while (from > 0 && !story.steps[from].blocks) from--;
   const blocks = new Map();
   for (let i = from; i <= index; i++) apply(blocks, story.steps[i]);
-  return { story: story.id, index, blocks };
+  return { story: story.id, index, step: story.steps[index], blocks };
 }
 
 function apply(blocks, step) {

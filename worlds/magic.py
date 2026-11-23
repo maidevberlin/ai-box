@@ -5,7 +5,7 @@ of a feature (put, landing, landed, ...) and calls the usual one where that stil
 The agents have exactly the same tools as on the plain island.
 """
 from .core import DIRS, WAYS, Kind, World
-from .features import Carrying, Clock, Jumping, Looking, Throwing, Walking, Writing
+from .features import REACH, Carrying, Clock, Jumping, Looking, Throwing, Walking, Writing
 
 COLOURS = ["grey", "green", "blue"]   # a block that is jumped on turns into the next of these
 FAR = 2                               # how big the land across the water is (its radius)
@@ -24,7 +24,10 @@ tricks. Each is set off by using those tools in some way, and the world says wha
 The tricks:
 
 - A block thrown hard (power 6 or more) breaks into two wherever it lands: on the ground,
-  on a stack, or as a blue block on the water. This is the way to get more blocks.
+  on a stack, or as a blue block on the water. One piece stays where it landed, the other
+  rolls onto a cell next to it, further in the direction of the throw if it can (on top of
+  whatever is there, or floating if it is blue and that cell is water). Only with no such
+  cell free does it land on top of the first. This is the way to get more blocks.
 - A block that is jumped on changes colour: grey, then green, then blue, then grey again.
 - A green block is sticky. Put next to the block the agent stands on, it does not drop: it
   sticks to that block's side and hangs there, level with it. Put beside a wall (a stack
@@ -36,7 +39,8 @@ The tricks:
   ground, and can be walked on like ground. Other blocks can be stacked on it.
 - Any other block that ends up in the water sinks and is gone.
 - Agents are never without a block: when no block is left that an agent could pick up
-  (all sunk, or floating out of reach), a new grey block appears next to the agent.
+  (all sunk, floating out of reach, or only in stacks too high to take from the ground), a
+  new grey block appears next to the agent.
 
 What holds a block up: the ground, a block beneath it, the water if it is blue, or a green
 block beside it (a green block also holds on to whatever is beside it). A block that nothing
@@ -165,13 +169,33 @@ sinks with whoever stands on it.
         path.append([cell[0] + 0.5, cell[1] + 0.5, level + 0.5])
         said = f"It landed at {at}."
         if power >= self.split:
-            self.put_block(*cell, level + 1, thing["block"])
-            said += " It broke in two."
+            piece = self.rolls_to(agent, cell, thing["block"])
+            if piece:
+                there = self.height(piece) if self.standable(piece) else -1
+                self.put_block(*piece, there, thing["block"])
+                said += f" It broke in two. One piece rolled to ({piece[0]}, {piece[1]})."
+            else:
+                self.put_block(*cell, level + 1, thing["block"])
+                said += " It broke in two."
         if level == -1:
             said += " It floats in the water, level with the ground."
         if self.height(cell):
-            said += f" The stack there is {self.height(cell)} high."
+            said += f" The stack at {at} is {self.height(cell)} high."
         return said + (f" {self.where(agent)}" if cell == agent.pos else "")
+
+    def rolls_to(self, agent, cell, kind):
+        """Where the second piece of a broken block goes: a cell next to where it landed,
+        the one further in the direction of the throw first. Never onto an agent, and into
+        the water only if it floats. None: no such cell, it lands on top of the first piece."""
+        sign = lambda n: (n > 0) - (n < 0)
+        ahead = (sign(cell[0] - agent.pos[0]), sign(cell[1] - agent.pos[1]))
+        steps = ([ahead] if ahead != (0, 0) else []) + [d for d in DIRS.values() if d != ahead]
+        taken = {a.pos for a in self.agents.values() if not a.dead}
+        for dx, dy in steps:
+            there = (cell[0] + dx, cell[1] + dy)
+            if there not in taken and (self.standable(there) or (kind == "blue" and not self.column(there))):
+                return there
+        return None
 
     def after_action(self, agent):
         """Agents are never without a block (see restock)."""
@@ -229,7 +253,9 @@ sinks with whoever stands on it.
             return ""
         walkable = self.on_foot()
         near = lambda x, y: any((x + dx, y + dy) in walkable for dx, dy in [(0, 0), *DIRS.values()])
-        if any(kind not in ("gold", "ground") and near(x, y) for (x, y, _), kind in self.blocks.items()):
+        # (a stack counts only if its top can be taken from the ground beside it)
+        if any(kind not in ("gold", "ground") and near(x, y) and self.height((x, y)) <= REACH + 1
+               for (x, y, _), kind in self.blocks.items()):
             return ""
         free = [c for c in (self.next_to(agent, p) for p in DIRS) if self.land(c) and self.height(c) == 0]
         if not free:   # the agent stands out on the water: the block appears where agents wake up

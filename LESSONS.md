@@ -1,7 +1,7 @@
 # Lessons learned
 
 What the runs have taught us about agents. Only that: what agents did, and what it tells us
-about them. How often each behaviour showed up, run by run, is in [BEHAVIOURS.md](BEHAVIOURS.md).
+about them. Which behaviours showed up in which world is on the viewer's page "By world".
 
 ## Alone, with no task
 
