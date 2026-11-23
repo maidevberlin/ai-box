@@ -31,7 +31,9 @@ The tricks:
   on a stack, or as a blue block on the water. This is the way to get more blocks.
 - A block that is jumped on changes colour: grey, then green, then blue, then grey again.
 - A green block is sticky. Put next to the block the agent stands on, it does not drop: it
-  sticks to that block's side and hangs there, level with it. The agent can walk onto it and
+  sticks to that block's side and hangs there, level with it. Thrown, it sticks to the first
+  block it passes beside: dropped beside a pile it sticks to the pile, thrown against a stack
+  it sticks to its side. The agent can walk onto it and
   add the next one. That makes bridges over water, and platforms in the air.
 - A blue block floats. Put or thrown into the water, it lies in the surface, level with the
   ground, and can be walked on like ground. Other blocks can be stacked on it.
@@ -336,7 +338,7 @@ class World(Grid):
             self.notes.append([*cell, there, thing["note"]])
             return f"You put the note down at {at}. {self.where()}"
         colour = thing["block"]
-        if colour == "green" and where != "here" and own >= 1 and there < own:
+        if colour == "green" and where != "here" and own >= 1 and there < own - (1 if self.standable(cell) else 0):
             self.carrying = None
             self.blocks[(*cell, own - 1)] = colour  # beside the block under the agent's feet
             return f"You put the block down. It sticks to the side of the block you stand on and hangs at {at}. {self.where()}"
@@ -351,6 +353,21 @@ class World(Grid):
         self.carrying = None
         self.blocks[(*cell, there)] = colour
         return f"You put the block down at {at}. The stack there is {there + 1} high. {self.where()}"
+
+    def stick_in_flight(self, cell, level, thing):
+        """Trick: a thrown green block sticks to the first block it passes beside, at that level.
+        So one dropped beside the pile the agent stands on sticks to the pile, and one that flies
+        into the side of a stack sticks to it. (Not to blocks floating in the water.)"""
+        if (thing or {}).get("block") != "green" or level < 0 or (*cell, level) in self.blocks:
+            return None
+        beside = [(cell[0] + dx, cell[1] + dy) for dx, dy in DIRS.values() if (cell[0] + dx, cell[1] + dy, level) in self.blocks]
+        if not beside:
+            return None
+        self.blocks[(*cell, level)] = "green"
+        self.detail["flight"]["path"].append([cell[0] + 0.5, cell[1] + 0.5, level + 0.5])
+        to = beside[0]
+        return (f"It stuck to the side of the block at ({to[0]}, {to[1]}) and hangs at ({cell[0]}, {cell[1]}), "
+                f"{level + 1} high." + self.restock())
 
     def land_thrown(self, cell, thing, power):
         """Where a thrown thing ends up. Tricks: a block thrown hard breaks in two where it

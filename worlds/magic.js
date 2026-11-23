@@ -51,7 +51,7 @@ export function create(box) {
 
   const water = new THREE.Mesh(cube, solid('water'));
   const things = new THREE.Group();   // blocks and notes
-  const agents = crowd(scene, cube, (mesh, thing) => shape(mesh, thing));   // the agents: see _agents.js
+  const agents = crowd(scene, cube, (mesh, thing) => shape(mesh, thing), camera, box);   // the agents: see _agents.js
   const north = letter('N');
   // A thrown thing in the air. When it lands it stays put and stands in for the thing that landed.
   const flying = new THREE.Mesh(cube, looks.grey);
@@ -141,6 +141,7 @@ export function create(box) {
     // Runs from before several agents could live side by side recorded only the one.
     agents.show(state.agents || [{ id: 1, pos: state.pos, height: state.height, carrying: state.carrying, dead: state.dead, view: state.view }],
                 place, fresh);
+    if (story.steps) agents.speak(story.steps, index);   // what they say and think, in bubbles
   }
 
   const facts = ({ state }) => [state.carrying && (state.carrying.note ? 'carrying a note' : `carrying a ${state.carrying.block} block`)];
@@ -183,6 +184,7 @@ export function create(box) {
     resizing.disconnect();
     renderer.dispose();
     renderer.domElement.remove();
+    agents.remove();
   }
 
   return { show, facts, notes, remove };

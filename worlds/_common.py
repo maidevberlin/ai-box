@@ -220,6 +220,11 @@ class Grid:
         """What else happens when the agent lands from a jump. Nothing, unless a world says so."""
         return ""
 
+    def stick_in_flight(self, cell, level, thing):
+        """A thrown thing is in a cell, at a level, on its way. A world can make it stop there:
+        then this puts it there and says what happened. Nothing stops in the air, unless a world says so."""
+        return None
+
     def also_seen(self):
         """More lines for looking around. None, unless a world has something else to show."""
         return []
@@ -464,6 +469,12 @@ class Grid:
             ahead = (math.floor(x), math.floor(y))
             if tick % 10 == 0:
                 path.append([round(x, 2), round(y, 2), round(z, 2)])
+            # A world may let a thing stop in the air on its way, beside a block (see stick_in_flight).
+            # (Not over the thrower's own cell: there it is still at the thrower's hand.)
+            if over != self.pos and math.floor(z) >= self.height(over):
+                stuck = self.stick_in_flight(over, math.floor(z), thing)
+                if stuck:
+                    return threw + stuck
             if ahead != over:
                 # Flew into the side of a stack: drops in front of it. (Only a real stack has a side.
                 # Bare ground reached exactly at a cell's edge is a normal landing, handled below.)
