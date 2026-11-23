@@ -25,6 +25,7 @@
   .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--soft); border: 0;
           color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
   button.chip { color: var(--accent); text-decoration: underline; }
+  button.chip.danger { color: var(--stop); }
   .stars { color: var(--gold); letter-spacing: 1px; white-space: nowrap; }
   .stars i { font-style: normal; opacity: .28; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none;
@@ -242,6 +243,12 @@
              font-weight: 600; margin: 0 4px 12px; }
   #byWorld.on { background: var(--tint); border-color: var(--tint); }
   #patterns[hidden] { display: none; }
+  #dataset { display: flex; gap: 6px; margin: -4px 4px 12px; }
+  #dataset > * { flex: 1; text-align: center; border: 1px solid var(--line); border-radius: 10px; padding: 6px;
+                 background: none; color: var(--muted); font-size: 12.5px; text-decoration: none; }
+  #dataset > *:hover { color: var(--text); border-color: var(--muted); }
+  #imported { margin: -6px 6px 12px; font-size: 12.5px; color: var(--muted); }
+  #imported[hidden] { display: none; }
   #patterns { grid-column: 2 / 4; display: flex; flex-direction: column; overflow: hidden; }
   #patterns > header { padding: 20px 26px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 16px;
                        align-items: flex-end; flex-wrap: wrap; }
@@ -308,6 +315,12 @@
     <div id="brand"><span></span>AI Box</div>
     <button id="new">+ New run</button>
     <button id="byWorld">By world</button>
+    <div id="dataset">
+      <button id="importRuns" type="button" title="Add runs from a zip file someone exported">Import…</button>
+      <a id="exportRuns" href="/api/export" download title="All finished runs as one zip file, to share them">Export all</a>
+      <input id="importFile" type="file" accept=".zip,application/zip" hidden>
+    </div>
+    <div id="imported" hidden></div>
     <div id="runs"></div>
   </nav>
 
@@ -364,6 +377,7 @@
            reviewed runs of each world.</p>
       </div>
       <div class="segments" id="patternModel" role="group" aria-label="Which agents"></div>
+      <a id="patternExport" class="chip" download title="The runs this page counts, as one zip file">Export these runs</a>
     </header>
     <div id="patternsBody"></div>
   </section>
@@ -517,12 +531,13 @@ async function listRuns(force = false) {
   const newest = answer.runs[0];
   chosen.world ||= worlds.find(world => world.name === newest?.world)?.name || worlds[0]?.name;
   chosen.agent ||= agents.find(name => newest?.model?.startsWith(name)) || agents[0];
-  const cards = answer.runs.map(({ id, review, model, world, done, seconds }) => {
+  const cards = answer.runs.map(({ id, review, model, world, done, seconds, imported }) => {
     const name = el('div', 'name', !done && el('i', 'dot'),
                     el('span', '', review ? review.name : done ? 'Not reviewed yet' : 'Running'));
     const facts = el('div', 'facts', review && stars(review.rating),
                      worlds.length > 1 && el('span', 'chip', worldInfo(world)?.title || world),
                      model && el('span', 'chip', model.split('-')[0]),   // "opus" is enough here
+                     imported && el('span', 'chip', 'imported'),
                      el('span', 'when', `${started(id)} · ${lasted(seconds)}`));
     const card = el('button', 'run' + (!draft && !patterns && story?.id === id ? ' on' : ''), name, facts);
     card.onclick = () => select(id);
@@ -658,7 +673,12 @@ function draw(newRun = false) {
   about.onclick = () => { aboutOpen = !aboutOpen; draw(); };
   $('title').replaceChildren(...[r ? r.name : story.done ? 'Not reviewed yet' : 'Running',
     r && stars(r.rating), story.model && el('span', 'chip', story.model),
-    el('span', 'chip', started(story.id)), about].filter(Boolean));
+    el('span', 'chip', started(story.id)), about,
+    story.done && Object.assign(el('a', 'chip', 'Export'), { href: `/api/export?ids=${story.id}`, download: '',
+                                                            title: 'This run as a zip file, to share it' }),
+    story.done && Object.assign(el('button', 'chip danger', 'Delete'), { onclick: deleteRun, title: 'Delete this run for good' }),
+    story.imported && Object.assign(el('span', 'chip', 'imported'), { title: `From ${story.imported}. It can be watched, but not continued.` }),
+  ].filter(Boolean));
   $('summary').textContent = r ? r.summary : story.done ? '' : 'This run gets a name and a summary when it ends.';
   $('usage').replaceChildren(...usageChips(story.usage));
   $('slider').max = Math.max(steps.length - 1, 0);
@@ -1060,6 +1080,8 @@ function drawPatterns() {
     button.onclick = () => { patternModel = kind; patternPick = null; drawPatterns(); };
     return button;
   }));
+  $('patternExport').href = '/api/export?ids=' + runs.map(run => run.id).join(',');
+  $('patternExport').hidden = !runs.length;
   if (!runs.length) return $('patternsBody').replaceChildren(el('p', 'quiet', 'No reviewed runs yet.'));
 
   // The worlds that have runs, in the order of the start screen.
@@ -1282,6 +1304,30 @@ for (const input of [$('say'), $('system')]) {
 }
 $('new').onclick = newRun;
 $('byWorld').onclick = openPatterns;
+
+// Deleting a run removes its folder for good (export it first to keep a copy).
+async function deleteRun() {
+  const name = story.review?.name || 'this run';
+  if (!confirm(`Delete "${name}" for good? This cannot be undone. (Export it first to keep a copy.)`)) return;
+  const answer = await api(`/api/runs/${story.id}/delete`, { method: 'POST' });
+  if (answer.error) return alert(answer.error);
+  story = null;
+  await loadRuns();
+}
+$('importRuns').onclick = () => $('importFile').click();
+$('importFile').onchange = async () => {
+  const file = $('importFile').files[0];
+  $('importFile').value = '';
+  if (!file) return;
+  const say = text => { $('imported').textContent = text; $('imported').hidden = false; };
+  say(`Importing ${file.name}…`);
+  const answer = await fetch('/api/import', { method: 'POST', body: file,
+    headers: { 'Content-Type': 'application/zip', 'X-File-Name': encodeURIComponent(file.name) } }).then(r => r.json()).catch(() => ({ error: 'The import failed.' }));
+  if (answer.error) return say(answer.error);
+  const n = answer.added.length, here = answer.skipped.length;
+  say(`${n} run${n === 1 ? '' : 's'} added` + (here ? `, ${here} ${here === 1 ? 'was' : 'were'} here already.` : '.'));
+  await listRuns(true);
+};
 $('notesButton').onclick = () => { notesOpen = !notesOpen; notesShown = ''; draw(); };
 
 // Open on the newest run, or on the one named in the address: #<run id>/<step number>/play

@@ -9,17 +9,23 @@ Start it with  ./viewer.py  and open http://127.0.0.1:8765
   GET  /api/runs/<id>  one run as a timeline (see story.py)
   POST /api/runs       start a new run: world, model, what agents know and are told, and when it ends
   POST /api/runs/<id>/stop   end a run that is still going
+  POST /api/runs/<id>/delete delete a run that has ended, for good
+  GET  /api/export?ids=<id>,<id>   finished runs as a zip file (all of them without ids; see dataset.py)
+  POST /api/import     the runs in a zip file (the body) are added
 """
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import behaviours
+import dataset
 import story
 import worlds
 
@@ -83,7 +89,17 @@ class Handler(BaseHTTPRequestHandler):
                  "model": story.model(os.path.join(story.RUNS, i)),
                  "seconds": story.seconds(os.path.join(story.RUNS, i)),
                  "actions": story.actions(os.path.join(story.RUNS, i)),
+                 "imported": os.path.exists(os.path.join(story.RUNS, i, "imported")),
                  "done": os.path.exists(os.path.join(story.RUNS, i, "done"))} for i in ids]})
+        if self.path.startswith("/api/export"):
+            ids = re.findall(r"[0-9]{8}-[0-9]{6}", self.path.partition("?")[2])
+            data = dataset.export(ids)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="ai-box-runs-{time.strftime("%Y%m%d-%H%M")}.zip"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
         # /api/runs/<id>?from=N sends only the steps from N on: a live run is read again every
         # second, and sending all of it each time was much more than the page needed.
         run_id, _, query = self.path.removeprefix("/api/runs/").partition("?")
@@ -99,6 +115,14 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin", "").removeprefix("http://")
         if origin not in HOSTS or self.headers.get("Host") not in HOSTS:
             return self.send({"error": "not allowed"}, status=403)
+        if self.path == "/api/import":
+            size = int(self.headers.get("Content-Length") or 0)
+            if not 0 < size <= dataset.LIMIT:
+                return self.send({"error": "This file is empty or too big."}, status=400)
+            try:
+                return self.send(dataset.import_(self.rfile.read(size), urllib.parse.unquote(self.headers.get("X-File-Name", "a zip file"))[:200]))
+            except ValueError as e:
+                return self.send({"error": str(e)}, status=400)
         try:
             wish = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
             text = lambda key: str(wish.get(key) or "").strip()[:4000]
@@ -112,6 +136,13 @@ class Handler(BaseHTTPRequestHandler):
         run = os.path.join(story.RUNS, run_id)
         if action == "resume":
             return self.resume(run_id, run, minutes, agents)
+        if action == "delete":
+            if not RUN_ID.match(run_id) or not os.path.isdir(run):
+                return self.send({"error": "no such run"}, status=404)
+            if not os.path.exists(os.path.join(run, "done")):
+                return self.send({"error": "End the run first."}, status=409)
+            shutil.rmtree(run)
+            return self.send({"ok": action})
         # Only a run that is still going: the number in an old pid file may belong to another program by now.
         if (action != "stop" or not RUN_ID.match(run_id) or not os.path.isdir(run)
                 or os.path.exists(os.path.join(run, "done"))):

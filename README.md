@@ -12,8 +12,8 @@ the notes they wrote.
 Every action is recorded. A local web page plays a run back in 3D next to the agent's
 thinking, and a reviewing agent names, summarises and rates each run.
 
-What the runs have shown so far is in [LESSONS.md](LESSONS.md). The viewer's page "By world"
-shows which behaviours and characters appear in which world, over all your runs.
+The viewer's page "By world" shows which behaviours and characters appear in which world,
+over all your runs.
 
 ## What you need
 
@@ -45,6 +45,21 @@ All settings are listed at the top of [run.py](run.py).
 
 Running agents uses your Claude usage. A ten-minute run with one agent is small; long runs
 with several agents add up. The page shows what each run used.
+
+## Sharing runs
+
+Runs stay on your computer. To share them, or to look at someone else's, the viewer has
+"Export all" and "Import…" (and "Export" on every run, "Export these runs" on "By world").
+Runs travel as one zip file. Without the page:
+
+```
+./dataset.py export [run ids ...] [-o runs.zip]
+./dataset.py import runs.zip
+```
+
+An export holds what is needed to watch and compare the runs. Your home folder's path is
+replaced by `~`. The kept world is left out, so an imported run can be watched but not
+continued (loading a world file someone else made could run code on your computer).
 
 ## The worlds
 
@@ -84,6 +99,7 @@ from the colours of its kinds of block.
 | `review.py` | The reviewing agent: name, summary, rating, and behaviours per step |
 | `behaviours.py` | The behaviours, judgements and character traits the reviewer uses |
 | `viewer.py`, `viewer.html` | The local web page |
+| `dataset.py` | Export and import runs as a zip file |
 
 ## Contributing
 

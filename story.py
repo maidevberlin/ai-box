@@ -156,6 +156,7 @@ def load(run):
         "system": read(run, "system.txt"),   # what every agent knows before it is told anything
         "limits": limits(run),               # when the world ends by itself
         "resumable": os.path.exists(os.path.join(run, "world.pickle")),  # its world was kept, so it can go on
+        "imported": read(run, "imported"),   # brought in from a zip file (see dataset.py): from where, and when
         "steps": [],
     }
     if not start:  # the world has not started yet
