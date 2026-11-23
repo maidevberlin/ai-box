@@ -162,7 +162,7 @@ export function create(box) {
 
   renderer.setAnimationLoop(() => {
     controls.update();   // turning or zooming wakes the picture up
-    if (performance.now() > awake) return;
+    if (performance.now() > awake && !agents.busy()) return;
     agents.glide();
     if (flight) {                         // move the thrown block along its recorded path
       const last = flight.points.length - 1;

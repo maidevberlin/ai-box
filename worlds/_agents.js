@@ -8,6 +8,12 @@ import * as THREE from 'three';
 
 export const PLACE_COLOURS = [0xe8553a, 0x8b5cf6, 0x14b8a6, 0xf59e0b];
 
+// Coming and going is shown when the run is played forward, one step at a time:
+//   waking up   a beam of light, and the figure grows out of it
+//   drowning    the figure sinks into the water, with a splash
+//   gone        (it ended its turn, or had to make room) the figure rises, shrinks and fades
+const LASTS = { wake: 900, sink: 1100, gone: 1000 };   // milliseconds
+
 // What an agent says or thinks is shown in a bubble above its head: a speech bubble for
 // what it says, a thought bubble for what it thinks. A bubble stays while the agent does a
 // few more things, then goes. (Only the start of a long text is shown.)
@@ -44,7 +50,8 @@ export function crowd(scene, cube, dress, camera, box) {
   addStyle();
 
   function figure(id) {
-    const look = new THREE.MeshLambertMaterial({ color: PLACE_COLOURS[(id - 1) % PLACE_COLOURS.length] });
+    const colour = PLACE_COLOURS[(id - 1) % PLACE_COLOURS.length];
+    const look = new THREE.MeshLambertMaterial({ color: colour, transparent: true });
     const group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.1, 20), look);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 20, 14), look);
@@ -58,7 +65,15 @@ export function crowd(scene, cube, dress, camera, box) {
     bubble.hidden = true;
     bubble.style.setProperty('--who', '#' + PLACE_COLOURS[(id - 1) % PLACE_COLOURS.length].toString(16).padStart(6, '0'));
     box?.append(bubble);
-    return { group, carried, sight, bubble, target: new THREE.Vector3(), isNew: true };
+    // The effects of coming and going: a beam of light, and a ring on the ground or the water.
+    const glow = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 4, 24, 1, true), glow);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.42, 32), glow.clone());
+    ring.rotation.x = -Math.PI / 2;
+    beam.visible = ring.visible = false;
+    scene.add(beam, ring);
+    return { group, carried, sight, bubble, look, beam, ring, base: new THREE.Vector3(), target: new THREE.Vector3(),
+             isNew: true, alive: false, anim: null };
   }
 
   // agents: [{ id, pos, height, carrying, dead, view }]. place(x, y, up) is the world's own.
@@ -67,8 +82,9 @@ export function crowd(scene, cube, dress, camera, box) {
     for (const a of agents) {
       const f = figures[a.id] ||= figure(a.id);
       f.target = place(...a.pos, a.height);
-      if (fresh || f.isNew) f.group.position.copy(f.target);
+      if (fresh || f.isNew) { f.base.copy(f.target); f.group.position.copy(f.target); }
       f.isNew = false;
+      f.dead = a.dead;
       f.group.visible = f.sight.visible = !a.dead;   // drowned: gone until a new agent wakes up
       f.carried.visible = !!a.carrying;
       if (a.carrying) { dress(f.carried, a.carrying); f.carried.scale.multiplyScalar(0.64); }
@@ -78,8 +94,87 @@ export function crowd(scene, cube, dress, camera, box) {
     }
   }
 
+  // Who is alive at the step on screen, and the animation of coming or going when the run is
+  // played forward onto a step where that changes. An agent that ended its turn stays in the
+  // world's record where it stood until a new one wakes up: it is shown gone from its death on.
+  let lastIndex = -1;
+  function lives(steps, index) {
+    const forward = index === lastIndex + 1, again = index === lastIndex;
+    lastIndex = index;
+    const gone = {};   // place -> whether its last step up to here is a death
+    for (let i = index; i >= 0 && Object.keys(gone).length < Object.keys(figures).length; i--) {
+      const place = steps[i].place || 1;
+      if (place in gone || !(place in figures)) continue;
+      if (['death', 'prompt', 'act', 'think', 'say'].includes(steps[i].kind)) gone[place] = steps[i].kind === 'death';
+    }
+    for (const [id, f] of Object.entries(figures)) {
+      const alive = !f.dead && !gone[id];
+      if (again) { if (f.anim) f.group.visible = true; else f.group.visible = f.sight.visible = alive; continue; }
+      if (forward && f.alive && !alive) start(f, f.dead ? 'sink' : 'gone');
+      else if (forward && !f.alive && alive) { f.base.copy(f.target); start(f, 'wake'); }
+      else stop(f);
+      f.alive = alive;
+      f.group.visible = alive || !!f.anim;   // a going one stays in sight while it goes
+      f.sight.visible = alive;
+    }
+  }
+
+  function start(f, kind) {
+    f.anim = { kind, start: performance.now() };
+    f.beam.visible = kind !== 'sink';
+    f.ring.visible = true;
+  }
+
+  function stop(f) {
+    f.anim = null;
+    f.beam.visible = f.ring.visible = false;
+    f.group.scale.setScalar(1);
+    f.look.opacity = 1;
+  }
+
+  // One frame of an animation. Returns how far up or down the figure is moved.
+  function animate(f, now) {
+    const { kind, start: began } = f.anim, t = Math.min((now - began) / LASTS[kind], 1);
+    const ease = 1 - (1 - t) ** 3;
+    let lift = 0;
+    f.beam.position.copy(f.base).add(new THREE.Vector3(0, 2, 0));
+    f.ring.position.copy(f.base).add(new THREE.Vector3(0, kind === 'sink' ? -0.15 : 0.03, 0));
+    if (kind === 'wake') {          // grows out of a beam of light that then fades
+      const grow = t < 0.75 ? ease * 1.12 : 1.12 - (t - 0.75) / 0.25 * 0.12;   // a little too big, then settles
+      f.group.scale.setScalar(Math.max(0.01, Math.min(grow, 1.12)));
+      f.look.opacity = Math.min(1, t * 2);
+      f.beam.material.opacity = 0.45 * (1 - t);
+      f.beam.scale.set(1 - t * 0.6, 1, 1 - t * 0.6);
+      f.ring.material.opacity = 0.8 * (1 - t);
+      f.ring.scale.setScalar(1 + t * 2.5);
+      lift = (1 - ease) * 0.8;
+    } else if (kind === 'sink') {   // goes under, rocking a little; a splash spreads on the water
+      lift = -ease * 1.8;
+      f.group.rotation.z = Math.sin(t * 14) * 0.25 * (1 - t);
+      f.look.opacity = 1 - t * 0.8;
+      f.ring.material.opacity = 0.9 * (1 - t);
+      f.ring.scale.setScalar(1 + ease * 4);
+    } else {                        // rises, shrinks and fades away, in a fading light
+      lift = ease * 1.4;
+      f.group.scale.set(1 - ease * 0.8, 1 + ease * 0.3, 1 - ease * 0.8);
+      f.look.opacity = 1 - t;
+      f.carried.visible = false;
+      f.beam.material.opacity = 0.35 * (1 - t);
+      f.ring.material.opacity = 0.6 * (1 - t);
+      f.ring.scale.setScalar(1 + ease * 1.5);
+    }
+    if (t >= 1) {
+      const ended = kind;
+      stop(f);
+      f.group.rotation.z = 0;
+      if (ended !== 'wake') f.group.visible = false;
+    }
+    return lift;
+  }
+
   // What each agent said or thought last, up to the step on screen: shown while it is recent.
   function speak(steps, index) {
+    lives(steps, index);
     const said = {};   // place -> { step, acts since }
     const done = new Set();
     for (let i = index; i >= 0 && done.size < Object.keys(figures).length; i--) {
@@ -106,7 +201,12 @@ export function crowd(scene, cube, dress, camera, box) {
   const glide = () => {
     const placed = [];
     const all = Object.values(figures);
-    for (const f of all) f.group.position.lerp(f.target, 0.18);
+    const now = performance.now();
+    for (const f of all) {
+      f.base.lerp(f.target, 0.18);
+      const lift = f.anim ? animate(f, now) : 0;
+      f.group.position.copy(f.base).add(new THREE.Vector3(0, lift, 0));
+    }
     if (!camera || !box) return;
     const order = all.filter(f => !f.bubble.hidden).sort((a, b) => a.bubble.classList.contains('old') - b.bubble.classList.contains('old'));
     for (const f of order) {
@@ -126,5 +226,8 @@ export function crowd(scene, cube, dress, camera, box) {
 
   const remove = () => { for (const f of Object.values(figures)) f.bubble.remove(); };
 
-  return { show, glide, speak, remove };
+  // Whether an animation is still going: then the picture has to keep being drawn.
+  const busy = () => Object.values(figures).some(f => f.anim);
+
+  return { show, glide, speak, remove, busy };
 }
