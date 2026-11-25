@@ -1,0 +1,21 @@
+{
+  "name": "ai-box",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\"",
+    "start": "node src/viewer/server.ts",
+    "world": "node src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.10",
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0"
+  }
+}

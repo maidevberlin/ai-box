@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Box</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f3f2ee; --panel: #ffffff; --soft: #f1efe9; --text: #1d2126; --muted: #6c7480; --line: #e2dfd6;
+    --accent: #2f6fed; --on-accent: #ffffff; --tint: #e8effd; --live: #1f9d55; --stop: #d9482b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1114; --panel: #161a1f; --soft: #1e232a; --text: #e7e9ec; --muted: #8b95a1; --line: #272d35;
+      --accent: #6ea8fe; --on-accent: #0b1220; --tint: #1b2a44; --live: #4ade80; --stop: #ff6b4a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif;
+         height: 100vh; display: grid; grid-template-columns: 272px minmax(0, 1fr) 400px; gap: 12px; padding: 12px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  [hidden] { display: none !important; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; min-height: 0; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--soft); border: 0;
+          color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+
+  /* ---- left: the runs ---- */
+  #sidebar { display: flex; flex-direction: column; padding: 14px 10px 10px; }
+  #brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; padding: 0 6px 12px; }
+  #brand span { width: 16px; height: 16px; border-radius: 4px; border: 3px solid var(--accent); }
+  #new { border: 0; border-radius: 10px; padding: 9px; background: var(--accent); color: var(--on-accent); font-weight: 600; margin: 0 4px 12px; }
+  #runs { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .run { text-align: left; border: 0; background: none; border-radius: 10px; padding: 9px 10px; width: 100%; }
+  .run:hover { background: var(--soft); }
+  .run.on { background: var(--tint); }
+  .run .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .run .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+  .run .facts .when { margin-left: auto; white-space: nowrap; }
+
+  /* ---- middle: the world ---- */
+  #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+  #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
+  #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
+  #scene, #scene canvas, .bubbles { position: absolute; inset: 0; }
+  #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75;
+          background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
+  .bubble { max-width: 230px; padding: 6px 10px; border-radius: 12px; font-size: 12px; line-height: 1.35;
+            background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text);
+            border: 1.5px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); pointer-events: none; }
+  .bubble.thought { font-style: italic; color: var(--muted); border-style: dashed; }
+  #controls { display: flex; align-items: center; gap: 10px; }
+  #play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 14px; flex: none; }
+  #slider { flex: 1; accent-color: var(--accent); }
+  #count { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #speed { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 4px 6px; }
+  #live { border: 1px solid var(--line); border-radius: 99px; background: none; padding: 3px 11px; color: var(--muted); font-weight: 600; }
+  #live.on { border-color: var(--live); color: var(--live); }
+  #stop { border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
+
+  /* ---- right: what the agents thought, said and did ---- */
+  #side { display: flex; flex-direction: column; padding: 8px; }
+  #side h2 { margin: 0; padding: 8px 8px 10px; font-size: 14px; }
+  #log { position: relative; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 0 4px 8px; }
+  .step { padding: 6px 12px; border-radius: 4px 12px 12px 4px; cursor: pointer; border: 1px solid transparent; border-left: 3px solid var(--place, var(--line)); }
+  .step.now { border-color: var(--accent); border-left-color: var(--place, var(--accent)); }
+  .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--place, var(--muted)); }
+  .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .step.say { background: var(--soft); }
+  .step.say .heard { color: var(--muted); font-size: 12.5px; white-space: pre-wrap; margin-top: 4px; }
+  .step.think .text { color: var(--muted); font-style: italic; }
+  .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .step.act .text { color: var(--muted); font-size: 12.5px; }
+  .step.wake { color: var(--muted); }
+  .step.death { color: var(--stop); border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 6px; }
+  .step.stop { text-align: center; color: var(--muted); border-left-color: transparent; }
+
+  /* ---- starting a world: takes the place of the world and the conversation ---- */
+  #create { grid-column: 2 / 4; display: flex; flex-direction: column; overflow: hidden; }
+  #create > header { padding: 20px 26px 14px; border-bottom: 1px solid var(--line); }
+  #create h1 { margin: 0; font-size: 22px; }
+  #create > header p { margin: 4px 0 0; color: var(--muted); }
+  #createBody { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 26px; display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+  #create section { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  #create h2 { margin: 0 0 12px; font-size: 15px; }
+  #worldAbout { white-space: pre-wrap; color: var(--muted); margin: 12px 0 0; }
+  .segments { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .segments button { border: 0; background: none; padding: 7px 13px; font-weight: 600; color: var(--muted); }
+  .segments button + button { border-left: 1px solid var(--line); }
+  .segments button.on { background: var(--accent); color: var(--on-accent); }
+  .row { display: flex; align-items: center; gap: 16px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row > span { flex: 1; min-width: 0; font-weight: 600; }
+  .row input[type=number] { width: 84px; text-align: center; }
+  .row input, .row select, .row textarea { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 7px 10px; }
+  .row textarea { flex: 2; resize: vertical; }
+  fieldset { border: 0; padding: 0; margin: 0; }
+  legend { font-weight: 700; padding: 0 0 6px; }
+  #create > footer { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 14px 26px;
+                     border-top: 1px solid var(--line); background: var(--soft); border-radius: 0 0 14px 14px; }
+  #start { border: 0; border-radius: 12px; padding: 11px 26px; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 15px; }
+
+  @media (max-width: 1000px) {
+    body { height: auto; grid-template-columns: minmax(0, 1fr); }
+    #view { min-height: 60vw; }
+    #side { max-height: 80vh; }
+    #create { grid-column: auto; }
+    #createBody { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+  <nav class="panel" id="sidebar" aria-label="Runs">
+    <div id="brand"><span></span>AI Box</div>
+    <button id="new">+ New world</button>
+    <div id="runs"></div>
+  </nav>
+
+  <main class="panel" id="stage">
+    <header>
+      <h1 id="title"></h1>
+      <p id="summary"></p>
+    </header>
+    <div id="view">
+      <div id="scene"></div>
+      <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
+    </div>
+    <div id="controls">
+      <button id="play" aria-label="Play">▶</button>
+      <input id="slider" type="range" min="0" max="1" step="0.01" value="0" aria-label="Time">
+      <span id="count"></span>
+      <select id="speed" aria-label="Speed">
+        <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="10">10×</option>
+      </select>
+      <button id="live" hidden>● Live</button>
+      <button id="stop" hidden>■ End the world</button>
+    </div>
+  </main>
+
+  <section class="panel" id="side" aria-label="Conversation">
+    <h2>What the agents think, say and do</h2>
+    <div id="log"></div>
+  </section>
+
+  <form class="panel" id="create" hidden>
+    <header>
+      <h1>New world</h1>
+      <p>Pick a world, set it up, decide what its agents know and are told. Then start it and watch.</p>
+    </header>
+    <div id="createBody">
+      <section>
+        <h2>The world</h2>
+        <div class="segments" id="worldPick"></div>
+        <p id="worldAbout"></p>
+        <div id="worldSettings"></div>
+      </section>
+      <section>
+        <h2>Its agents</h2>
+        <div id="worldRoles"></div>
+        <h2 style="margin-top: 18px">When it ends</h2>
+        <label class="row"><span>After this many minutes (0: no time limit)</span><input id="minutes" type="number" min="0" value="10"></label>
+        <label class="row"><span>After this many agents have woken up</span><input id="agents" type="number" min="1" placeholder="100"></label>
+      </section>
+    </div>
+    <footer><button id="start">Start the world</button></footer>
+  </form>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
