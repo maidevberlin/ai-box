@@ -26,7 +26,6 @@ function filled(text: string, agent: Agent, run: Run): string {
  *  a place finds its tools (see doors.ts). */
 export function populate(run: Run, address: (place: number) => string): void {
   const alive = new Map<number, ChildProcess>();
-  const endedTurn = new Set<number>();   // places whose agent ended its turn and is told again
   mkdirSync(NEUTRAL, { recursive: true });
   const log = (name: string, text: string) => run.folder && appendFileSync(join(run.folder, name), text);
 
@@ -68,9 +67,7 @@ export function populate(run: Run, address: (place: number) => string): void {
             if (part.type === 'text' && part.text?.trim()) run.inner(place, 'write', part.text.trim());
           }
         } else if (event.type === 'result') {   // it ended its turn: nobody answers
-          endedTurn.add(place);
           run.stopped(place);
-          endedTurn.delete(place);
         }
       }
     });
@@ -80,10 +77,12 @@ export function populate(run: Run, address: (place: number) => string): void {
   run.listeners.push({
     woke(agent, role) {
       const process = alive.get(agent.place);
-      if (!agent.again || !process) return wake(agent, role);
-      // The same agent again: one that drowned goes on with its next action, one that ended
-      // its turn is told once more.
-      if (endedTurn.has(agent.place)) tell(process, agent, role);
+      // (The same agent again, after it died in its world: it goes on with its next action.)
+      if (!agent.again || !process) wake(agent, role);
+    },
+    again(agent, role) {
+      const process = alive.get(agent.place);
+      if (process) tell(process, agent, role);
     },
     gone(place) {
       alive.get(place)?.kill();

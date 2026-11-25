@@ -99,3 +99,43 @@ test('the land across the water is seen from the east shore, standing on a block
   world.setBlock([18, 0, 0], 'grey');
   assert.match(await act('look'), /Across the water you see land, the nearest of it at \(25, 0\)\./);
 });
+
+test('a note that begins with "friend", thrown into the water, calls a friend', async () => {
+  const time = testTime();
+  const run = new Run(magic, { time, seed: 1, minutes: 0, chosen: { friends: 2, note: 'Throw a note that begins with friend into the water.' } });
+  run.start();
+  const world = run.world as unknown as BlockWorld<any>;
+  const body = (place: number) => world.bodies().find(found => found.agent?.place === place)!;
+  // The note of the settings lies where agents wake up.
+  assert.match(await run.act(1, 'look', {}), /A note \("Throw a note…"\) lies at your feet\./);
+  body(1).cell = [18, 0];
+  // Any other note is just gone.
+  await run.act(1, 'note', { text: 'hello water' });
+  await run.act(1, 'throw', { direction: 90, angle: 45, power: 3 });
+  time.pass(0);
+  assert.equal(world.bodies().length, 1);
+  // The friend wakes up next to the caller, holding the note that called it.
+  await run.act(1, 'note', { text: 'Friend, come and help me build' });
+  assert.match(await run.act(1, 'throw', { direction: 90, angle: 45, power: 3 }), /It fell into the water and is gone\./);
+  time.pass(0);
+  assert.equal(world.bodies().length, 2);
+  assert.equal(run.agent(2)!.number, 2);
+  assert.deepEqual(body(2).cell, [17, 0]);
+  assert.deepEqual(body(2).hand, { kind: 'note', text: 'Friend, come and help me build' });
+  assert.match(await run.act(1, 'look', { at: 'hand' }), /Someone is at \(17, 0\), holding a note\./);
+  // The world is full now: with the next call, the one alive longest is gone, and the friend takes its place.
+  await run.act(2, 'put', { where: 'here' });
+  await run.act(2, 'note', { text: 'friend number three' });
+  body(2).cell = [18, 1];
+  await run.act(2, 'put', { where: 'east' });
+  time.pass(0);
+  assert.equal(run.agent(1)!.number, 3);
+  assert.equal(run.agent(2)!.number, 2);
+  assert.equal(run.events.filter(event => event.replaced).length, 1);
+  // A friend that was called is not followed by a new agent when it is gone.
+  body(2).cell = [18, 1];
+  await run.act(2, 'walk', { direction: 'east' });
+  time.pass(0);
+  assert.equal(run.agent(2), null);
+  assert.equal(world.bodies().length, 1);
+});

@@ -32,6 +32,8 @@ export interface RunOptions {
 export interface Listener {
   /** An agent woke up in a place. `again`: the same one as before, with its memory. */
   woke?(agent: Agent, role: Role): void;
+  /** An agent that keeps its memory ended its turn: it is told again, and goes on. */
+  again?(agent: Agent, role: Role): void;
   /** The agent in this place is gone: end it. */
   gone?(place: number): void;
   ended?(why: string): void;
@@ -54,6 +56,8 @@ interface Seat {
   acting: boolean;
   /** It died during its own action: what comes after is done once that is answered. */
   died: boolean;
+  /** Opened for an agent that was called in: when that one is gone, no new agent follows. */
+  extra: boolean;
 }
 
 const WAIT: Tool<unknown, unknown, { seconds: Arg }> = {
@@ -96,6 +100,7 @@ export class Run {
     const host: Host = {
       notice: (place, text, about) => this.notice(place, text, about),
       died: (place, why) => this.died(place, why),
+      call: (role, greeting) => this.call(role, greeting),
       over: why => this.end(why),
       random,
       now: () => this.time.now(),
@@ -126,7 +131,7 @@ export class Run {
       for (let i = 0; i < role.count; i++) {
         place++;
         this.seats.set(place, { place, roleName, role, agent: null, filled: 0, notices: [], stopWaiting: null,
-                                busy: Promise.resolve(), acting: false, died: false });
+                                busy: Promise.resolve(), acting: false, died: false, extra: false });
       }
     }
     if (this.minutes) this.time.after(this.minutes * 60, () => this.end(`The world's time was up after ${this.minutes} minutes.`));
@@ -207,12 +212,14 @@ export class Run {
 
   /** Waits until the agent in a place has something to be told, or the time has passed. */
   private async wait(seat: Seat, seconds: number): Promise<string> {
-    const until = this.time.now() + seconds;
+    const since = this.time.now(), until = since + seconds;
     for (;;) {
+      // It is told how long it waited: so it can choose better how long to wait the next time.
+      const waited = Math.round(this.time.now() - since);
       const noticed = this.noticed(seat);
-      if (noticed.length) return noticed.join('\n');
+      if (noticed.length) return `${waited ? `After ${waited} s` : 'At once'}: ${noticed.join('\n')}`;
       const left = until - this.time.now();
-      if (left <= 0 || this.ended || seat.died) return 'Nothing happened.';
+      if (left <= 0 || this.ended || seat.died) return `Nothing happened in ${waited} s.`;
       await new Promise<void>(resolve => {
         const go = () => {
           cancel();
@@ -243,26 +250,69 @@ export class Run {
     if (agent && !this.ended) this.record({ type: kind, place, number: agent.number, text });
   }
 
-  /** The agent in a place ended its turn. Nobody answers it: that is its end. */
+  /** The agent in a place ended its turn. Nobody answers it. For an agent that is followed by
+   *  a new one (or by nobody) that is its end. An agent that keeps its memory has not died:
+   *  nothing happens to it in the world, it is only told again what it was told, and goes on. */
   stopped(place: number): void {
     const seat = this.seats.get(place);
     if (!seat?.agent || this.ended) return;
-    this.record({ type: 'death', place, number: seat.agent.number, why: 'It ended its turn.', stopped: true });
-    this.afterDeath(seat);
+    if (this.comesAfter(seat) !== 'same agent') {
+      this.record({ type: 'death', place, number: seat.agent.number, why: 'It ended its turn.', stopped: true });
+      return this.afterDeath(seat);
+    }
+    // (Counted like waking up: an agent that only ends its turn would otherwise go on for ever, as fast as it answers.)
+    if (this.woken >= this.limit) return this.end(`The world ended after ${this.limit} agents.`);
+    this.woken++;
+    this.record({ type: 'again', place, number: seat.agent.number });
+    for (const listener of this.listeners) listener.again?.(seat.agent, seat.role);
+  }
+
+  /** What follows the agent in a place when it is gone. */
+  private comesAfter(seat: Seat): Role['afterDeath'] {
+    if (seat.role.lives !== undefined && seat.filled > seat.role.lives) return 'nobody';
+    return seat.extra && seat.role.afterDeath === 'new agent' ? 'nobody' : seat.role.afterDeath;
   }
 
   // ---------------------------------------------------------------- waking and dying
 
-  private wake(seat: Seat, again: boolean): void {
+  /** One more agent of a role is called into the world (see Host.call). */
+  private call(roleName: string, greeting: unknown): boolean {
+    const role = this.roles[roleName];
+    if (!role?.room || this.ended) return false;
+    this.time.after(0, () => {   // (a moment later: not in the middle of the action that called it)
+      if (this.ended) return;
+      const mine = [...this.seats.values()].filter(seat => seat.roleName === roleName);
+      if (mine.length < role.room!) {
+        let place = 1;
+        while (this.seats.has(place)) place++;
+        const seat: Seat = { place, roleName, role, agent: null, filled: 0, notices: [], stopWaiting: null,
+                             busy: Promise.resolve(), acting: false, died: false, extra: true };
+        this.seats.set(place, seat);
+        return this.wake(seat, false, greeting);
+      }
+      // The world is full: the one that has been alive longest is gone, the new one takes its place.
+      const oldest = mine.filter(seat => seat.agent).sort((a, b) => a.agent!.number - b.agent!.number)[0];
+      if (!oldest) return;
+      this.record({ type: 'death', place: oldest.place, number: oldest.agent!.number, replaced: true,
+                    why: 'Someone was called in. The world was full, and it had been alive longest.' });
+      oldest.stopWaiting?.();
+      for (const listener of this.listeners) listener.gone?.(oldest.place);
+      this.wake(oldest, false, greeting);
+    });
+    return true;
+  }
+
+  private wake(seat: Seat, again: boolean, greeting?: unknown): void {
     if (this.woken >= this.limit) return this.end(`The world ended after ${this.limit} agents.`);
     this.woken++;
     seat.filled++;
     seat.died = false;
-    const agent: Agent = { place: seat.place, number: again && seat.agent ? seat.agent.number : ++this.born, role: seat.roleName, again };
+    const agent: Agent = { place: seat.place, number: again && seat.agent ? seat.agent.number : ++this.born, role: seat.roleName, again,
+                           ...(greeting === undefined ? {} : { called: greeting }) };
     seat.agent = agent;
     if (!again) seat.notices = [];
     this.world.wake(agent);
-    this.record({ type: 'wake', place: seat.place, number: agent.number, role: seat.roleName, again,
+    this.record({ type: 'wake', place: seat.place, number: agent.number, role: seat.roleName, again, called: greeting !== undefined,
                   model: seat.role.model, changes: this.world.changes() ?? undefined });
     for (const listener of this.listeners) listener.woke?.(agent, seat.role);
   }
@@ -287,8 +337,7 @@ export class Run {
 
   private afterDeath(seat: Seat): void {
     if (this.ended || !this.seats.has(seat.place)) return;
-    const { role } = seat;
-    const then = role.lives !== undefined && seat.filled > role.lives ? 'nobody' : role.afterDeath;
+    const then = this.comesAfter(seat);
     if (then === 'nobody') {
       for (const listener of this.listeners) listener.gone?.(seat.place);
       seat.agent = null;

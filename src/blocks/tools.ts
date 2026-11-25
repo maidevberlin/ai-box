@@ -5,7 +5,7 @@
 // the kind of block (sticky, floats, or its reactions, see types.ts).
 
 import type { Blocks } from './world.ts';
-import { DIRECTIONS, WAYS, tool, type BlockTool, type BlockWorld, type Body, type Cell, type Item } from './types.ts';
+import { DIRECTIONS, WAYS, tool, type BlockTool, type BlockWorld, type Body, type Cell, type Item, type Place } from './types.ts';
 
 const BEGINNING = 3;       // how many words of a note can be made out without looking at it
 const REACH = 2;           // put reaches stacks at most this much higher or lower than your feet
@@ -20,16 +20,17 @@ const inner = (world: BlockWorld<any>) => world as Blocks<any>;
 // ---------------------------------------------------------------- what things look like
 
 /** A thing as it looks from a distance: a note shows how it begins. */
-function fromAfar(world: BlockWorld<any>, item: Item): string {
-  if (item.text === undefined) return `a ${world.called(item)}`;
+function fromAfar(world: BlockWorld<any>, me: Body, item: Item): string {
+  const what = `a ${world.called(item)}${called(world, me, item)}`;
+  if (item.text === undefined) return what;
   const words = item.text.split(/\s+/);
-  return `a ${world.called(item)} ("${words.slice(0, BEGINNING).join(' ')}${words.length > BEGINNING ? '…' : ''}")`;
+  return `${what} ("${words.slice(0, BEGINNING).join(' ')}${words.length > BEGINNING ? '…' : ''}")`;
 }
 
 /** The things lying on a cell, as they look from a distance. */
-function pile(world: BlockWorld<any>, cell: Cell): string {
+function pile(world: BlockWorld<any>, me: Body, cell: Cell): string {
   const items = world.items(cell);
-  return items.length === 1 ? fromAfar(world, items[0]!) : `${items.length} things (on top: ${fromAfar(world, items.at(-1)!)})`;
+  return items.length === 1 ? fromAfar(world, me, items[0]!) : `${items.length} things (on top: ${fromAfar(world, me, items.at(-1)!)})`;
 }
 
 /** What a column is made of, by level, lowest first: "1-4 green, 5 blue". The ground is
@@ -50,13 +51,22 @@ export function pattern(world: BlockWorld<any>, cell: Cell): string {
 }
 
 /** What looking around shows of a cell, after "(x, y): ". */
-function described(world: BlockWorld<any>, cell: Cell): string {
+function described(world: BlockWorld<any>, me: Body, cell: Cell): string {
   const high = world.height(cell);
-  if (high < 0) return `a hole ${-high} deep`;
   const made = pattern(world, cell);
   const loose = world.column(cell).filter(([, kind]) => !world.blockKind(kind)!.ground);
-  if (loose.length === 1 && loose[0]![0] <= 0) return `${high} (${made.replace(/^1 /, '')})`;
-  return made ? `${high} (by level: ${made})` : `${high}`;
+  const said = high < 0 ? `a hole ${-high} deep`
+    : loose.length === 1 && loose[0]![0] <= 0 ? `${high} (${made.replace(/^1 /, '')})`
+    : made ? `${high} (by level: ${made})` : `${high}`;
+  return said + names(world, me, cell);
+}
+
+/** The names an agent gave to the top block of a cell and to the place itself, to add to what is said of it. */
+function names(world: BlockWorld<any>, me: Body, cell: Cell): string {
+  const top = world.column(cell).at(-1);
+  const block = top && !world.blockKind(top[1])!.ground ? inner(world).nameFor(me, [cell[0], cell[1], top[0]]) : undefined;
+  const place = inner(world).nameFor(me, cell);
+  return (block ? `, the top one called "${block}"` : '') + (place ? `, the place you call "${place}"` : '');
 }
 
 /** What looking straight at a cell shows. */
@@ -65,19 +75,32 @@ function lookedAt(world: BlockWorld<any>, me: Body, cell: Cell): string {
   const under = column.some(([, kind]) => world.blockKind(kind)!.ground) ? 'ground' : 'water';
   const made = pattern(world, cell);
   const there = world.bodyAt(cell);
-  const who = there && there !== me ? ` ${someone(world, there)} stands there${holding(world, there)}.` : '';
-  if (!made && !items.length) return (under === 'water' ? 'There is only water.' : `There is nothing at ${at(cell)}, only ground.`) + who;
-  let said = `At ${at(cell)}, ${world.height(cell)} high, over ${under}.`;
-  if (made) said += ` Blocks there, by level: ${made}.`;
+  const who = there && there !== me ? ` ${someone(world, me, there)} stands there${holding(world, there)}.` : '';
+  const place = inner(world).nameFor(me, cell), spot = place ? ` This is the place you call "${place}".` : '';
+  if (!made && !items.length) return (under === 'water' ? 'There is only water.' : `There is nothing at ${at(cell)}, only ground.`) + spot + who;
+  let said = `At ${at(cell)}, ${world.height(cell)} high, over ${under}.${spot}`;
+  if (made) said += ` Blocks there, by level: ${made}${names(world, me, cell).replace(/, the place you call .*/, '')}.`;
   if (items.length) {
     const top = items.at(-1)!;
-    said += items.length === 1 ? ` A ${world.called(top)} lies there.` : ` ${items.length} things lie there, on top a ${world.called(top)}.`;
+    said += items.length === 1 ? ` A ${world.called(top)}${called(world, me, top)} lies there.` : ` ${items.length} things lie there, on top a ${world.called(top)}${called(world, me, top)}.`;
     if (top.text !== undefined) said += ` It says "${top.text}"`;
   }
   return said + who;
 }
 
-const someone = (world: BlockWorld<any>, body: Body) => (body.creature ? `A ${inner(world).definition.creatures![body.creature]!.called}` : 'Someone');
+/** How an agent speaks of somebody else: by the name it gave them, or "Someone" (for a
+ *  creature what it is: "A rabbit"). `inside`: in the middle of a sentence. */
+function someone(world: BlockWorld<any>, me: Body, body: Body, inside = false): string {
+  const name = inner(world).nameFor(me, body);
+  if (name) return name;
+  const said = body.creature ? `A ${inner(world).definition.creatures![body.creature]!.called}` : 'Someone';
+  return inside ? said.toLowerCase() : said;
+}
+/** ` called "Rocky"`, if the agent gave the thing a name. */
+const called = (world: BlockWorld<any>, me: Body, thing: Item | Place | Cell) => {
+  const name = inner(world).nameFor(me, thing);
+  return name ? ` called "${name}"` : '';
+};
 const holding = (world: BlockWorld<any>, body: Body) => (body.hand ? `, holding a ${world.called(body.hand)}` : '');
 
 interface Seen {
@@ -100,8 +123,8 @@ function around(world: BlockWorld<any>, me: Body): Seen {
       const cell: Cell = [cx, cy];
       if (same(cell, me.cell)) continue;
       const column = world.column(cell), lying = world.items(cell).length;
-      const worth = lying || column.some(([, kind]) => !world.blockKind(kind)!.ground) || (column.length && world.height(cell) < 0);
-      if (worth) stacks.set(at(cell), described(world, cell) + (lying ? ` with ${pile(world, cell)} on top` : ''));
+      const worth = lying || inner(world).nameFor(me, cell) || column.some(([, kind]) => !world.blockKind(kind)!.ground) || (column.length && world.height(cell) < 0);
+      if (worth) stacks.set(at(cell), described(world, me, cell) + (lying ? ` with ${pile(world, me, cell)} on top` : ''));
     }
   }
   // How much there is to stand on in each direction before the water, if the water is in sight.
@@ -115,9 +138,9 @@ function around(world: BlockWorld<any>, me: Body): Seen {
   // The others in sight. (Nothing is said if nobody is: an agent is not told it has company.)
   const beings = world.bodies()
     .filter(other => other !== me && Math.abs(other.cell[0] - x) <= reach && Math.abs(other.cell[1] - y) <= reach)
-    .map(other => `${someone(world, other)} is at ${at(other.cell)}${world.height(other.cell) ? `, ${world.height(other.cell)} high` : ''}${holding(world, other)}.`);
+    .map(other => `${someone(world, me, other)} is at ${at(other.cell)}${world.height(other.cell) ? `, ${world.height(other.cell)} high` : ''}${holding(world, other)}.`);
   const lying = world.items(me.cell);
-  const said = lying.length ? pile(world, me.cell) : '';
+  const said = lying.length ? pile(world, me, me.cell) : '';
   const feet = said ? ` ${said[0]!.toUpperCase()}${said.slice(1)} ${lying.length === 1 ? 'lies' : 'lie'} at your feet.` : '';
   return { stacks, water, beings, also: inner(world).definition.alsoSeen?.(world, me) ?? [], feet, at: me.cell, reach };
 }
@@ -154,7 +177,7 @@ export function seenNow(world: BlockWorld<any>, me: Body): void {
  *  without telling it everything again. */
 function news(world: BlockWorld<any>, me: Body): string {
   const lines = glimpse(world, me, true);
-  const lying = world.items(me.cell), said = lying.length ? pile(world, me.cell) : '';
+  const lying = world.items(me.cell), said = lying.length ? pile(world, me, me.cell) : '';
   const feet = said ? ` ${said[0]!.toUpperCase()}${said.slice(1)} ${lying.length === 1 ? 'lies' : 'lie'} at your feet.` : '';
   return `${world.where(me)}${feet}\n${lines.join('\n') || 'Nothing new in sight.'}`;
 }
@@ -168,14 +191,14 @@ const look = tool({
     const where = args.at ?? 'around';
     if (where === 'hand') {
       if (!me.hand) return 'Your hand is empty.';
-      return `You hold a ${world.called(me.hand)}.${me.hand.text === undefined ? '' : ` It says "${me.hand.text}"`}`;
+      return `You hold a ${world.called(me.hand)}${called(world, me, me.hand)}.${me.hand.text === undefined ? '' : ` It says "${me.hand.text}"`}`;
     }
     if (where !== 'around') return lookedAt(world, me, world.next(me.cell, where));
     const seen = around(world, me);
     inner(world).sawLast.set(me, seen);
     return [
       world.where(me) + seen.feet,
-      `You carry: ${me.hand ? `a ${world.called(me.hand)}` : 'nothing'}.`,
+      `You carry: ${me.hand ? `a ${world.called(me.hand)}${called(world, me, me.hand)}` : 'nothing'}.`,
       `Stacks in sight (up to ${seen.reach} away), as position: height: ${[...seen.stacks].map(([cell, text]) => `${cell}: ${text}`).join(', ') || 'none'}.`,
       `Water in sight: ${[...seen.water].map(([direction, text]) => `${direction}: ${text}`).join('; ') || 'none'}.`,
       ...seen.beings,
@@ -205,7 +228,7 @@ const walk = tool({
         return `You stepped ${direction}, off the land. ${world.die(me, 'You are in the water. You drown.')}`;
       }
       const there = world.bodyAt(ahead);
-      if (there) return `${done ? `You walked ${walked(done)} ${direction}. Then ${someone(world, there).toLowerCase()}` : someone(world, there)} at ${at(ahead)} is in your way. ${news(world, me)}`;
+      if (there) return `${done ? `You walked ${walked(done)} ${direction}. Then ${someone(world, me, there, true)}` : someone(world, me, there)} at ${at(ahead)} is in your way. ${news(world, me)}`;
       if (world.height(ahead) > world.height(me.cell))
         return `${done ? `You walked ${walked(done)} ${direction}. Then a` : 'A'} stack ${world.height(ahead)} high at ${at(ahead)} is in your way. ${news(world, me)}`;
       world.move(me, ahead);
@@ -237,7 +260,7 @@ const jump = tool({
     }
     if (!landing && wall) {
       const there = world.bodyAt(wall);
-      return there ? `${someone(world, there)} at ${at(wall)} is in your way. ${world.where(me)}`
+      return there ? `${someone(world, me, there)} at ${at(wall)} is in your way. ${world.where(me)}`
         : `You jumped ${strength} high, but the stack at ${at(wall)} is ${world.height(wall) - own} above you. ${world.where(me)}`;
     }
     if (!landing) {
@@ -276,8 +299,9 @@ const take = tool({
       world.removeItem(me.hand);
     } else {
       const [z, kind] = loose.at(-1)!;
-      world.removeBlock([cell[0], cell[1], z]);
       me.hand = { kind };
+      inner(world).carryName([cell[0], cell[1], z], me.hand);   // (what it was called, it is still called in a hand)
+      world.removeBlock([cell[0], cell[1], z]);
       said = inner(world).react(world.blockKind(kind)!.on?.taken, { at: [cell[0], cell[1], z], by: me });
     }
     return `You took a ${world.called(me.hand)}.${said} ${world.where(me)}`;
@@ -292,10 +316,13 @@ const put = tool({
     if (!thing) return 'You carry nothing.';
     const cell = world.next(me.cell, where), [x, y] = cell;
     const there = world.bodyAt(cell);
-    if (there && there !== me) return `${someone(world, there)} stands there.`;
+    if (there && there !== me) return `${someone(world, me, there)} stands there.`;
     if (!world.blockKind(thing.kind)) {   // a note, a fruit: it lies on top
       me.hand = null;
-      if (!world.column(cell).length) return `You put the ${world.called(thing)} down. It falls into the water and is gone.`;
+      if (!world.column(cell).length) {
+        inner(world).react(world.itemKind(thing.kind)?.on?.sunk, { at: [x, y, -1], by: me, item: thing });
+        return `You put the ${world.called(thing)} down. It falls into the water and is gone.`;
+      }
       const out = outOfReach(world, me, cell);
       if (out) return (me.hand = thing, out);
       world.drop(thing, cell);
@@ -310,6 +337,7 @@ const put = tool({
     me.hand = null;
     const rest = world.release([x, y, from], thing.kind);
     if (!rest) return 'You put the block down. It sinks in the water and is gone.';
+    inner(world).carryName(thing, rest);
     const said = inner(world).react(world.blockKind(thing.kind)!.on?.put, { at: rest, by: me });
     const how = rest[2] === -1 ? (world.blockKind(thing.kind)!.floats ? 'It floats in the water, level with the ground.' : 'It sticks to the side of the land, level with the ground.')
       : rest[2] > before ? `It sticks there, ${rest[2] + 1} high, with nothing under it.`
@@ -348,14 +376,15 @@ const throwIt = tool({
         catcher.hand = thing;
         path.push([cell[0] + 0.5, cell[1] + 0.5, world.height(cell) + HAND]);
         flight.caught = true;
-        world.notice(catcher, `You caught a ${world.called(thing)} that someone threw.`);
-        return `Someone at ${at(cell)} caught it.`;
+        world.notice(catcher, `You caught a ${world.called(thing)} that ${someone(world, catcher, me, true)} threw.`);
+        return `${someone(world, me, catcher)} at ${at(cell)} caught it.`;
       }
       const mine = same(cell, me.cell);
       if (!isBlock) {
         if (!world.column(cell).length) {
           path.push([cell[0] + 0.5, cell[1] + 0.5, -0.5]);
           flight.lost = true;
+          inner(world).react(world.itemKind(thing.kind)?.on?.sunk, { at: [cell[0], cell[1], -1], by: me, item: thing, from });
           return 'It fell into the water and is gone.';
         }
         path.push([cell[0] + 0.5, cell[1] + 0.5, world.height(cell)]);
@@ -369,6 +398,7 @@ const throwIt = tool({
         return 'It fell into the water and is gone.';
       }
       path.push([rest[0] + 0.5, rest[1] + 0.5, rest[2] + 0.5]);
+      inner(world).carryName(thing, rest);
       const said = inner(world).react(world.blockKind(thing.kind)!.on?.landed, { at: rest, by: me, power, from });
       const how = rest[2] === -1 ? ' It floats in the water, level with the ground.' : ` The stack there is ${world.height(cell)} high.`;
       return `It landed at ${at(cell)}.${how}${said}${mine ? ` ${world.where(me)}` : ''}`;
@@ -392,6 +422,7 @@ const throwIt = tool({
           });
         if (beside) {
           world.setBlock([over[0], over[1], level], thing.kind);
+          inner(world).carryName(thing, [over[0], over[1], level]);
           path.push([over[0] + 0.5, over[1] + 0.5, level + 0.5]);
           return done(`It stuck to the side of the block at ${at(beside)} and hangs at ${at(over)}, ${level + 1} high.`);
         }
@@ -428,6 +459,43 @@ const note = tool({
   },
 });
 
+const name = tool({
+  about: 'Give something a name of your own: what you hold, or what is at a position you can see.',
+  args: {
+    name: { type: 'text' },
+    x: { type: 'number', whole: true, optional: true },
+    y: { type: 'number', whole: true, optional: true },
+  },
+  run(world, me, args) {
+    const given = args.name.trim().slice(0, 40), names = inner(world);
+    if (!given) return 'Name is missing.';
+    if (args.x === undefined || args.y === undefined) {
+      if (!me.hand) return 'You hold nothing. Say where the thing is: x and y.';
+      names.callIt(me, me.hand, given);
+      return `You call the ${world.called(me.hand)} in your hand "${given}" now.`;
+    }
+    const cell: Cell = [args.x, args.y], far = world.sight(me);
+    if (Math.abs(cell[0] - me.cell[0]) > far || Math.abs(cell[1] - me.cell[1]) > far) return 'That is out of your sight.';
+    const there = world.bodyAt(cell), lying = world.items(cell).at(-1), top = world.column(cell).at(-1);
+    if (there && there !== me) {
+      const before = someone(world, me, there, true);
+      names.callIt(me, there, given);
+      return `You call ${before} at ${at(cell)} "${given}" now.`;
+    }
+    if (lying) {
+      names.callIt(me, lying, given);
+      return `You call the ${world.called(lying)} at ${at(cell)} "${given}" now.`;
+    }
+    if (!top) return 'There is only water.';
+    if (!world.blockKind(top[1])!.ground) {
+      names.callIt(me, [cell[0], cell[1], top[0]], given);
+      return `You call the ${world.called(top[1])} at ${at(cell)} "${given}" now.`;
+    }
+    names.callIt(me, cell, given);
+    return `You call the place ${at(cell)} "${given}" now.`;
+  },
+});
+
 const clock = tool({
   about: 'Look at your watch.',
   args: {},
@@ -435,5 +503,5 @@ const clock = tool({
 });
 
 /** The tools every block world can hand to its agents. */
-export const basic: Record<'look' | 'walk' | 'jump' | 'take' | 'put' | 'throw' | 'say' | 'note' | 'clock', BlockTool> =
-  { look, walk, jump, take, put, throw: throwIt, say, note, clock };
+export const basic: Record<'look' | 'walk' | 'jump' | 'take' | 'put' | 'throw' | 'say' | 'note' | 'name' | 'clock', BlockTool> =
+  { look, walk, jump, take, put, throw: throwIt, say, note, name, clock };

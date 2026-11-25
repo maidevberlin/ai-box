@@ -147,13 +147,13 @@ test('what is said is heard in full nearby, in pieces further away, and not at a
   [0, 3, 9, 30].forEach((x, i) => { me(world, i + 1).cell = [x, 0]; });
   const said = 'come to the tall tower in the east now please';
   assert.equal(await act('say', { text: said }), `You said: "${said}"`);
-  assert.equal(await act('wait', { seconds: 1 }, 2), `Someone at (0, 0) says: "${said}"`);
+  assert.equal(await act('wait', { seconds: 1 }, 2), `At once: Someone at (0, 0) says: "${said}"`);
   const pieces = await act('wait', { seconds: 1 }, 3);
-  assert.match(pieces, /^Someone at \(0, 0\) says: ".*…/);
+  assert.match(pieces, /^At once: Someone at \(0, 0\) says: ".*…/);
   const nothing = act('wait', { seconds: 5 }, 4);
   await begun();
   time.pass(5);
-  assert.equal(await nothing, 'Nothing happened.');
+  assert.equal(await nothing, 'Nothing happened in 5 s.');
 });
 
 test('time: a block can ask for something later, and it is called off when the block is gone', async () => {
@@ -177,11 +177,13 @@ test('waiting ends when something is noticed, or when the time has passed', asyn
   const quiet = act('wait', { seconds: 20 });
   await begun();
   time.pass(20);
-  assert.equal(await quiet, 'Nothing happened.');
+  assert.equal(await quiet, 'Nothing happened in 20 s.');
+  // It is told how long it waited: so it can choose better the next time.
   const heard = act('wait', { seconds: 20 });
   await begun();
+  time.pass(7);
   world.notice(me(world), 'A bell rings.');
-  assert.equal(await heard, 'A bell rings.');
+  assert.equal(await heard, 'After 7 s: A bell rings.');
 });
 
 test('after a death: a new agent, the same one again, or nobody', async () => {
@@ -221,7 +223,7 @@ test('an agent notices what changes in its sight: it ends a wait, and is told on
   await begun();
   await act('walk', { direction: 'east' });      // still out of sight: 4 away, it sees 3
   await act('walk', { direction: 'east' });      // now in sight
-  assert.equal(await waiting, 'Someone is at (-3, 0).');
+  assert.equal(await waiting, 'At once: Someone is at (-3, 0).');
   // Two more steps while the other is busy: it is told where the walker is now, not every step.
   await act('walk', { direction: 'east' }); await act('walk', { direction: 'east' });
   assert.equal(await act('look', { at: 'hand' }, 2), 'Your hand is empty.\nSomeone is at (-1, 0).');
@@ -231,7 +233,7 @@ test('an agent notices what changes in its sight: it ends a wait, and is told on
   const quiet = act('wait', { seconds: 5 }, 2);
   await begun();
   time.pass(5);
-  assert.equal(await quiet, 'Nothing happened.');
+  assert.equal(await quiet, 'Nothing happened in 5 s.');
   // ... but it is to the other one, who is told with its next answer.
   await act('look', {});
   two.hand = { kind: 'grey' };
@@ -242,4 +244,51 @@ test('an agent notices what changes in its sight: it ends a wait, and is told on
   const around = await act('look', {});
   assert.match(around, /\(1, 0\): 1 \(grey\)/);
   assert.doesNotMatch(around, /New in sight/);
+});
+
+test('an agent that keeps its memory and ends its turn has not died: it stays where it is', async () => {
+  const { act, world, run } = started(strip({ afterDeath: 'same agent' }));
+  await act('walk', { direction: 'east', steps: 3 });
+  me(world).hand = { kind: 'grey' };
+  let toldAgain = 0;
+  run.listeners.push({ again: () => { toldAgain++; } });
+  run.stopped(1);
+  assert.equal(toldAgain, 1);
+  assert.deepEqual(me(world).cell, [3, 0]);
+  assert.deepEqual(me(world).hand, { kind: 'grey' });
+  assert.equal(run.events.filter(event => event.type === 'death').length, 0);
+  // An agent that is followed by a new one is gone when it ends its turn.
+  const fresh = started(strip({ afterDeath: 'new agent' }));
+  await fresh.act('walk', { direction: 'east', steps: 3 });
+  fresh.run.stopped(1);
+  assert.equal(fresh.run.agent(1)!.number, 2);
+  assert.deepEqual(me(fresh.world).cell, [0, 0]);
+});
+
+test('an agent can give things names of its own, and is then told about them by name', async () => {
+  const { act, world } = started(strip({ count: 2 }, w => w.setBlock([1, 0, 0], 'grey')));
+  const [one, two] = [me(world, 1), me(world, 2)];
+  one.cell = [0, 0]; two.cell = [3, 0];
+  // Somebody.
+  assert.equal(await act('name', { name: 'Robin', x: 3, y: 0 }), 'You call someone at (3, 0) "Robin" now.');
+  assert.match(await act('look'), /Robin is at \(3, 0\)\./);
+  await act('say', { text: 'hello there' }, 2);
+  assert.match(await act('look', { at: 'hand' }), /Robin at \(3, 0\) says: "hello there"/);
+  // The other one has given no names: to it, it is still someone.
+  await act('say', { text: 'hello yourself' });
+  assert.match(await act('look', { at: 'hand' }, 2), /Someone at \(0, 0\) says: "hello yourself"/);
+  // A block keeps its name in a hand and where it is put down.
+  assert.equal(await act('name', { name: 'Rocky', x: 1, y: 0 }), 'You call the grey block at (1, 0) "Rocky" now.');
+  assert.match(await act('look'), /\(1, 0\): 1 \(grey\), the top one called "Rocky"/);
+  await act('take', { where: 'east' });
+  assert.equal(await act('look', { at: 'hand' }), 'You hold a grey block called "Rocky".');
+  await act('put', { where: 'north' });
+  assert.match(await act('look', { at: 'north' }), /Blocks there, by level: 1 grey, the top one called "Rocky"\./);
+  // A note, a place, and what is out of sight.
+  two.hand = null;
+  await act('note', { text: 'the way home' });
+  assert.equal(await act('name', { name: 'map' }), 'You call the note in your hand "map" now.');
+  assert.equal(await act('name', { name: 'home', x: 0, y: -1 }), 'You call the place (0, -1) "home" now.');
+  assert.match(await act('walk', { direction: 'south' }), /You are at \(0, -1\), on the ground\. This is the place you call "home"\./);
+  assert.equal(await act('name', { name: 'far', x: 5, y: 0 }), 'That is out of your sight.');
 });

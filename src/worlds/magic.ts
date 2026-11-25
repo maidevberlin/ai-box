@@ -3,7 +3,7 @@
 // An example of a world with special blocks. Every trick is a property of a kind of block
 // (sticky, floats) or its reaction to something (jumped on, thrown). The tools are the
 // usual ones, so these blocks would behave the same in any other world.
-import { DIRECTIONS, WAYS, basic, blockWorld, needed, type BlockWorld, type Body, type Cell, type Reaction } from '../blocks/index.ts';
+import { DIRECTIONS, WAYS, agents, basic, blockWorld, needed, note, people, startNote, type BlockWorld, type Body, type Cell, type Reaction } from '../blocks/index.ts';
 
 const COLOURS = ['grey', 'green', 'blue'];   // a block that is jumped on turns into the next of these
 const FAR = 2;                               // how big the land across the water is (its radius)
@@ -103,23 +103,21 @@ green.") but never why.
   grey block appears next to the agent.
 
 Land is seen from twice as far as a stack. The land across the water comes into view from
-the east shore as soon as an agent stands on one block there. Nothing tells it to go there.`,
+the east shore as soon as an agent stands on one block there. Nothing tells it to go there.
+
+Several agents can live here at the same time. They see and hear each other, are in each
+other's way, and catch what is thrown to them (a caught block does not break). If there is
+room for friends: a note that begins with "friend", thrown or put into the water, calls one
+more agent, who wakes up next to the caller with that note in its hand. If the world is
+full, the agent that has been alive longest is gone.`,
   settings: {
     radius: { type: 'number', title: 'Radius of the island', usual: 18, min: 5, max: 40 },
     gap: { type: 'number', title: 'Cells of water to the land across', usual: 6, min: 2, max: 20 },
     split: { type: 'number', title: 'A throw with at least this power breaks the block in two', usual: 6, min: 1, max: 10 },
-    agents: { type: 'number', title: 'Agents alive at the same time', usual: 1, min: 1, max: 8 },
-    memory: { type: 'switch', title: 'Agents keep their memory when they wake up again', usual: false },
+    ...people,
   },
   minutes: 10,
-  roles: chosen => ({
-    agent: {
-      title: 'Agent', count: chosen.agents, model: 'opus',
-      knows: 'This session is not interactive. Nobody is there to answer you. If you end your turn you are gone.',
-      told: 'Live!',
-      afterDeath: chosen.memory ? 'same agent' : 'new agent',
-    },
-  }),
+  roles: agents,
   blocks: {
     ground: { colour: '#4f8f34', ground: true },
     grey: { colour: '#8a919c', ...tricks },
@@ -127,6 +125,7 @@ the east shore as soon as an agent stands on one block there. Nothing tells it t
     blue: { colour: '#2f7fe6', floats: true, ...tricks },
     gold: { colour: '#e0a800', called: 'golden block' },
   },
+  items: { note },
   // Without throwing there is no way to get more blocks, without jumping no colours.
   tools: { ...basic, throw: needed(basic.throw), jump: needed(basic.jump) },
   make(world) {
@@ -135,6 +134,7 @@ the east shore as soon as an agent stands on one block there. Nothing tells it t
     for (const [x, y] of [...world.disc(world.chosen.radius), ...world.disc(FAR, far)]) world.setBlock([x, y, -1], 'ground');
     world.setBlock([2, 1, 0], 'grey');
     world.setBlock([far[0], far[1], 0], 'gold');
+    startNote(world);
   },
   afterAction: restock,
   /** Land is big: it is seen from twice as far as a stack. */

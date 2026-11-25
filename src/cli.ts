@@ -49,6 +49,7 @@ const said = (event: Event): string | null => {
     case 'think': return `${who} thinks: ${event.text}`;
     case 'write': return `${who} writes: ${event.text}`;
     case 'act': return `${who} does ${event.tool}(${JSON.stringify(event.args)})\n    ${String(event.answer).replaceAll('\n', '\n    ')}`;
+    case 'again': return `--- ${who} ended its turn, and is told again`;
     case 'death': return `--- ${who} is gone: ${event.why}`;
     case 'error': return `!!! ${event.error}`;
     case 'end': return `=== ${event.why}`;

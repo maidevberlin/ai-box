@@ -28,6 +28,7 @@ export function told(events: Event[]): string {
       case 'think': return `${who} THINKS ${event.text}`;
       case 'write': return `${who} WRITES ${event.text}`;
       case 'act': return `${who} DOES ${event.tool}(${JSON.stringify(event.args)})\n      ${String(event.answer).replaceAll('\n', '\n      ')}`;
+      case 'again': return `${who} ENDED ITS TURN and is told again`;
       case 'death': return `${who} GONE ${event.why}`;
       case 'end': return `[${Math.round(event.t)}] THE WORLD ENDS ${event.why}`;
       default: return '';

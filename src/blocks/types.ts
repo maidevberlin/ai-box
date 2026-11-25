@@ -38,6 +38,8 @@ export interface Happened {
   power?: number;
   /** Where the throw came from, if it was thrown. */
   from?: Cell;
+  /** The item it happened to, for an item kind. */
+  item?: Item;
 }
 
 /** A kind reacts by changing the world. If it returns a sentence, whoever did it is told. */
@@ -81,6 +83,8 @@ export interface ItemKind {
   on?: {
     /** It came to rest on this cell: dropped, put down or thrown. */
     landed?: Reaction;
+    /** It went into the water and is gone. */
+    sunk?: Reaction;
   };
   [more: string]: unknown;
 }
@@ -159,6 +163,10 @@ export interface BlockWorld<S extends Settings = Settings> {
   bodyAt(cell: Cell): Body | undefined;
   spawn(creature: string, cell: Cell): Body;
   move(body: Body, cell: Cell): void;
+  /** Calls one more agent of a role into the world: it wakes up near a cell, holding an item
+   *  if one is given. Only if the role has room for more (Role.room). If the world is full,
+   *  the agent that has been alive longest is gone. Says whether it worked. */
+  call(role: string, near: Cell, hand?: Item): boolean;
   /** A body dies. Says why, for the answer to whoever is told. */
   die(body: Body, why: string): string;
   /** A body notices something it did not ask about. Creatures notice nothing. */
@@ -221,6 +229,20 @@ export interface BlockWorldDefinition<S extends Settings> {
   afterAction?(world: BlockWorld<NoInfer<S>>, me: Body): string | void;
   /** More lines for an agent that looks around. */
   alsoSeen?(world: BlockWorld<NoInfer<S>>, me: Body): string[];
+}
+
+/** A note that calls a friend: when it begins with "friend" and is thrown or put into the
+ *  water, one more agent of the role wakes up next to whoever sent it, with that note in
+ *  its hand. Use it as a world's kind of note: `items: { note: callingNote('agent') }`. */
+export function callingNote(role: string): ItemKind {
+  return {
+    colour: '#f2d34f', called: 'note', shape: 'sheet',
+    on: {
+      sunk(world, { item, by }) {
+        if (by && item?.text?.trim().toLowerCase().startsWith('friend')) world.call(role, by.cell, { kind: 'note', text: item.text });
+      },
+    },
+  };
 }
 
 /** Makes a tool with typed arguments. */

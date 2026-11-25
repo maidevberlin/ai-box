@@ -45,6 +45,9 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   private acting: Body | null = null;
   private readonly timers = new Map<string, Set<() => void>>();
   private readonly touched = new Map<string, [number, number, number, string | null]>();
+  /** The names agents gave to things: for each agent (by its number) its own. Who names
+   *  something does not tell the others by that. */
+  private readonly names = new Map<number, Map<unknown, string>>();
   private sentItems = '[]';
   private sentBodies = '[]';
 
@@ -85,6 +88,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     const [x, y, z] = at;
     if (!this.grid.delete(at3(x, y, z))) return;
     this.callOff(at);
+    for (const mine of this.names.values()) mine.delete(`block ${at3(x, y, z)}`);   // (see carryName)
     const column = this.columns.get(at2([x, y]))!;
     column.delete(z);
     if (!column.size) this.columns.delete(at2([x, y]));
@@ -194,8 +198,11 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
       }
       if (!lowest) break;
       const [x, y, z, kind] = lowest;
+      const carried = {};   // (its names fall with it)
+      this.carryName([x, y, z], carried);
       this.removeBlock([x, y, z]);
-      this.release([x, y, z - 1], kind);
+      const rest = this.release([x, y, z - 1], kind);
+      if (rest) this.carryName(carried, rest);
     }
     this.lying = this.lying.filter(({ cell }) => this.columns.has(at2(cell)));
     const drowned = this.living.filter(body => !body.dead && !this.standable(body.cell));
@@ -247,6 +254,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     body.cell = cell;
   }
 
+  call(role: string, near: Cell, hand?: Item): boolean {
+    return this.host.call(role, { near, hand });
+  }
+
   die(body: Body, why: string): string {
     if (body.dead) return why;
     body.dead = true;
@@ -277,9 +288,9 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
         const lost = (far - near) / near;
         reached = text.split(/\s+/).map(word => (this.random() < lost ? '…' : word)).join(' ').replace(/…( …)+/g, '…');
       }
-      const where = `(${from.cell[0]}, ${from.cell[1]})`;
-      this.notice(body, reached === '…' || far > near * 2 ? 'Someone in the distance says something. You cannot make it out.'
-        : `Someone at ${where} says: "${reached}"`);
+      const where = `(${from.cell[0]}, ${from.cell[1]})`, who = this.nameFor(body, from) ?? 'Someone';
+      this.notice(body, reached === '…' || far > near * 2 ? `${who} in the distance says something. You cannot make it out.`
+        : `${who} at ${where} says: "${reached}"`);
       heard.push({ place: body.agent.place, text: far > near * 2 ? '…' : reached });
     }
     this.record('said', { place: from.agent?.place, text, heard });
@@ -297,7 +308,41 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
       : 'on the ground';
     // A stack of more than one block: what it is made of can matter (a floating block at the bottom).
     if (high > 0 && loose.length > 1) footing += ` (blocks under you, by level: ${pattern(this, body.cell)})`;
-    return `You are at (${body.cell[0]}, ${body.cell[1]}), ${footing}.`;
+    const place = this.nameFor(body, body.cell);
+    return `You are at (${body.cell[0]}, ${body.cell[1]}), ${footing}.${place ? ` This is the place you call "${place}".` : ''}`;
+  }
+
+  // ---------------------------------------------------------------- names
+
+  /** What a thing is filed under: an agent by its number (a new agent in the same place is
+   *  somebody else), a block by where it is, a place by its cell, anything else by itself. */
+  private filedAs(thing: Body | Item | Place | Cell | object): unknown {
+    if (Array.isArray(thing)) return thing.length === 3 ? `block ${thing.join(',')}` : `place ${thing.join(',')}`;
+    const body = thing as Body;
+    return body.agent ? `agent ${body.agent.number}` : thing;
+  }
+
+  /** An agent gives a thing a name of its own: someone, an item, a block, or a place. */
+  callIt(namer: Body, thing: Body | Item | Place | Cell, name: string): void {
+    if (!namer.agent) return;
+    if (!this.names.has(namer.agent.number)) this.names.set(namer.agent.number, new Map());
+    this.names.get(namer.agent.number)!.set(this.filedAs(thing), name);
+  }
+
+  /** The name an agent gave a thing, if it gave it one. */
+  nameFor(namer: Body, thing: Body | Item | Place | Cell): string | undefined {
+    return namer.agent ? this.names.get(namer.agent.number)?.get(this.filedAs(thing)) : undefined;
+  }
+
+  /** A thing becomes another thing and keeps its names: a block that is taken becomes an
+   *  item in a hand, and a block somewhere else when it is put down or has fallen. */
+  carryName(from: Item | Place | object, to: Item | Place | object): void {
+    for (const mine of this.names.values()) {
+      const name = mine.get(this.filedAs(from));
+      if (name === undefined) continue;
+      mine.delete(this.filedAs(from));
+      mine.set(this.filedAs(to), name);
+    }
   }
 
   /** The cell itself if it is free to stand on, else the nearest one that is. */
@@ -317,8 +362,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   /** What a body holds comes down where it stands. */
   private letGo(body: Body): void {
     if (!body.hand) return;
-    if (this.blockKinds[body.hand.kind]) this.release([body.cell[0], body.cell[1], this.height(body.cell)], body.hand.kind);
-    else this.drop(body.hand, body.cell);
+    if (this.blockKinds[body.hand.kind]) {
+      const rest = this.release([body.cell[0], body.cell[1], this.height(body.cell)], body.hand.kind);
+      if (rest) this.carryName(body.hand, rest);
+    } else this.drop(body.hand, body.cell);
     body.hand = null;
   }
 
@@ -415,7 +462,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     body.agent = agent;
     body.hand = null;
     body.dead = true;   // gone for a moment, so that it is not in its own way
-    body.cell = this.freeNear(this.home);
+    // (One that was called in wakes up next to whoever called it, with what it was sent.)
+    const called = agent.called as { near?: Cell; hand?: Item } | undefined;
+    body.cell = this.freeNear(called?.near ?? this.home);
+    body.hand = called?.hand ?? null;
     body.dead = false;
     if (!agent.again) body.has = {};
     this.sawLast.delete(body);

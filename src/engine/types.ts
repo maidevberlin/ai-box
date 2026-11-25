@@ -43,6 +43,9 @@ export interface Role {
   afterDeath: 'new agent' | 'same agent' | 'nobody';
   /** How often its place is filled again. Left out: as long as the world lasts. */
   lives?: number;
+  /** How many of them the world has room for, if more can be called in while it runs (see
+   *  Host.call). Left out: nobody can be called. */
+  room?: number;
   /** Tools switched off for this role only (only tools the world does not need). */
   without?: readonly string[];
 }
@@ -56,6 +59,9 @@ export interface Agent {
   role: string;
   /** Woken up again after dying, with its memory. */
   again: boolean;
+  /** It was called into the world while it ran: what the world said with the call (where
+   *  it should wake up, what it should hold). */
+  called?: unknown;
 }
 
 // ---------------------------------------------------------------- tools
@@ -96,6 +102,11 @@ export interface Host {
   notice(place: number, text: string | (() => string), about?: string): void;
   /** An agent died in the world. The engine does what its role says comes after. */
   died(place: number, why: string): void;
+  /** Calls one more agent of a role into the world, if the role has room for more (`room`).
+   *  If it is full, the one that has been alive longest is gone, and the new one takes its
+   *  place. The new agent wakes up a moment later, with `greeting` as its `called`. An agent
+   *  that was called in is not followed by a new one when it is gone. Says whether it worked. */
+  call(role: string, greeting: unknown): boolean;
   /** The world ends by itself, for this reason. */
   over(why: string): void;
   /** Chance: the same again for the same seed. From 0 up to, not including, 1. */
