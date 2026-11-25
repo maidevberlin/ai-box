@@ -3,8 +3,8 @@
 // the engine can run.
 
 import type { Agent, Chosen, Host, Settings, World, WorldDefinition } from '../engine/types.ts';
-import { glimpse, pattern, seenNow } from './tools.ts';
-import { DIRECTIONS, WAYS, type BlockKind, type BlockTool, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
+import { glimpse, pattern, seenNow, startles } from './tools.ts';
+import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockTool, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
          type Happened, type Item, type ItemKind, type Place, type Reaction } from './types.ts';
 
 const NOTE: ItemKind = { colour: '#f2d34f', called: 'note', shape: 'sheet' };
@@ -16,7 +16,7 @@ const same = (a: Cell, b: Cell) => a[0] === b[0] && a[1] === b[1];
 
 /** What the viewer gets to draw a block world. */
 export interface Picture {
-  kinds: Record<string, { colour: string; shape: string; soft?: boolean }>;
+  kinds: Record<string, { colour: string; shape: string; soft?: boolean; ground?: boolean }>;
   blocks: [x: number, y: number, z: number, kind: string][];
   items: [x: number, y: number, z: number, kind: string, text?: string][];
   /** `sees`: how far an agent sees from where it stands, in cells. */
@@ -219,7 +219,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   drop(item: Item, cell: Cell): void {
     if (!this.columns.has(at2(cell))) return;   // over water: it is gone
     this.lying.push({ item, cell });
-    this.itemKinds[item.kind]?.on?.landed?.(this, { at: [cell[0], cell[1], this.height(cell)] });
+    this.itemKinds[item.kind]?.on?.landed?.(this, { at: [cell[0], cell[1], this.height(cell)], item });
   }
 
   removeItem(item: Item): void {
@@ -275,25 +275,27 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     if (body.agent) this.host.notice(body.agent.place, text);
   }
 
-  say(from: Body, text: string): void {
-    const near = this.definition.earshot ?? 5, heard: { place: number; text: string }[] = [];
+  say(from: Body, text: string, loudness: Loudness = 'normal'): void {
+    const near = (this.definition.earshot ?? 5) * LOUDNESS[loudness], heard: { place: number; text: string }[] = [];
+    const says = { whisper: 'whispers', normal: 'says', shout: 'shouts' }[loudness];
     for (const body of this.bodies()) {
       if (body === from || !body.agent) continue;
       // A voice from higher up carries further: every level counts as a cell less.
       const far = Math.hypot(body.cell[0] - from.cell[0], body.cell[1] - from.cell[1])
         - Math.max(0, this.height(from.cell) - this.height(body.cell));
-      if (far > near * 3) continue;
+      // (A whisper that cannot be made out is not noticed at all.)
+      if (far > near * (loudness === 'whisper' ? 2 : 3)) continue;
       let reached = text;
       if (far > near) {   // the further away, the more words are lost
         const lost = (far - near) / near;
         reached = text.split(/\s+/).map(word => (this.random() < lost ? '…' : word)).join(' ').replace(/…( …)+/g, '…');
       }
       const where = `(${from.cell[0]}, ${from.cell[1]})`, who = this.nameFor(body, from) ?? 'Someone';
-      this.notice(body, reached === '…' || far > near * 2 ? `${who} in the distance says something. You cannot make it out.`
-        : `${who} at ${where} says: "${reached}"`);
+      this.notice(body, reached === '…' || far > near * 2 ? `${who} in the distance ${says} something. You cannot make it out.`
+        : `${who} at ${where} ${says}: "${reached}"`);
       heard.push({ place: body.agent.place, text: far > near * 2 ? '…' : reached });
     }
-    this.record('said', { place: from.agent?.place, text, heard });
+    this.record('said', { place: from.agent?.place, text, loudness, heard });
   }
 
   sight(body: Body): number {
@@ -303,7 +305,9 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   where(body: Body): string {
     const high = this.height(body.cell), top = this.top(body.cell);
     const loose = this.column(body.cell).filter(([, kind]) => !this.blockKinds[kind]!.ground);
-    let footing = high < 0 ? `in a hole ${-high} deep` : high > 0 ? `standing ${high} high on a ${this.called(top!)}`
+    const onGround = top !== undefined && this.blockKinds[top]!.ground;
+    let footing = high < 0 ? `in a hole ${-high} deep` : high > 0 && onGround ? `on the ground, ${high} high`
+      : high > 0 ? `standing ${high} high on a ${this.called(top!)}`
       : top && !this.blockKinds[top]!.ground ? `on a ${this.called(top)} ${this.blockKinds[top]!.floats ? 'floating in' : 'over'} the water`
       : 'on the ground';
     // A stack of more than one block: what it is made of can matter (a floating block at the bottom).
@@ -515,7 +519,8 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   private lookOut(but: Body | null): void {
     for (const body of this.living) {
       if (body === but || body.dead || !body.agent || !this.sawLast.has(body)) continue;
-      if (glimpse(this, body, false).length) this.host.notice(body.agent.place, () => glimpse(this, body, true).join('\n'), 'sight');
+      if (glimpse(this, body, false).length)
+        this.host.notice(body.agent.place, () => glimpse(this, body, true).join('\n'), { about: 'sight', quiet: !startles(this, body) });
     }
   }
 
@@ -563,7 +568,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
 
   picture(): Picture {
     const kinds: Picture['kinds'] = {};
-    for (const [name, kind] of Object.entries(this.blockKinds)) kinds[name] = { colour: kind.colour, shape: 'block', soft: kind.soft };
+    for (const [name, kind] of Object.entries(this.blockKinds)) kinds[name] = { colour: kind.colour, shape: 'block', soft: kind.soft, ground: kind.ground };
     for (const [name, kind] of Object.entries(this.itemKinds)) kinds[name] = { colour: kind.colour, shape: kind.shape };
     for (const [name, kind] of Object.entries(this.definition.creatures ?? {})) kinds[name] = { colour: kind.colour, shape: 'creature' };
     return {

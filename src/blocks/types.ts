@@ -12,6 +12,7 @@
 // - Sight: what an agent sees, and how far (one cell further for every level it stands higher).
 // - Hearing: what is said is heard in full nearby, with words missing further away, as
 //   "..." further still, then not at all. A speaker who stands higher is heard further.
+//   An agent chooses how loud it speaks: a whisper stays close, a shout carries far.
 // - The tools in `basic` (tools.ts).
 //
 // North makes y bigger, east makes x bigger. A block at level z fills the space from z to
@@ -24,6 +25,9 @@ export type Place = readonly [x: number, y: number, z: number];
 
 export const DIRECTIONS = { north: [0, 1], south: [0, -1], east: [1, 0], west: [-1, 0] } as const;
 export const WAYS = { ...DIRECTIONS, 'north-east': [1, 1], 'north-west': [-1, 1], 'south-east': [1, -1], 'south-west': [-1, -1] } as const;
+/** How loud something is said, and how far that carries compared to a normal voice. */
+export const LOUDNESS = { whisper: 0.4, normal: 1, shout: 2 } as const;
+export type Loudness = keyof typeof LOUDNESS;
 export type Direction = keyof typeof DIRECTIONS;
 export type Way = keyof typeof WAYS;
 
@@ -171,8 +175,9 @@ export interface BlockWorld<S extends Settings = Settings> {
   die(body: Body, why: string): string;
   /** A body notices something it did not ask about. Creatures notice nothing. */
   notice(body: Body, text: string): void;
-  /** Something is said out loud: everyone in earshot hears what reaches them. */
-  say(from: Body, text: string): void;
+  /** Something is said out loud: everyone in earshot hears what reaches them. A whisper
+   *  carries less than half as far as a normal voice, a shout twice as far. */
+  say(from: Body, text: string, loudness?: Loudness): void;
   /** How far a body sees from where it stands. */
   sight(body: Body): number;
   /** "You are at (3, 4), on the ground." */
@@ -221,6 +226,9 @@ export interface BlockWorldDefinition<S extends Settings> {
   earshot?: number;
   /** How many levels the strongest jump reaches. Usually 2. */
   jump?: number;
+  /** How many levels up a single step of walking can go. Usually 0: only level or down, and
+   *  a block in the way has to be jumped onto. A world with hills sets 1. */
+  climb?: number;
   /** Builds the world at the start. */
   make(world: BlockWorld<NoInfer<S>>): void;
   /** An agent wakes up: it stands where agents wake up, with an empty hand. */

@@ -90,8 +90,8 @@ export class Film {
       if ((event.type === 'think' || event.type === 'write') && !found.has(place) && !over.has(place))
         found.set(place, { text: String(event.text), thought: true });
       // What it said out loud in the world: a speech bubble.
-      const said = event.type === 'fact' && event.what === 'said' ? event.data as { place: number; text: string } : null;
-      if (said && !found.has(said.place) && !over.has(said.place)) found.set(said.place, { text: said.text, thought: false });
+      const said = event.type === 'fact' && event.what === 'said' ? event.data as { place: number; text: string; loudness?: string } : null;
+      if (said && !found.has(said.place) && !over.has(said.place)) found.set(said.place, { text: said.text, thought: false, loudness: said.loudness });
     }
     return found;
   }

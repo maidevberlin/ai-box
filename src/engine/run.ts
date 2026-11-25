@@ -48,7 +48,7 @@ interface Seat {
   /** How often an agent woke up here. */
   filled: number;
   /** What its agent has noticed and not been told yet. */
-  notices: { text: string | (() => string); about?: string }[];
+  notices: { text: string | (() => string); about?: string; quiet?: boolean }[];
   /** Ends a `wait`, if its agent is waiting. */
   stopWaiting: (() => void) | null;
   /** What its agent is doing: one action finishes before its next begins. */
@@ -98,7 +98,7 @@ export class Run {
     this.roles = Object.fromEntries(Object.entries(declared).map(([name, role]) => [name, { ...role, ...options.roles?.[name] }]));
     const random = chance(options.seed ?? Math.floor(Math.random() * 2 ** 31));
     const host: Host = {
-      notice: (place, text, about) => this.notice(place, text, about),
+      notice: (place, text, how) => this.notice(place, text, how),
       died: (place, why) => this.died(place, why),
       call: (role, greeting) => this.call(role, greeting),
       over: why => this.end(why),
@@ -216,10 +216,13 @@ export class Run {
     for (;;) {
       // It is told how long it waited: so it can choose better how long to wait the next time.
       const waited = Math.round(this.time.now() - since);
-      const noticed = this.noticed(seat);
-      if (noticed.length) return `${waited ? `After ${waited} s` : 'At once'}: ${noticed.join('\n')}`;
-      const left = until - this.time.now();
-      if (left <= 0 || this.ended || seat.died) return `Nothing happened in ${waited} s.`;
+      const left = until - this.time.now(), over = left <= 0 || this.ended || seat.died;
+      // (What is only noticed quietly does not end the wait: it is told when the wait ends.)
+      if (over || seat.notices.some(notice => !notice.quiet)) {
+        const noticed = this.noticed(seat);
+        if (noticed.length) return `${waited ? `After ${waited} s` : 'At once'}: ${noticed.join('\n')}`;
+        if (over) return `Nothing happened in ${waited} s.`;
+      }
       await new Promise<void>(resolve => {
         const go = () => {
           cancel();
@@ -317,12 +320,14 @@ export class Run {
     for (const listener of this.listeners) listener.woke?.(agent, seat.role);
   }
 
-  private notice(place: number, text: string | (() => string), about?: string): void {
+  private notice(place: number, text: string | (() => string), { about, quiet }: { about?: string; quiet?: boolean } = {}): void {
     const seat = this.seats.get(place);
     if (!seat?.agent || this.ended) return;
-    if (about === undefined || !seat.notices.some(notice => notice.about === about)) seat.notices.push({ text, about });
+    const known = about === undefined ? undefined : seat.notices.find(notice => notice.about === about);
+    if (known) known.quiet &&= quiet;   // (told once; and if one of them is not quiet, it ends a wait)
+    else seat.notices.push({ text, about, quiet });
     if (typeof text === 'string') this.record({ type: 'notice', place, number: seat.agent.number, text });
-    seat.stopWaiting?.();
+    if (!quiet) seat.stopWaiting?.();
   }
 
   private died(place: number, why: string): void {

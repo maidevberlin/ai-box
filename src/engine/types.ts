@@ -98,8 +98,9 @@ export interface Host {
   /** Something an agent notices without having asked: it is added to the answer of its
    *  next action, and it ends a `wait`. (Something said nearby, a block that fell.)
    *  The text may be worked out only when the agent is told: then it says how things are at
-   *  that moment. Of several notices `about` the same thing, the agent is told once. */
-  notice(place: number, text: string | (() => string), about?: string): void;
+   *  that moment. Of several notices `about` the same thing, the agent is told once.
+   *  A `quiet` notice does not end a wait: it is told with whatever comes next. */
+  notice(place: number, text: string | (() => string), how?: { about?: string; quiet?: boolean }): void;
   /** An agent died in the world. The engine does what its role says comes after. */
   died(place: number, why: string): void;
   /** Calls one more agent of a role into the world, if the role has room for more (`room`).

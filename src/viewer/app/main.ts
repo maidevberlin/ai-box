@@ -30,6 +30,7 @@ let creating = false;
 let speed = 1;
 let rows: HTMLElement[] = [];     // the conversation: one row per event that has one
 let rowOf: number[] = [];         // ... and for every event, which row shows it (-1: none)
+let marked: HTMLElement | undefined;   // the row of the moment on screen
 
 // ---------------------------------------------------------------- the list of runs
 
@@ -59,7 +60,8 @@ async function open(id: string, follow = false): Promise<void> {
   about = answer.about;
   film = new Film();
   film.add(answer.events);
-  rows = []; rowOf = [];
+  rows = []; rowOf = []; marked = undefined;
+  kept.clear();
   $('log').replaceChildren();
   scene ??= new Scene($('scene'));
   scene.reset();
@@ -90,7 +92,8 @@ function row(event: Event, index: number): HTMLElement | null {
       if (event.tool !== 'say') break;
       // Said out loud in the world. What it heard meanwhile comes after its own words.
       const [, ...heard] = String(event.answer).split('\n');
-      return made('say', `${who} says out loud`, el('div', 'text', String((event.args as { text?: string }).text ?? '')),
+      const loud = (event.args as { loudness?: string }).loudness;
+      return made('say', `${who} ${loud === 'whisper' ? 'whispers' : loud === 'shout' ? 'shouts' : 'says out loud'}`, el('div', 'text', String((event.args as { text?: string }).text ?? '')),
                   heard.length ? el('div', 'heard', heard.join('\n')) : null);
     }
   }
@@ -106,31 +109,53 @@ function row(event: Event, index: number): HTMLElement | null {
   }
 }
 
+/** Sets a text or a property of the page only if it is different: the page is drawn up to
+ *  60 times a second while a run plays, and most of the time nothing but the clock moves. */
+const kept = new Map<string, string>();
+function once(key: string, value: string, set: () => void): void {
+  if (kept.get(key) === value) return;
+  kept.set(key, value);
+  set();
+}
+
+/** Draws everything about the run on screen: called when something about the run changed
+ *  (another run, more of its record, its review). */
 function draw(): void {
   $('create').hidden = !creating;
   $('stage').hidden = $('side').hidden = creating;
   if (creating || !about) return;
+  const run = about;
   // The head: the run's name, and what the reviewer wrote about it.
-  $('title').replaceChildren(about.review?.name ?? (about.going ? 'Running' : 'No name yet'),
-    el('span', 'chip', about.title), ...about.models.map(model => el('span', 'chip', model)), el('span', 'chip', started(about.id)));
-  $('summary').textContent = about.review?.summary ?? (about.going ? 'This run gets a name and a summary when it ends.' : about.ended ?? '');
-  $('stop').hidden = !about.going;
+  once('head', JSON.stringify([run.id, run.review, run.going, run.ended]), () => {
+    $('title').replaceChildren(run.review?.name ?? (run.going ? 'Running' : 'No name yet'),
+      el('span', 'chip', run.title), ...run.models.map(model => el('span', 'chip', model)), el('span', 'chip', started(run.id)));
+    $('summary').textContent = run.review?.summary ?? (run.going ? 'This run gets a name and a summary when it ends.' : run.ended ?? '');
+    $('stop').hidden = !run.going;
+    $('live').hidden = !run.going;
+  });
   // The conversation: rows are only added, never built again.
+  const added: HTMLElement[] = [];
   for (let i = rowOf.length; i < film.events.length; i++) {
     const made = row(film.events[i]!, i);
     rowOf.push(made ? rows.length : -1);
-    if (made) { rows.push(made); $('log').append(made); }
+    if (made) { rows.push(made); added.push(made); }
   }
-  // The moment on screen.
+  if (added.length) $('log').append(...added);
+  drawMoment();
+}
+
+/** Draws the moment on screen: the clock, and the world and the marked row if the film has
+ *  moved on to another event. Called for every frame while a run plays. */
+function drawMoment(): void {
+  if (creating || !about) return;
   // (The very beginning shows the world as it started, before anything happened.)
   const length = Math.max(film.length, 0.001), index = film.events.length ? Math.max(film.indexAt(at), 0) : -1;
   const slider = $('slider') as HTMLInputElement;
-  slider.max = String(length);
+  once('length', String(length), () => { slider.max = String(length); });
   slider.value = String(at);
-  $('count').textContent = `${clock(at)} / ${clock(length)}`;
-  $('play').textContent = playing ? '❚❚' : '▶';
-  $('live').hidden = !about.going;
-  $('live').classList.toggle('on', live);
+  once('count', `${clock(at)} / ${clock(length)}`, () => { $('count').textContent = `${clock(at)} / ${clock(length)}`; });
+  once('play', String(playing), () => { $('play').textContent = playing ? '❚❚' : '▶'; });
+  once('live', String(live), () => $('live').classList.toggle('on', live));
   if (index !== shown && index >= 0) {
     const forward = index > shown && index - shown < 20;
     // A throw is played when the film runs onto it, not when jumping around in the run.
@@ -144,8 +169,9 @@ function draw(): void {
     // The row of the newest thing that happened is marked, and kept in sight.
     let last = index;
     while (last >= 0 && rowOf[last] === -1) last--;
-    $('log').querySelector('.now')?.classList.remove('now');
     const now = last >= 0 ? rows[rowOf[last]!] : undefined;
+    if (now !== marked) marked?.classList.remove('now');
+    marked = now;
     if (now) {
       now.classList.add('now');
       const box = $('log');
@@ -163,9 +189,10 @@ function tick(): void {
   const now = performance.now(), passed = (now - before) / 1000;
   before = now;
   if (!playing || creating || !about || document.hidden) return;
+  if (at >= film.length && about.going) return;   // at the end of a run that is going: waiting for more
   at = Math.min(at + passed * speed, film.length);
   if (at >= film.length && !about.going) playing = false;
-  draw();
+  drawMoment();
 }
 requestAnimationFrame(tick);
 

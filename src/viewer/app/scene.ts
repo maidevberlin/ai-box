@@ -13,7 +13,7 @@ import type { Picture } from '../../blocks/world.ts';
 
 /** A picture, and a number that changes whenever its blocks do. */
 export interface View extends Picture { blocksVersion: number }
-export interface Bubble { text: string; thought: boolean }
+export interface Bubble { text: string; thought: boolean; loudness?: string }
 
 export const PLACE_COLOURS = [0xe8553a, 0x8b5cf6, 0x14b8a6, 0xf59e0b, 0x3b82f6, 0xec4899, 0x84cc16, 0x64748b];
 const TALL = 1.45;          // how tall a figure is, in blocks
@@ -138,7 +138,7 @@ export class Scene {
       figure.bubble.visible = !!bubble && !body.dead;
       if (bubble) {
         element.textContent = bubble.text.length > BUBBLE_LETTERS ? `${bubble.text.slice(0, BUBBLE_LETTERS)}…` : bubble.text;
-        element.className = `bubble${bubble.thought ? ' thought' : ''}`;
+        element.className = `bubble${bubble.thought ? ' thought' : ''}${bubble.loudness && bubble.loudness !== 'normal' ? ` ${bubble.loudness}` : ''}`;
       }
     }
     for (const [id, figure] of this.figures) {
@@ -184,7 +184,7 @@ export class Scene {
     const placed = new THREE.Object3D();
     for (const [kind, list] of byKind) {
       const look = view.kinds[kind];
-      const below = list.every(([, , z]) => z < 0);   // the ground is drawn without gaps, other blocks with a small one
+      const below = !!look?.ground || list.every(([, , z]) => z < 0);   // the ground is drawn without gaps, other blocks with a small one
       // (The ground is blocks too: every other one is a shade darker, so that they can be told apart.)
       const colour = new THREE.Color(look?.colour ?? '#888'), shade = new THREE.Color();
       const material = new THREE.MeshLambertMaterial({ color: below ? '#fff' : colour, transparent: !!look?.soft, opacity: look?.soft ? 0.8 : 1 });

@@ -227,6 +227,14 @@ test('an agent notices what changes in its sight: it ends a wait, and is told on
   // Two more steps while the other is busy: it is told where the walker is now, not every step.
   await act('walk', { direction: 'east' }); await act('walk', { direction: 'east' });
   assert.equal(await act('look', { at: 'hand' }, 2), 'Your hand is empty.\nSomeone is at (-1, 0).');
+  // Someone who only moves on within its sight does not end a wait: it is told when the wait ends.
+  const calm = act('wait', { seconds: 10 }, 2);
+  await begun();
+  await act('walk', { direction: 'north' });
+  time.pass(10);
+  assert.equal(await calm, 'After 10 s: Someone is at (-1, 1).');
+  await act('walk', { direction: 'south' });
+  await act('look', { at: 'hand' }, 2);
   // What an agent changes itself is no news to it.
   two.hand = { kind: 'grey' };
   await act('put', { where: 'north' }, 2);
@@ -291,4 +299,23 @@ test('an agent can give things names of its own, and is then told about them by 
   assert.equal(await act('name', { name: 'home', x: 0, y: -1 }), 'You call the place (0, -1) "home" now.');
   assert.match(await act('walk', { direction: 'south' }), /You are at \(0, -1\), on the ground\. This is the place you call "home"\./);
   assert.equal(await act('name', { name: 'far', x: 5, y: 0 }), 'That is out of your sight.');
+});
+
+test('an agent chooses how loud it speaks: a whisper stays close, a shout carries far', async () => {
+  const long = blockWorld({
+    name: 'long', title: '', about: '', settings: {}, minutes: 0, earshot: 5,
+    roles: () => ({ agent: agent({ count: 3 }) }),
+    blocks: { ground: { colour: '#0a0', ground: true } },
+    tools: basic,
+    make(world) { for (let x = 0; x <= 40; x++) world.setBlock([x, 0, -1], 'ground'); },
+  });
+  const { act, world } = started(long);
+  [0, 2, 9].forEach((x, i) => { me(world, i + 1).cell = [x, 0]; });
+  // A whisper: heard next to you, not noticed nine cells away.
+  assert.equal(await act('say', { text: 'a secret', loudness: 'whisper' }), 'You whispered: "a secret"');
+  assert.equal(await act('look', { at: 'hand' }, 2), 'Your hand is empty.\nSomeone at (0, 0) whispers: "a secret"');
+  assert.equal(await act('look', { at: 'hand' }, 3), 'Your hand is empty.');
+  // A shout: heard in full nine cells away, where a normal voice already loses words.
+  assert.equal(await act('say', { text: 'come over here', loudness: 'shout' }), 'You shouted: "come over here"');
+  assert.equal(await act('look', { at: 'hand' }, 3), 'Your hand is empty.\nSomeone at (0, 0) shouts: "come over here"');
 });

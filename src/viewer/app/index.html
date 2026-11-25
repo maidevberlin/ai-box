@@ -54,6 +54,8 @@
             background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text);
             border: 1.5px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); pointer-events: none; }
   .bubble.thought { font-style: italic; color: var(--muted); border-style: dashed; }
+  .bubble.whisper { font-size: 10.5px; color: var(--muted); }
+  .bubble.shout { font-size: 14px; font-weight: 700; border-width: 2.5px; }
   #controls { display: flex; align-items: center; gap: 10px; }
   #play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 14px; flex: none; }
   #slider { flex: 1; accent-color: var(--accent); }
@@ -75,7 +77,8 @@
   .step.say .heard { color: var(--muted); font-size: 12.5px; white-space: pre-wrap; margin-top: 4px; }
   .step.think .text { color: var(--muted); font-style: italic; }
   .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
-  .step.act .text { color: var(--muted); font-size: 12.5px; }
+  /* (What the world answers is shown in letters of one width: some answers are small maps.) */
+  .step.act .text { color: var(--muted); font: 12px/1.45 ui-monospace, monospace; }
   .step.wake { color: var(--muted); }
   .step.death { color: var(--stop); border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 6px; }
   .step.stop { text-align: center; color: var(--muted); border-left-color: transparent; }

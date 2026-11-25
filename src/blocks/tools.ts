@@ -5,7 +5,7 @@
 // the kind of block (sticky, floats, or its reactions, see types.ts).
 
 import type { Blocks } from './world.ts';
-import { DIRECTIONS, WAYS, tool, type BlockTool, type BlockWorld, type Body, type Cell, type Item, type Place } from './types.ts';
+import { DIRECTIONS, WAYS, tool, type BlockTool, type BlockWorld, type Body, type Cell, type Item, type Loudness, type Place } from './types.ts';
 
 const BEGINNING = 3;       // how many words of a note can be made out without looking at it
 const REACH = 2;           // put reaches stacks at most this much higher or lower than your feet
@@ -77,7 +77,14 @@ function lookedAt(world: BlockWorld<any>, me: Body, cell: Cell): string {
   const there = world.bodyAt(cell);
   const who = there && there !== me ? ` ${someone(world, me, there)} stands there${holding(world, there)}.` : '';
   const place = inner(world).nameFor(me, cell), spot = place ? ` This is the place you call "${place}".` : '';
-  if (!made && !items.length) return (under === 'water' ? 'There is only water.' : `There is nothing at ${at(cell)}, only ground.`) + spot + who;
+  if (!made && !items.length) {
+    // Only ground (or water). If the ground is not flat, or its top has a name, that is said.
+    const high = world.height(cell), top = world.top(cell), named = top ? world.blockKind(top)!.called : undefined;
+    const ground = under === 'water' ? 'There is only water.'
+      : high === 0 && !named ? `There is nothing at ${at(cell)}, only ground.`
+      : `At ${at(cell)} the ground is ${high < 0 ? `${-high} deep` : high === 0 ? 'level' : `${high} high`}.${named ? ` On top is a ${named}.` : ''}`;
+    return ground + spot + who;
+  }
   let said = `At ${at(cell)}, ${world.height(cell)} high, over ${under}.${spot}`;
   if (made) said += ` Blocks there, by level: ${made}${names(world, me, cell).replace(/, the place you call .*/, '')}.`;
   if (items.length) {
@@ -107,6 +114,8 @@ interface Seen {
   stacks: Map<string, string>;
   water: Map<string, string>;
   beings: string[];
+  /** Who is in sight (their ids). */
+  who: Set<number>;
   also: string[];
   feet: string;
   at: Cell;
@@ -136,13 +145,13 @@ function around(world: BlockWorld<any>, me: Body): Seen {
     if (steps < reach) water.set(direction, steps ? `${steps} step(s) of ground left, then water` : 'no ground left, the next step is water');
   }
   // The others in sight. (Nothing is said if nobody is: an agent is not told it has company.)
-  const beings = world.bodies()
-    .filter(other => other !== me && Math.abs(other.cell[0] - x) <= reach && Math.abs(other.cell[1] - y) <= reach)
+  const others = world.bodies().filter(other => other !== me && Math.abs(other.cell[0] - x) <= reach && Math.abs(other.cell[1] - y) <= reach);
+  const beings = others
     .map(other => `${someone(world, me, other)} is at ${at(other.cell)}${world.height(other.cell) ? `, ${world.height(other.cell)} high` : ''}${holding(world, other)}.`);
   const lying = world.items(me.cell);
   const said = lying.length ? pile(world, me, me.cell) : '';
   const feet = said ? ` ${said[0]!.toUpperCase()}${said.slice(1)} ${lying.length === 1 ? 'lies' : 'lie'} at your feet.` : '';
-  return { stacks, water, beings, also: inner(world).definition.alsoSeen?.(world, me) ?? [], feet, at: me.cell, reach };
+  return { stacks, water, beings, who: new Set(others.map(other => other.id)), also: inner(world).definition.alsoSeen?.(world, me) ?? [], feet, at: me.cell, reach };
 }
 
 /** What is in sight now that was not when the body last saw its surroundings, in lines.
@@ -166,6 +175,16 @@ export function glimpse(world: BlockWorld<any>, me: Body, keep: boolean): string
   ];
   if (keep) inner(world).sawLast.set(me, now);
   return lines;
+}
+
+/** Is there something new in a body's sight that it should not miss: something that changed
+ *  in the world, or somebody who was not in sight before? (Somebody who only moved on within
+ *  its sight is news too, but not worth ending a wait for.) */
+export function startles(world: BlockWorld<any>, me: Body): boolean {
+  const before = inner(world).sawLast.get(me) as Seen | undefined, now = around(world, me);
+  const said = glimpse(world, me, false);
+  const moved = now.beings.filter(line => !before?.beings.includes(line));
+  return said.length > moved.length || [...now.who].some(id => !before?.who.has(id));
 }
 
 /** What it sees now is what it has seen: nothing of it is news any more. */
@@ -229,8 +248,13 @@ const walk = tool({
       }
       const there = world.bodyAt(ahead);
       if (there) return `${done ? `You walked ${walked(done)} ${direction}. Then ${someone(world, me, there, true)}` : someone(world, me, there)} at ${at(ahead)} is in your way. ${news(world, me)}`;
-      if (world.height(ahead) > world.height(me.cell))
-        return `${done ? `You walked ${walked(done)} ${direction}. Then a` : 'A'} stack ${world.height(ahead)} high at ${at(ahead)} is in your way. ${news(world, me)}`;
+      const rise = world.height(ahead) - world.height(me.cell);
+      if (rise > (inner(world).definition.climb ?? 0)) {
+        const before = done ? `You walked ${walked(done)} ${direction}. Then ` : '';
+        const what = world.blockKind(world.top(ahead)!)!.ground ? `the ground at ${at(ahead)} rises ${rise}: too steep to walk up`
+          : `a stack ${world.height(ahead)} high at ${at(ahead)} is in your way`;
+        return `${before}${before ? what : what[0]!.toUpperCase() + what.slice(1)}. ${news(world, me)}`;
+      }
       world.move(me, ahead);
     }
     return `You walked ${walked(steps)} ${direction}. ${news(world, me)}`;
@@ -441,11 +465,11 @@ const throwIt = tool({
 
 const say = tool({
   about: 'Say something out loud.',
-  args: { text: { type: 'text' } },
-  run(world, me, { text }) {
-    const said = text.slice(0, 500);
-    world.say(me, said);
-    return `You said: "${said}"`;
+  args: { text: { type: 'text' }, loudness: { type: 'one of', options: ['whisper', 'normal', 'shout'], optional: true } },
+  run(world, me, { text, loudness }) {
+    const said = text.slice(0, 500), how = (loudness ?? 'normal') as Loudness;
+    world.say(me, said, how);
+    return `You ${{ whisper: 'whispered', normal: 'said', shout: 'shouted' }[how]}: "${said}"`;
   },
 });
 
