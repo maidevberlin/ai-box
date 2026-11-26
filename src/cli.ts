@@ -47,6 +47,7 @@ const said = (event: Event): string | null => {
     case 'wake': return `--- ${who} wakes up${event.again ? ' again' : ''} (${event.model})`;
     case 'think': return `${who} thinks: ${event.text}`;
     case 'write': return `${who} writes: ${event.text}`;
+    case 'waits': return `${who} waits for up to ${event.seconds} s`;
     case 'act': return `${who} does ${event.tool}(${JSON.stringify(event.args)})\n    ${String(event.answer).replaceAll('\n', '\n    ')}`;
     case 'senses': return `--- ${who} had stopped talking, and is told what is around it`;
     case 'death': return `--- ${who} ${event.left ? 'has left' : 'died'}: ${event.why}`;

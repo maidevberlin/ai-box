@@ -183,6 +183,10 @@ export interface BlockWorld<S extends Settings = Settings> {
   release(at: Place, kind: string): Place | null;
   /** Lets fall whatever nothing holds. The base does this after every action by itself. */
   settle(): void;
+  /** Writes something at a place for whoever watches the run: a score, what a block stands
+   *  for. Nobody in the world sees it. It stays until other words, or none, are written there.
+   *  It is shown on what is at the place, or beside it if that is asked for. */
+  sign(at: Place, text: string | null, where?: 'on' | 'east' | 'west'): void;
 
   // items
   items(cell: Cell): Item[];
@@ -214,7 +218,11 @@ export interface BlockWorld<S extends Settings = Settings> {
   say(from: Body, text: string, loudness?: Loudness): void;
   /** How far a body sees from where it stands. */
   sight(body: Body): number;
-  /** "You are at (3, 4), on the ground." */
+  /** A place as it is said to a body: "(3, 4)" where agents know the map, else by the steps
+   *  from where the body stands, "(2 east, 1 north)". Whatever an agent is told about a place
+   *  is said this way. */
+  at(body: Body, cell: Cell): string;
+  /** "You are at (3, 4), on the ground." (Where agents do not know the map: "You are on the ground.") */
   where(body: Body): string;
 
   // the land

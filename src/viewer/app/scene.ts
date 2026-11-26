@@ -53,6 +53,8 @@ export class Scene {
   private readonly controls: OrbitControls;
   private readonly blocks = new THREE.Group();
   private readonly items = new THREE.Group();
+  private readonly signs = new THREE.Group();
+  private drawnSigns = '[]';
   private readonly cube = new THREE.BoxGeometry(1, 1, 1);
   private readonly ball = new THREE.SphereGeometry(0.18, 14, 10);
   private readonly figures = new Map<number, Figure>();
@@ -75,7 +77,7 @@ export class Scene {
     water.rotation.x = -Math.PI / 2;
     water.position.y = -0.3;
     this.flying.visible = false;
-    this.scene.add(sun, water, this.blocks, this.items, this.flying);
+    this.scene.add(sun, water, this.blocks, this.items, this.signs, this.flying);
     this.labels.domElement.className = 'bubbles';
     box.append(this.renderer.domElement, this.labels.domElement);
     this.controls = new OrbitControls(this.camera, this.labels.domElement);
@@ -118,6 +120,7 @@ export class Scene {
       if (!this.fitted) this.fit(view);
     }
     this.drawItems(view);
+    this.drawSigns(view);
     const seen = new Set<number>();
     for (const body of view.bodies) {
       seen.add(body.id);
@@ -210,6 +213,23 @@ export class Scene {
       else if (look?.shape !== 'ball') mesh.scale.setScalar(0.3);
       mesh.position.copy(spot(x + 0.5, y + 0.5, z + (look?.shape === 'sheet' ? 0.03 : 0.17)));
       this.items.add(mesh);
+    }
+  }
+
+  /** What a world has written at places, for whoever watches: made again only when it changed. */
+  private drawSigns(view: View): void {
+    const wanted = JSON.stringify(view.signs);
+    if (wanted === this.drawnSigns) return;
+    this.drawnSigns = wanted;
+    for (const sign of this.signs.children) (sign as CSS2DObject).element.remove();
+    this.signs.clear();
+    for (const [x, y, z, text, where] of view.signs) {
+      const sign = new CSS2DObject(document.createElement('div'));
+      sign.element.className = `sign ${where === 'on' ? 'on' : 'beside'}`;
+      sign.element.textContent = text;
+      sign.position.copy(spot(x + { on: 0.5, east: 1.1, west: -0.1 }[where], y + 0.5, z + (where === 'on' ? 1 : 0.5)));
+      sign.center.set({ on: 0.5, east: 0, west: 1 }[where], 0.5);
+      this.signs.add(sign);
     }
   }
 

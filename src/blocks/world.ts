@@ -3,9 +3,17 @@
 // the engine can run.
 
 import type { Agent, Chosen, Host, Settings, World, WorldDefinition } from '../engine/types.ts';
+import { fromHere, onTheMap, type Places } from './places.ts';
 import { asTools, glimpse, pattern, seenNow, startles, surroundings } from './verbs.ts';
 import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
          type Happened, type Item, type ItemKind, type Place, type Reaction } from './types.ts';
+
+/** What a person can set in every block world. */
+const everywhere = {
+  map: { type: 'switch', title: 'Agents know the map: they are told where they are, and places by their position', usual: true, about: 'agents' },
+} satisfies Settings;
+/** How places are said in a run: on the map, or from where an agent stands. */
+const placesOf = (chosen: Record<string, any>): Places => (chosen.map ? onTheMap : fromHere);
 
 const NOTE: ItemKind = { colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true } };
 const DROWNED = 'The ground under you is gone. You are in the water. You drown.';
@@ -19,6 +27,8 @@ export interface Picture {
   kinds: Record<string, { colour: string; shape: string; soft?: boolean; ground?: boolean }>;
   blocks: [x: number, y: number, z: number, kind: string][];
   items: [x: number, y: number, z: number, kind: string, text?: string][];
+  /** What is written at places for whoever watches (BlockWorld.sign). */
+  signs: [x: number, y: number, z: number, text: string, where: 'on' | 'east' | 'west'][];
   /** `sees`: how far an agent sees from where it stands, in cells. `holds`: what is written on what it holds. */
   bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; holds?: string; dead: boolean; sees?: number }[];
 }
@@ -26,12 +36,14 @@ export interface Changes {
   blocks?: [x: number, y: number, z: number, kind: string | null][];
   items?: Picture['items'];
   bodies?: Picture['bodies'];
+  signs?: Picture['signs'];
 }
 
 export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, World {
   readonly own: Record<string, any> = {};
   home: Cell = [0, 0];
   readonly toolset: ReturnType<typeof asTools>;
+  readonly places: Places;
   /** What each body saw the last time it looked around (see verbs.ts). */
   readonly sawLast = new Map<Body, unknown>();
   private readonly blockKinds: Record<string, BlockKind>;
@@ -50,6 +62,8 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   private readonly names = new Map<number, Map<unknown, string>>();
   private sentItems = '[]';
   private sentBodies = '[]';
+  private readonly signs = new Map<string, Picture['signs'][number]>();
+  private sentSigns = '[]';
 
   readonly definition: BlockWorldDefinition<S>;
   readonly chosen: Chosen<S>;
@@ -61,6 +75,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.host = host;
     this.blockKinds = definition.blocks;
     this.itemKinds = { note: NOTE, ...definition.items };
+    this.places = placesOf(chosen);
     this.toolset = tools(definition, chosen);
     definition.make(this);
     this.settle();
@@ -185,6 +200,11 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.settleAll();
   }
 
+  sign(at: Place, text: string | null, where: 'on' | 'east' | 'west' = 'on'): void {
+    if (text === null) this.signs.delete(at3(...at));
+    else this.signs.set(at3(...at), [...at, text, where]);
+  }
+
   /** Lets fall what nothing holds, lowest first. Then what lay or stood on a cell that is
    *  water now is gone. Says who drowned by it. */
   private settleAll(): Body[] {
@@ -306,7 +326,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
         const lost = (far - near) / near;
         reached = text.split(/\s+/).map(word => (this.random() < lost ? '…' : word)).join(' ').replace(/…( …)+/g, '…');
       }
-      const where = `(${from.cell[0]}, ${from.cell[1]})`, who = this.nameFor(body, from) ?? 'Someone';
+      const where = this.at(body, from.cell), who = this.nameFor(body, from) ?? 'Someone';
       this.notice(body, reached === '…' || far > near * 2 ? `${who} in the distance ${says} something. You cannot make it out.`
         : `${who} at ${where} ${says}: "${reached}"`);
       heard.push({ place: body.agent.place, text: far > near * 2 ? '…' : reached });
@@ -316,6 +336,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
 
   sight(body: Body): number {
     return (this.definition.sight ?? 3) + Math.max(0, this.height(body.cell));
+  }
+
+  at(body: Body, cell: Cell): string {
+    return this.places.told(body.cell, cell);
   }
 
   where(body: Body): string {
@@ -329,7 +353,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     // A stack of more than one block: what it is made of can matter (a floating block at the bottom).
     if (high > 0 && loose.length > 1) footing += ` (blocks under you, by level: ${pattern(this, body.cell)})`;
     const place = this.nameFor(body, body.cell);
-    return `You are at (${body.cell[0]}, ${body.cell[1]}), ${footing}.${place ? ` This is the place you call "${place}".` : ''}`;
+    return `You are ${this.places.standing(body.cell)}${footing}.${place ? ` This is the place you call "${place}".` : ''}`;
   }
 
   // ---------------------------------------------------------------- names
@@ -618,6 +642,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
       blocks: [...this.grid].map(([key, kind]) => [...key.split(',').map(Number), kind] as Picture['blocks'][number]),
       items: this.itemsNow(),
       bodies: this.bodiesNow(),
+      signs: [...this.signs.values()],
     };
   }
 
@@ -631,6 +656,8 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     const items = this.itemsNow(), bodies = this.bodiesNow();
     if (JSON.stringify(items) !== this.sentItems) this.sentItems = JSON.stringify(changes.items = items);
     if (JSON.stringify(bodies) !== this.sentBodies) this.sentBodies = JSON.stringify(changes.bodies = bodies);
+    const signs = [...this.signs.values()];
+    if (JSON.stringify(signs) !== this.sentSigns) this.sentSigns = JSON.stringify(changes.signs = signs);
     return Object.keys(changes).length ? changes : null;
   }
 }
@@ -639,7 +666,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
  *  a thing and that no kind of the world allows. */
 function tools<S extends Settings>(definition: BlockWorldDefinition<S>, chosen: Chosen<S>): ReturnType<typeof asTools> {
   const verbs = typeof definition.verbs === 'function' ? definition.verbs(chosen) : definition.verbs;
-  return asTools(verbs, { things: { ...definition.blocks, note: NOTE, ...definition.items }, creatures: definition.creatures ?? {}, agent: definition.agent ?? {} });
+  return asTools(verbs, { things: { ...definition.blocks, note: NOTE, ...definition.items }, creatures: definition.creatures ?? {}, agent: definition.agent ?? {} }, placesOf(chosen));
 }
 
 /** A world built on the block base, ready for the engine. */
@@ -648,7 +675,7 @@ export function blockWorld<S extends Settings>(definition: BlockWorldDefinition<
     name: definition.name,
     title: definition.title,
     about: definition.about,
-    settings: definition.settings,
+    settings: { ...definition.settings, ...everywhere },
     drawnBy: 'blocks',
     minutes: definition.minutes,
     roles: definition.roles,

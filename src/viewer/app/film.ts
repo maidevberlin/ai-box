@@ -14,6 +14,7 @@ export class Film {
   private readonly blocks = new Map<string, Picture['blocks'][number]>();
   private items: Picture['items'] = [];
   private bodies: Picture['bodies'] = [];
+  private signs: Picture['signs'] = [];
   private shown = -1;       // the last event that is in the picture
   private version = 0;
   private drawn: View | null = null;
@@ -46,13 +47,14 @@ export class Film {
       this.blocks.clear();
       this.items = [];
       this.bodies = [];
+      this.signs = [];
       this.version++;
     }
     for (let i = this.shown + 1; i <= index; i++) this.apply(this.events[i]!);
     this.shown = Math.max(this.shown, index);
     // (The list of blocks is only made again when a block changed: it can be thousands.)
     const blocks = this.drawn?.blocksVersion === this.version ? this.drawn.blocks : [...this.blocks.values()];
-    this.drawn = { kinds: this.kinds, blocks, items: this.items, bodies: this.bodies, blocksVersion: this.version };
+    this.drawn = { kinds: this.kinds, blocks, items: this.items, bodies: this.bodies, signs: this.signs, blocksVersion: this.version };
     return this.drawn;
   }
 
@@ -64,6 +66,7 @@ export class Film {
       for (const block of picture.blocks) this.blocks.set(`${block[0]},${block[1]},${block[2]}`, block);
       this.items = picture.items;
       this.bodies = picture.bodies;
+      this.signs = picture.signs;
       this.version++;
     }
     const changes = event.changes as Changes | undefined;
@@ -77,6 +80,7 @@ export class Film {
     }
     if (changes.items) this.items = changes.items;
     if (changes.bodies) this.bodies = changes.bodies;
+    if (changes.signs) this.signs = changes.signs;
   }
 
   /** The bubble over each agent: what it last thought or said, if that was a moment ago. */

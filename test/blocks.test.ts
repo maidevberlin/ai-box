@@ -350,7 +350,7 @@ test('an agent that ends its turn stays where it is, and its senses tell it what
   time.pass(1);
   // What looking around would say, although this agent cannot look.
   assert.equal(await act('look'), 'There is no "look" here.');
-  assert.match(told[0]!, /^You are at \(3, 0\), on the ground\.\nYou carry: a grey block\.\nStacks in sight .*\(4, 0\): 1 \(grey\)/);
+  assert.match(told[0]!, /^You are at \(3, 0\), on the ground\.\nYou carry: a grey block\.\nAround you, .*\(4, 0\): 1 \(grey\)/);
   assert.deepEqual(me(world).cell, [3, 0]);
   assert.deepEqual(me(world).hand, { kind: 'grey' });
   assert.equal(run.agent(1)!.number, 1);
@@ -476,4 +476,33 @@ test('an agent chooses how loud it speaks: a whisper stays close, a shout carrie
   // A shout: heard in full nine cells away, where a normal voice already loses words.
   assert.equal(await act('say', { text: 'come over here', loudness: 'shout' }), 'You shouted: "come over here"');
   assert.equal(await act('look', { what: 'hand' }, 3), 'Your hand is empty.\nSomeone at (0, 0) shouts: "come over here"');
+});
+
+test('without the map, places are said by the steps from where an agent stands', async () => {
+  const land = strip({ count: 2 }, world => {
+    world.setBlock([2, 1, 0], 'grey');
+  });
+  assert.ok('map' in land.settings, 'every block world has the switch');
+  assert.match(JSON.stringify(land.tools({ map: false })), /a position like \\"\(2 east, 1 north\)\\"/);
+  assert.match(JSON.stringify(land.tools({ map: true })), /a position like \\"\(2, 1\)\\"/);
+  const { act, run, world } = started(land, { chosen: { map: false } });
+  // It is not told where it is, and what it sees is told from where it stands.
+  const seen = await act('look');
+  assert.match(seen, /^You are on the ground\./);
+  assert.match(seen, /Around you, as far as you see \(3 steps\), each place with its height: \(2 east, 1 north\): 1 \(grey\)\./);
+  assert.match(seen, /Someone is at \(1 west\)\./);
+  // A stack that was in sight before is no news after a step, though it is said differently now.
+  assert.equal(await act('walk', { direction: 'east' }), 'You walked a step east. You are on the ground.\nSomeone is at (2 west).');
+  assert.match(await act('walk', { direction: 'north' }), /^You walked a step north\. You are on the ground\.\nWater: /);
+  // It points the same way: by steps, with or without brackets. A position on the map means nothing here.
+  assert.match(await act('take', { what: '(2, 1)' }), /You have given nothing the name "\(2, 1\)"\. Say what you mean by a position like "\(2 east, 1 north\)"/);
+  assert.match(await act('take', { what: '2 east' }), /^\(2 east\) is out of your reach/);
+  assert.equal(await act('take', { what: '(1 east)' }), 'You took a grey block. You are on the ground.');
+  assert.equal(await act('put', { where: '1 south' }), 'You put the block down at (1 south). The stack there is 1 high. You are on the ground.');
+  assert.equal(await act('name', { name: '1 south', what: 'here' }), 'That cannot be a name: it already means something.');
+  assert.equal(await act('name', { name: 'home', what: '(here)' }), 'You call the place (here) "home" now.');
+  // What somebody says comes from where the one who hears it stands.
+  await act('say', { text: 'hello' });
+  assert.equal(run.events.findLast(event => event.type === 'notice')!.text, 'Someone at (2 east, 1 north) says: "hello"');
+  assert.equal(world.at(me(world, 2), [0, 0]), '(1 east)');
 });

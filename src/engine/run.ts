@@ -209,6 +209,8 @@ export class Run {
     seat.rests = 0;
     seat.resting = false;
     let answer: string;
+    // (Waiting takes time: that it began is in the record at once, not only how it ended.)
+    if (name === 'wait') this.record({ type: 'waits', place: seat.place, number: agent.number, seconds: Number(args.seconds ?? 30) });
     try {
       answer = name === 'wait' ? await this.wait(seat, Number(args.seconds ?? 30))
         : await this.world.act(agent, name, args);

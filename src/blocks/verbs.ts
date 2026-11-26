@@ -6,6 +6,7 @@
 
 import type { Blocks } from './world.ts';
 import type { Tool } from '../engine/types.ts';
+import type { Places } from './places.ts';
 import { DIRECTIONS, WAYS, verb, verbTo, type AgentKind, type BlockKind, type BlockWorld, type Body, type Cell, type CreatureKind, type Deed, type Item, type ItemKind, type Loudness, type Place, type Thing, type Verb } from './types.ts';
 
 const BEGINNING = 3;       // how many words of a note can be made out without looking at it
@@ -14,7 +15,6 @@ const GRAVITY = 9.8;       // blocks per second squared
 const THROW_SPEED = 1.5;   // blocks per second, per point of power
 const HAND = 1.5;          // a throw starts this high above your feet
 
-const at = (cell: Cell) => `(${cell[0]}, ${cell[1]})`;
 const same = (a: Cell, b: Cell) => a[0] === b[0] && a[1] === b[1];
 const inner = (world: BlockWorld<any>) => world as Blocks<any>;
 
@@ -82,11 +82,11 @@ function lookedAt(world: BlockWorld<any>, me: Body, cell: Cell): string {
     // Only ground (or water). If the ground is not flat, or its top has a name, that is said.
     const high = world.height(cell), top = world.top(cell), named = top ? world.blockKind(top)!.called : undefined;
     const ground = under === 'water' ? 'There is only water.'
-      : high === 0 && !named ? `There is nothing at ${at(cell)}, only ground.`
-      : `At ${at(cell)} the ground is ${high < 0 ? `${-high} deep` : high === 0 ? 'level' : `${high} high`}.${named ? ` On top is a ${named}.` : ''}`;
+      : high === 0 && !named ? `There is nothing at ${world.at(me, cell)}, only ground.`
+      : `At ${world.at(me, cell)} the ground is ${high < 0 ? `${-high} deep` : high === 0 ? 'level' : `${high} high`}.${named ? ` On top is a ${named}.` : ''}`;
     return ground + spot + who;
   }
-  let said = `At ${at(cell)}, ${world.height(cell)} high, over ${under}.${spot}`;
+  let said = `At ${world.at(me, cell)}, ${world.height(cell)} high, over ${under}.${spot}`;
   if (made) said += ` Blocks there, by level: ${made}${names(world, me, cell).replace(/, the place you call .*/, '')}.`;
   if (items.length) {
     const top = items.at(-1)!;
@@ -112,6 +112,7 @@ const called = (world: BlockWorld<any>, me: Body, thing: Item | Place | Cell) =>
 const holding = (world: BlockWorld<any>, body: Body) => (body.hand ? `, holding a ${world.called(body.hand)}` : '');
 
 interface Seen {
+  /** What is worth telling of each cell in sight, by the cell ("2,1"). */
   stacks: Map<string, string>;
   water: Map<string, string>;
   beings: string[];
@@ -134,7 +135,7 @@ function around(world: BlockWorld<any>, me: Body): Seen {
       if (same(cell, me.cell)) continue;
       const column = world.column(cell), lying = world.items(cell).length;
       const worth = lying || inner(world).nameFor(me, cell) || column.some(([, kind]) => !world.blockKind(kind)!.ground) || (column.length && world.height(cell) < 0);
-      if (worth) stacks.set(at(cell), described(world, me, cell) + (lying ? ` with ${pile(world, me, cell)} on top` : ''));
+      if (worth) stacks.set(String(cell), described(world, me, cell) + (lying ? ` with ${pile(world, me, cell)} on top` : ''));
     }
   }
   // How much there is to stand on in each direction before the water, if the water is in sight.
@@ -148,12 +149,15 @@ function around(world: BlockWorld<any>, me: Body): Seen {
   // The others in sight. (Nothing is said if nobody is: an agent is not told it has company.)
   const others = world.bodies().filter(other => other !== me && Math.abs(other.cell[0] - x) <= reach && Math.abs(other.cell[1] - y) <= reach);
   const beings = others
-    .map(other => `${someone(world, me, other)} is at ${at(other.cell)}${world.height(other.cell) ? `, ${world.height(other.cell)} high` : ''}${holding(world, other)}.`);
+    .map(other => `${someone(world, me, other)} is at ${world.at(me, other.cell)}${world.height(other.cell) ? `, ${world.height(other.cell)} high` : ''}${holding(world, other)}.`);
   const lying = world.items(me.cell);
-  const said = lying.length ? pile(world, me, me.cell) : '';
-  const feet = said ? ` ${said[0]!.toUpperCase()}${said.slice(1)} ${lying.length === 1 ? 'lies' : 'lie'} at your feet.` : '';
+  const heap = lying.length ? pile(world, me, me.cell) : '';
+  const feet = heap ? ` ${heap[0]!.toUpperCase()}${heap.slice(1)} ${lying.length === 1 ? 'lies' : 'lie'} at your feet.` : '';
   return { stacks, water, beings, who: new Set(others.map(other => other.id)), also: inner(world).definition.alsoSeen?.(world, me) ?? [], feet, at: me.cell, reach };
 }
+
+/** A cell that is remembered as "2,1", as it is said to a body. */
+const said = (world: BlockWorld<any>, me: Body, cell: string) => world.at(me, cell.split(',').map(Number) as unknown as Cell);
 
 /** What is in sight now that was not when the body last saw its surroundings, in lines.
  *  `keep`: from now on, this is what it has seen. */
@@ -161,11 +165,11 @@ export function glimpse(world: BlockWorld<any>, me: Body, keep: boolean): string
   const before = inner(world).sawLast.get(me) as Seen | undefined;
   const now = around(world, me);
   const [x, y] = now.at;
-  const fresh = [...now.stacks].filter(([cell, text]) => before?.stacks.get(cell) !== text).map(([cell, text]) => `${cell}: ${text}`);
+  const fresh = [...now.stacks].filter(([cell, text]) => before?.stacks.get(cell) !== text).map(([cell, text]) => `${said(world, me, cell)}: ${text}`);
   const gone = [...(before?.stacks.keys() ?? [])].filter(cell => {
-    const [cx, cy] = cell.slice(1, -1).split(', ').map(Number) as [number, number];
+    const [cx, cy] = cell.split(',').map(Number) as [number, number];
     return !now.stacks.has(cell) && !(cx === x && cy === y) && Math.abs(cx - x) <= now.reach && Math.abs(cy - y) <= now.reach;
-  });
+  }).map(cell => said(world, me, cell));
   const water = [...now.water].filter(([direction, text]) => before?.water.get(direction) !== text).map(([direction, text]) => `${direction}: ${text}`);
   const known = [...(before?.beings ?? []), ...(before?.also ?? [])];
   const lines = [
@@ -183,9 +187,9 @@ export function glimpse(world: BlockWorld<any>, me: Body, keep: boolean): string
  *  its sight is news too, but not worth ending a wait for.) */
 export function startles(world: BlockWorld<any>, me: Body): boolean {
   const before = inner(world).sawLast.get(me) as Seen | undefined, now = around(world, me);
-  const said = glimpse(world, me, false);
+  const lines = glimpse(world, me, false);
   const moved = now.beings.filter(line => !before?.beings.includes(line));
-  return said.length > moved.length || [...now.who].some(id => !before?.who.has(id));
+  return lines.length > moved.length || [...now.who].some(id => !before?.who.has(id));
 }
 
 /** What it sees now is what it has seen: nothing of it is news any more. */
@@ -211,7 +215,8 @@ export function surroundings(world: BlockWorld<any>, me: Body): string {
   return [
     world.where(me) + seen.feet,
     `You carry: ${me.hand ? `a ${world.called(me.hand)}${called(world, me, me.hand)}` : 'nothing'}.`,
-    `Stacks in sight (up to ${seen.reach} away), as position: height: ${[...seen.stacks].map(([cell, text]) => `${cell}: ${text}`).join(', ') || 'none'}.`,
+    seen.stacks.size ? `Around you, as far as you see (${seen.reach} steps), each place with its height: ${[...seen.stacks].map(([cell, text]) => `${said(world, me, cell)}: ${text}`).join(', ')}.`
+      : `Nothing stands or lies around you, as far as you see (${seen.reach} steps).`,
     `Water in sight: ${[...seen.water].map(([direction, text]) => `${direction}: ${text}`).join('; ') || 'none'}.`,
     ...seen.beings,
     ...seen.also,
@@ -220,8 +225,12 @@ export function surroundings(world: BlockWorld<any>, me: Body): string {
 
 // ---------------------------------------------------------------- pointing at things
 
+/** Stands, in what agents are told about a verb's arguments, for a position as it is said
+ *  in this world: "(2, 1)", or "(2 east, 1 north)" (see places.ts). */
+export const POSITION = '{a position}';
+
 /** How an agent says what a verb is done to. */
-export const WHAT = { type: 'text', about: 'a position like "(2, 1)", or "here", or "hand", or a name you gave something' } as const;
+export const WHAT = { type: 'text', about: `a position like ${POSITION}, or "here", or "hand", or a name you gave something` } as const;
 
 /** What an agent pointed at. */
 export interface Target {
@@ -243,13 +252,13 @@ export interface Target {
 export function aim(world: BlockWorld<any>, me: Body, said: string, within: 'reach' | 'sight' = 'reach'): Target | string {
   const text = said.trim();
   let target: Target;
-  const position = text.match(/^\(?\s*(-?\d+)\s*[,;\s]\s*(-?\d+)\s*\)?$/);
+  const { places } = inner(world), position = places.meant(me.cell, text);
   if (/^(my |the )?hand$/i.test(text)) return { hand: true, cell: me.cell };
   if (/^here$/i.test(text)) target = { hand: false, cell: me.cell };
-  else if (position) target = { hand: false, cell: [Number(position[1]), Number(position[2])] };
+  else if (position) target = { hand: false, cell: position };
   else {
     const thing = inner(world).named(me, text);
-    if (!thing) return `You have given nothing the name "${text}". Say what you mean by a position like "(2, 1)", by "here", by "hand", or by a name you gave.`;
+    if (!thing) return `You have given nothing the name "${text}". Say what you mean by a position like ${places.example}, by "here", by "hand", or by a name you gave.`;
     if ('item' in thing) {
       if (me.hand === thing.item) return { hand: true, cell: me.cell };
       const lies = inner(world).whereLies(thing.item);
@@ -261,7 +270,7 @@ export function aim(world: BlockWorld<any>, me: Body, said: string, within: 'rea
   }
   const dx = Math.abs(target.cell[0] - me.cell[0]), dy = Math.abs(target.cell[1] - me.cell[1]);
   if (within === 'sight' ? Math.max(dx, dy) > world.sight(me) : dx + dy > 1)
-    return within === 'sight' ? 'That is out of your sight.' : `${at(target.cell)} is out of your reach: you reach where you stand and one step north, south, east or west of it. ${world.where(me)}`;
+    return within === 'sight' ? 'That is out of your sight.' : `${world.at(me, target.cell)} is out of your reach: you reach where you stand and one step north, south, east or west of it. ${world.where(me)}`;
   return target;
 }
 
@@ -323,7 +332,7 @@ function doneTo(name: string, made: VerbTo, world: BlockWorld<any>, me: Body, ar
     const bare = (other: Thing) => !!other.block && !!(other.kind as BlockKind).ground;
     const first = things.find(other => !other.body && !bare(other)) ?? things[0]!;
     const named = first.body ? someone(world, me, first.body, true) : `a ${first.called}`;
-    return why || (bare(first) ? `There is nothing to ${name} at ${at(cell)}.` : `You cannot ${name} ${named}.`);
+    return why || (bare(first) ? `There is nothing to ${name} at ${world.at(me, cell)}.` : `You cannot ${name} ${named}.`);
   }
   if (!thing.inHand) {
     const out = outOfReach(world, me, cell, !!thing.block);
@@ -334,12 +343,15 @@ function doneTo(name: string, made: VerbTo, world: BlockWorld<any>, me: Body, ar
 
 /** The verbs of a world as the engine hands them to the agents: as tools. A verb that is
  *  done to a thing gets the argument `what`, and is left out if no kind of the world lets
- *  it be done. `on` says, for the start screen, what such a verb can be done to. */
-export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<string, BlockKind | ItemKind>; creatures: Record<string, CreatureKind>; agent: AgentKind }): Record<string, Tool<BlockWorld<any>, Body, any> & { on?: string[] }> {
+ *  it be done. `on` says, for the start screen, what such a verb can be done to. What the
+ *  agents are told about the arguments speaks of positions the way this world says them. */
+export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<string, BlockKind | ItemKind>; creatures: Record<string, CreatureKind>; agent: AgentKind }, places: Places): Record<string, Tool<BlockWorld<any>, Body, any> & { on?: string[] }> {
   const tools: ReturnType<typeof asTools> = {};
+  const told = (args: Record<string, any>) => Object.fromEntries(Object.entries(args).map(([name, arg]) =>
+    [name, arg.about ? { ...arg, about: arg.about.replaceAll(POSITION, places.example) } : arg]));
   for (const [name, made] of Object.entries(verbs)) {
     if (made.to !== 'thing') {
-      tools[name] = { about: made.about, args: made.args, needed: made.needed, run: (world, me, args) => made.does(world, me, args) };
+      tools[name] = { about: made.about, args: told(made.args), needed: made.needed, run: (world, me, args) => made.does(world, me, args) };
       continue;
     }
     const can = (kind: Kind, somebody: boolean) => typeof deed(name, made, kind, somebody) === 'function';
@@ -349,7 +361,7 @@ export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<str
       ...(can(kinds.agent, true) ? ['other agents'] : []),
     ];
     if (!on.length) continue;
-    tools[name] = { about: made.about, args: { what: WHAT, ...made.args }, needed: made.needed, on: made.usually ? undefined : on,
+    tools[name] = { about: made.about, args: told({ what: WHAT, ...made.args }), needed: made.needed, on: made.usually ? undefined : on,
                     run: (world, me, args: { what: string }) => doneTo(name, made, world, me, args) };
   }
   return tools;
@@ -388,17 +400,17 @@ const walk = verb({
         // Several steps at once stop at the edge: agents walked on without looking again
         // and drowned. Only a single step, asked for as such, goes into the water.
         if (steps > 1) return `${done ? `You walked ${walked(done)} ${direction} and stopped` : 'You did not move'}: the next step ${direction} is water. ${news(world, me)}`;
-        if (world.top(ahead)) return `You cannot stand on the ${world.called(world.top(ahead)!)} at ${at(ahead)}. ${world.where(me)}`;
+        if (world.top(ahead)) return `You cannot stand on the ${world.called(world.top(ahead)!)} at ${world.at(me, ahead)}. ${world.where(me)}`;
         world.move(me, ahead);
         return `You stepped ${direction}, off the land. ${world.die(me, 'You are in the water. You drown.')}`;
       }
       const there = world.bodyAt(ahead);
-      if (there) return `${done ? `You walked ${walked(done)} ${direction}. Then ${someone(world, me, there, true)}` : someone(world, me, there)} at ${at(ahead)} is in your way. ${news(world, me)}`;
+      if (there) return `${done ? `You walked ${walked(done)} ${direction}. Then ${someone(world, me, there, true)}` : someone(world, me, there)} at ${world.at(me, ahead)} is in your way. ${news(world, me)}`;
       const rise = world.height(ahead) - world.height(me.cell);
       if (rise > (inner(world).definition.climb ?? 0)) {
         const before = done ? `You walked ${walked(done)} ${direction}. Then ` : '';
-        const what = world.blockKind(world.top(ahead)!)!.ground ? `the ground at ${at(ahead)} rises ${rise}: too steep to walk up`
-          : `a stack ${world.height(ahead)} high at ${at(ahead)} is in your way`;
+        const what = world.blockKind(world.top(ahead)!)!.ground ? `the ground at ${world.at(me, ahead)} rises ${rise}: too steep to walk up`
+          : `a stack ${world.height(ahead)} high at ${world.at(me, ahead)} is in your way`;
         return `${before}${before ? what : what[0]!.toUpperCase() + what.slice(1)}. ${news(world, me)}`;
       }
       world.move(me, ahead);
@@ -430,8 +442,8 @@ const jump = verb({
     }
     if (!landing && wall) {
       const there = world.bodyAt(wall);
-      return there ? `${someone(world, me, there)} at ${at(wall)} is in your way. ${world.where(me)}`
-        : `You jumped ${strength} high, but the stack at ${at(wall)} is ${world.height(wall) - own} above you. ${world.where(me)}`;
+      return there ? `${someone(world, me, there)} at ${world.at(me, wall)} is in your way. ${world.where(me)}`
+        : `You jumped ${strength} high, but the stack at ${world.at(me, wall)} is ${world.height(wall) - own} above you. ${world.where(me)}`;
     }
     if (!landing) {
       world.move(me, [me.cell[0] + dx, me.cell[1] + dy]);
@@ -477,7 +489,7 @@ const take = verbTo({
 
 const put = verb({
   about: 'Put down what you carry.',
-  args: { where: { type: 'text', about: 'a position like "(2, 1)", or "here", or a name you gave a place or a thing there' } },
+  args: { where: { type: 'text', about: `a position like ${POSITION}, or "here", or a name you gave a place or a thing there` } },
   does(world, me, { where }) {
     const thing = me.hand;
     if (!thing) return 'You carry nothing.';
@@ -496,7 +508,7 @@ const put = verb({
       const out = outOfReach(world, me, cell);
       if (out) return (me.hand = thing, out);
       world.drop(thing, cell);
-      return `You put the ${world.called(thing)} down at ${at(cell)}. ${world.where(me)}`;
+      return `You put the ${world.called(thing)} down at ${world.at(me, cell)}. ${world.where(me)}`;
     }
     const out = world.column(cell).length ? outOfReach(world, me, cell) : null;
     if (out) return out;
@@ -512,7 +524,7 @@ const put = verb({
     const how = rest[2] === -1 ? (world.blockKind(thing.kind)!.floats ? 'It floats in the water, level with the ground.' : 'It sticks to the side of the land, level with the ground.')
       : rest[2] > before ? `It sticks there, ${rest[2] + 1} high, with nothing under it.`
       : `The stack there is ${world.height(cell)} high.`;
-    return `You put the block down at ${at(cell)}. ${how}${said} ${world.where(me)}`;
+    return `You put the block down at ${world.at(me, cell)}. ${how}${said} ${world.where(me)}`;
   },
 });
 
@@ -547,7 +559,7 @@ const throwIt = verb({
         path.push([cell[0] + 0.5, cell[1] + 0.5, world.height(cell) + HAND]);
         flight.caught = true;
         world.notice(catcher, `You caught a ${world.called(thing)} that ${someone(world, catcher, me, true)} threw.`);
-        return `${someone(world, me, catcher)} at ${at(cell)} caught it.`;
+        return `${someone(world, me, catcher)} at ${world.at(me, cell)} caught it.`;
       }
       const mine = same(cell, me.cell);
       if (!isBlock) {
@@ -559,7 +571,7 @@ const throwIt = verb({
         }
         path.push([cell[0] + 0.5, cell[1] + 0.5, world.height(cell)]);
         world.drop(thing, cell);
-        return mine ? `It landed at your feet. ${world.where(me)}` : `It landed at ${at(cell)}.`;
+        return mine ? `It landed at your feet. ${world.where(me)}` : `It landed at ${world.at(me, cell)}.`;
       }
       const rest = world.release([cell[0], cell[1], Math.max(world.height(cell), 0)], thing.kind);
       if (!rest) {
@@ -571,7 +583,7 @@ const throwIt = verb({
       inner(world).carryName(thing, rest);
       const said = inner(world).react(world.blockKind(thing.kind)!.on?.landed, { at: rest, by: me, power, from });
       const how = rest[2] === -1 ? ' It floats in the water, level with the ground.' : ` The stack there is ${world.height(cell)} high.`;
-      return `It landed at ${at(cell)}.${how}${said}${mine ? ` ${world.where(me)}` : ''}`;
+      return `It landed at ${world.at(me, cell)}.${how}${said}${mine ? ` ${world.where(me)}` : ''}`;
     };
 
     let over = me.cell;   // the cell it is flying over
@@ -594,13 +606,13 @@ const throwIt = verb({
           world.setBlock([over[0], over[1], level], thing.kind);
           inner(world).carryName(thing, [over[0], over[1], level]);
           path.push([over[0] + 0.5, over[1] + 0.5, level + 0.5]);
-          return done(`It stuck to the side of the block at ${at(beside)} and hangs at ${at(over)}, ${level + 1} high.`);
+          return done(`It stuck to the side of the block at ${world.at(me, beside)} and hangs at ${world.at(me, over)}, ${level + 1} high.`);
         }
       }
       if (!same(ahead, over)) {
         // Flew into the side of a stack: drops in front of it. (Only a real stack has a side.)
         if (world.height(ahead) > 0 && z < world.height(ahead) && world.column(ahead).length)
-          return done(`It hit the side of the stack at ${at(ahead)} and dropped. ${comeDown(over)}`);
+          return done(`It hit the side of the stack at ${world.at(me, ahead)} and dropped. ${comeDown(over)}`);
         over = ahead;
       }
       if (z <= world.height(over)) return done(comeDown(over));   // came down on top of whatever is there
@@ -635,7 +647,7 @@ const name = verb({
   does(world, me, args) {
     const given = args.name.trim().slice(0, 40), names = inner(world);
     if (!given) return 'Name is missing.';
-    if (/^(here|hand|around)$/i.test(given) || /^\(?\s*-?\d+\s*[,;\s]\s*-?\d+\s*\)?$/.test(given)) return 'That cannot be a name: it already means something.';
+    if (/^(here|hand|around)$/i.test(given) || names.places.meant(me.cell, given)) return 'That cannot be a name: it already means something.';
     const target = aim(world, me, args.what, 'sight');
     if (typeof target === 'string') return target;
     if (target.hand) {
@@ -653,19 +665,19 @@ const name = verb({
     if (there && there !== me) {
       const before = someone(world, me, there, true);
       names.callIt(me, there, given);
-      return `You call ${before} at ${at(cell)} "${given}" now.`;
+      return `You call ${before} at ${world.at(me, cell)} "${given}" now.`;
     }
     if (lying) {
       names.callIt(me, lying, given);
-      return `You call the ${world.called(lying)} at ${at(cell)} "${given}" now.`;
+      return `You call the ${world.called(lying)} at ${world.at(me, cell)} "${given}" now.`;
     }
     if (!top) return 'There is only water.';
     if (!world.blockKind(top[1])!.ground) {
       names.callIt(me, [cell[0], cell[1], top[0]], given);
-      return `You call the ${world.called(top[1])} at ${at(cell)} "${given}" now.`;
+      return `You call the ${world.called(top[1])} at ${world.at(me, cell)} "${given}" now.`;
     }
     names.callIt(me, cell, given);
-    return `You call the place ${at(cell)} "${given}" now.`;
+    return `You call the place ${world.at(me, cell)} "${given}" now.`;
   },
 });
 
@@ -676,7 +688,7 @@ const destroy = verbTo({
     if (thing.body) return world.die(thing.body, 'You were destroyed.') && `You destroyed ${someone(world, me, thing.body, true)}.`;
     if (thing.item) world.removeItem(thing.item);
     else world.removeBlock(thing.block!);
-    return `You destroyed the ${thing.called}${thing.inHand ? ' in your hand' : ` at ${at(thing.cell)}`}. It is gone.`;
+    return `You destroyed the ${thing.called}${thing.inHand ? ' in your hand' : ` at ${world.at(me, thing.cell)}`}. It is gone.`;
   },
 });
 
@@ -690,34 +702,34 @@ const push = verbTo({
     if (thing.inHand) return 'You hold it.';
     if (!dx && !dy) return 'You cannot push what is under you.';
     const to: Cell = [x + dx, y + dy], behind = world.bodyAt(to);
-    if (behind) return `${someone(world, me, behind)} at ${at(to)} is in the way.`;
+    if (behind) return `${someone(world, me, behind)} at ${world.at(me, to)} is in the way.`;
     if (thing.body) {
       const other = thing.body, who = someone(world, me, other, true), pusher = someone(world, other, me);
       if (world.column(to).length && (!world.standable(to) || world.height(to) > world.height(thing.cell)))
-        return `You pushed ${who}, but what is at ${at(to)} is in the way.`;
+        return `You pushed ${who}, but what is at ${world.at(me, to)} is in the way.`;
       world.move(other, to);
       if (!world.standable(to)) {
         world.die(other, `${pusher} pushed you into the water. You drown.`);
         return `You pushed ${who} into the water.`;
       }
       world.notice(other, `${pusher} pushed you. ${world.where(other)}`);
-      return `You pushed ${who} to ${at(to)}.`;
+      return `You pushed ${who} to ${world.at(me, to)}.`;
     }
     if (thing.item) {
       world.removeItem(thing.item);
       world.drop(thing.item, to);
-      return `You pushed the ${thing.called} to ${at(to)}.${world.column(to).length ? '' : ' It fell into the water and is gone.'}`;
+      return `You pushed the ${thing.called} to ${world.at(me, to)}.${world.column(to).length ? '' : ' It fell into the water and is gone.'}`;
     }
     const place = thing.block!, kind = world.block(place)!, moving = { kind };
     if (world.bodyAt(thing.cell)) return 'Somebody stands on it.';
-    if (world.height(to) > place[2]) return `You pushed the ${thing.called}, but what is at ${at(to)} is in the way.`;
+    if (world.height(to) > place[2]) return `You pushed the ${thing.called}, but what is at ${world.at(me, to)} is in the way.`;
     inner(world).carryName(place, moving);   // (what it was called, it is still called where it comes to rest)
     world.removeBlock(place);
     const rest = world.release([to[0], to[1], place[2]], kind);
     if (!rest) return `You pushed the ${thing.called} into the water. It sinks and is gone.`;
     inner(world).carryName(moving, rest);
     const how = rest[2] === -1 ? 'It floats in the water, level with the ground.' : `The stack there is ${world.height(to)} high.`;
-    return `You pushed the ${thing.called} to ${at(to)}. ${how}`;
+    return `You pushed the ${thing.called} to ${world.at(me, to)}. ${how}`;
   },
 });
 

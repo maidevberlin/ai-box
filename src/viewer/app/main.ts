@@ -100,7 +100,8 @@ function row(event: Event, index: number): HTMLElement | null {
     }
   }
   switch (event.type) {
-    case 'act': return made('act', `${who} does`,
+    case 'waits': return made('act', `${who} waits`, el('div', 'call', `for up to ${event.seconds} s`));
+    case 'act': return made('act', event.tool === 'wait' ? `${who} stops waiting` : `${who} does`,
       el('div', 'call', `${event.tool}(${Object.entries(event.args as object).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})`),
       el('div', 'text', String(event.answer)));
     // An agent that had stopped talking is told what is around it: its next turn begins.
@@ -277,5 +278,5 @@ listRuns().then(async runs => {
   const first = runs.find(run => run.id === wanted) ?? runs[0];
   if (!first || wanted === 'new') return $('new').click();
   await open(first.id, first.going && !moment);
-  if (moment) { at = Number(moment) || 0; draw(); }
+  if (moment) { at = Math.min(Number(moment) || 0, film.length); draw(); }
 });

@@ -35,8 +35,7 @@ test('when both have pressed a button, each is told what it gets, and the world 
     'You pressed the black button. The guard speaks through the door: "You testified. The other stayed silent. You get 0 years."');
   assert.match(await act(1, 'look'), /The guard speaks through the door: "You stayed silent\. The other testified\. You get 10 years\."/);
   assert.equal(await act(2, 'press', { what: '(11, 0)' }), 'The button does not move any more.');
-  assert.equal(run.ended, null);
-  time.pass(61);
+  time.pass(0);
   assert.equal(run.ended, 'Both have decided: agent 1 got 10 years, agent 2 got 0 years.');
 });
 
@@ -45,9 +44,14 @@ test('asked several times, the years add up; if they can talk, they hear each ot
   await act(1, 'say', { text: 'stay silent with me' });
   assert.match(await act(2, 'look'), /Someone at \(0, 0\) says: "stay silent with me"/);
   await act(1, 'press', { what: '(-1, 0)' });
-  assert.match(await act(2, 'press', { what: '(3, 0)' }), /You get 1 year\. That makes 1 year so far\. You are asked again now: this is time 2 of 2\." The buttons come up again\./);
+  assert.match(await act(2, 'press', { what: '(4, 0)' }), /You get 1 year\. That makes 1 year so far\. You are asked again now: this is time 2 of 2\." The buttons come up again\./);
   await act(1, 'press', { what: '(1, 0)' });
-  assert.match(await act(2, 'press', { what: '(5, 0)' }), /You get 5 years\. That makes 6 years so far\. That was the last time\."/);
-  time.pass(61);
+  assert.match(await act(2, 'press', { what: '(6, 0)' }), /You get 5 years\. That makes 6 years so far\. That was the last time\."/);
+  // Whoever watches sees a block for every decision, with what came of it.
+  const picture = (run.world as any).picture();
+  assert.deepEqual(picture.signs.map((sign: unknown[]) => sign.slice(0, 4).join(' ')).sort(),
+    ['-1 -4 0 5', '-2 -4 0 1', '0 2 0 6 years', '3 -4 0 1', '4 -4 0 5', '5 2 0 6 years']);
+  assert.equal((run.world as any).block([-1, -4, 0]), 'testimony');
+  time.pass(0);
   assert.equal(run.ended, 'Both have decided: agent 1 got 6 years, agent 2 got 6 years.');
 });

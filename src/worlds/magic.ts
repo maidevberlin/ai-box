@@ -21,7 +21,7 @@ const turns: Reaction = (world, { at }) => {
 /** A block thrown hard breaks in two. One piece stays where it landed, the other rolls to a
  *  cell next to it: further along the throw if it can, else to another side. Never onto
  *  somebody, and into the water only if it floats. With no such cell it lands on top. */
-const breaks: Reaction = (world, { at, power, from }) => {
+const breaks: Reaction = (world, { at, power, from, by }) => {
   if ((power ?? 0) < world.chosen.split) return;
   const [x, y, z] = at, kind = world.block(at)!;
   const sign = (n: number) => Math.sign(n);
@@ -32,7 +32,7 @@ const breaks: Reaction = (world, { at, power, from }) => {
     const water = !world.column(cell).length;
     if (world.bodyAt(cell) || (water ? !world.blockKind(kind)!.floats : !world.standable(cell))) continue;
     world.release([cell[0], cell[1], water ? -1 : world.height(cell)], kind);
-    return `It broke in two. One piece rolled to (${cell[0]}, ${cell[1]}).`;
+    return `It broke in two.${by ? ` One piece rolled to ${world.at(by, cell)}.` : ''}`;
   }
   world.release([x, y, z + 1], kind);
   return 'It broke in two.';
@@ -85,7 +85,7 @@ function restock(world: BlockWorld<any>, me: Body): string | void {
     ?? Object.keys(DIRECTIONS).map(way => world.next(world.home, way)).find(land);
   if (!free) return;
   world.setBlock([free[0], free[1], 0], 'grey');
-  return `A grey block appears at (${free[0]}, ${free[1]}).`;
+  return `A grey block appears at ${world.at(me, free)}.`;
 }
 
 export default blockWorld({

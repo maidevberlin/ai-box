@@ -53,7 +53,7 @@ const dugOut: Deed = (world, me, thing) => {
   if (world.block([x, y, z - 1]) === 'soil') growOver(world, [x, y, z - 1]);   // the soil under it lies bare now
   me.hand = { kind: 'soil' };
   if (world.chosen.hunger) me.has.strength = me.has.strength! - 1;   // digging is hard work
-  return `You dug out the ground at (${x}, ${y}). You hold a ${world.called('soil')} now. ${world.where(me)}`;
+  return `You dug out the ground at ${world.at(me, thing.cell)}. You hold a ${world.called('soil')} now. ${world.where(me)}`;
 };
 
 // The world's own verbs. What they do is written with the kinds they can be done to.
