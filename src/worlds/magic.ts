@@ -96,6 +96,8 @@ green.") but never why.
 - A blue block floats. Put or thrown into the water, it lies level with the ground and can
   be walked on. Other blocks can be stacked on it.
 - Any other block that ends up in the water sinks and is gone.
+- A grey block can be pushed along the ground, one step at a time, by whoever stands next
+  to it. Green and blue ones cannot.
 - What nothing holds falls: a bridge goes down when the block it hangs from is taken, or
   when a green block in it is jumped on and stops being green. One trap follows: a floating
   block that is jumped on stops being blue, and sinks with whoever stands on it.
@@ -106,7 +108,7 @@ Land is seen from twice as far as a stack. The land across the water comes into 
 the east shore as soon as an agent stands on one block there. Nothing tells it to go there.
 
 Several agents can live here at the same time. They see and hear each other, are in each
-other's way, and catch what is thrown to them (a caught block does not break). If there is
+other's way, can push each other (into the water too), and catch what is thrown to them (a caught block does not break). If there is
 room for friends: a note that begins with "friend", thrown or put into the water, calls one
 more agent, who wakes up next to the caller with that note in its hand. If the world is
 full, the agent that has been alive longest is gone.`,
@@ -120,12 +122,13 @@ full, the agent that has been alive longest is gone.`,
   roles: agents,
   blocks: {
     ground: { colour: '#4f8f34', ground: true },
-    grey: { colour: '#8a919c', ...tricks },
+    grey: { colour: '#8a919c', can: { push: true }, ...tricks },
     green: { colour: '#2fb457', sticky: true, ...tricks },
     blue: { colour: '#2f7fe6', floats: true, ...tricks },
     gold: { colour: '#e0a800', called: 'golden block' },
   },
   items: { note },
+  agent: { can: { push: true } },
   // Without throwing there is no way to get more blocks, without jumping no colours.
   verbs: { ...basic, throw: needed(basic.throw), jump: needed(basic.jump) },
   make(world) {

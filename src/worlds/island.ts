@@ -7,7 +7,8 @@ export default blockWorld({
   about: `A flat, square island with a few loose blocks, surrounded by water.
 
 Agents can look, walk, jump, carry, throw, write notes and destroy them, talk, give things
-names, and leave for good. They are told nothing about the island. Who steps into the water drowns.
+names, push each other, and leave for good. They are told nothing about the island. Who steps or is pushed
+into the water drowns.
 
 If there is room for friends: a note that begins with "friend", thrown or put into the
 water, calls one more agent. It wakes up next to the caller with that note in its hand. If
@@ -25,6 +26,7 @@ this, unless the note that lies in the world from the start does.`,
     grey: { colour: '#8a919c' },
   },
   items: { note },
+  agent: { can: { push: true } },
   verbs: basic,
   make(world) {
     const cells = world.square(world.chosen.size);

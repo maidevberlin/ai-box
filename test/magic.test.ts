@@ -140,3 +140,31 @@ test('a note that begins with "friend", thrown into the water, calls a friend', 
   assert.equal(run.agent(2), null);
   assert.equal(world.bodies().length, 1);
 });
+
+test('a grey block can be pushed along, and agents can push each other, into the water too', async () => {
+  const first = (answer: string) => answer.split('\n')[0];   // (what is new in sight comes after)
+  const { act, world, run } = started({ count: 2, followed: false });
+  const one = world.bodies().find(body => body.agent?.place === 1)!, two = world.bodies().find(body => body.agent?.place === 2)!;
+  one.cell = [1, 1]; two.cell = [0, -3];
+  // The block moves one step away from whoever pushes it, and keeps the name it was given.
+  await act('name', { name: 'Rocky', what: '(2, 1)' });
+  assert.equal(first(await act('push', { what: '(2, 1)' })), 'You pushed the grey block to (3, 1). The stack there is 1 high.');
+  assert.equal(world.block([3, 1, 0]), 'grey');
+  assert.equal(world.block([2, 1, 0]), undefined);
+  assert.match(await act('look'), /\(3, 1\): 1 \(grey\), the top one called "Rocky"/);
+  // Not what is under you, not a block of another colour, not against something in the way.
+  world.setBlock([1, 2, 0], 'green');
+  assert.equal(first(await act('push', { what: '(1, 2)' })), 'You cannot push a green block.');
+  one.cell = [2, 1];
+  world.setBlock([4, 1, 0], 'green');
+  assert.equal(first(await act('push', { what: '(3, 1)' })), 'You pushed the grey block, but what is at (4, 1) is in the way.');
+  // Somebody who is pushed is told, and stands a step further.
+  one.cell = [0, -2];
+  assert.equal(first(await act('push', { what: '(0, -3)' })), 'You pushed someone to (0, -4).');
+  assert.deepEqual([...two.cell], [0, -4]);
+  assert.match(await run.act(2, 'look', { what: 'hand' }), /Someone pushed you\. You are at \(0, -4\)/);
+  // ... and over the edge is the water.
+  one.cell = [0, -17]; two.cell = [0, -18];
+  assert.equal(first(await act('push', { what: '(0, -18)' })), 'You pushed someone into the water.');
+  assert.match(String(run.events.find(event => event.type === 'death')!.why), /Someone pushed you into the water\. You drown\./);
+});

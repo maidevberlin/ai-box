@@ -639,7 +639,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
  *  a thing and that no kind of the world allows. */
 function tools<S extends Settings>(definition: BlockWorldDefinition<S>, chosen: Chosen<S>): ReturnType<typeof asTools> {
   const verbs = typeof definition.verbs === 'function' ? definition.verbs(chosen) : definition.verbs;
-  return asTools(verbs, { ...definition.blocks, note: NOTE, ...definition.items });
+  return asTools(verbs, { things: { ...definition.blocks, note: NOTE, ...definition.items }, creatures: definition.creatures ?? {}, agent: definition.agent ?? {} });
 }
 
 /** A world built on the block base, ready for the engine. */

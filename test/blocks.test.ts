@@ -1,7 +1,7 @@
 // The block base and the engine, tried without any AI: the test acts as the agents.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { basic, blockWorld, type BlockWorld, type Body } from '../src/blocks/index.ts';
+import { basic, blockWorld, verbTo, type BlockWorld, type Body } from '../src/blocks/index.ts';
 import { Run, type RunOptions } from '../src/engine/run.ts';
 import { testTime } from '../src/engine/time.ts';
 import { act as say } from './help.ts';
@@ -114,6 +114,48 @@ test('what a verb can be done to is up to the kind: only a note can be destroyed
   }) as ReturnType<typeof strip>);
   assert.equal('destroy' in bare.run.tools(1), false);
   assert.equal('destroy' in run.tools(1), true);
+});
+
+test('a verb can be done to somebody, if their kind says what happens then', async () => {
+  const pet = verbTo({ about: 'Pet somebody.' });
+  const push = verbTo({ about: 'Push somebody.' });
+  const { act, world, run } = started(blockWorld({
+    name: 'meadow', title: 'Meadow', about: '', settings: {}, minutes: 0, roles: () => ({ agent: agent({ count: 2 }) }),
+    blocks: { ground: { colour: '#0a0', ground: true } },
+    creatures: {
+      sheep: { colour: '#fff', called: 'sheep', every: 1000, does: () => {}, can: { pet: () => 'The sheep leans against you.', push: 'The sheep does not move.' } },
+    },
+    agent: {
+      can: {
+        push(world, me, other) {
+          world.notice(other.body!, 'Someone pushed you.');
+          return `You pushed ${other.called}.`;
+        },
+      },
+    },
+    verbs: { ...basic, pet, push },
+    make(world) {
+      for (const cell of world.square(7)) world.setBlock([cell[0], cell[1], -1], 'ground');
+      world.spawn('sheep', [0, 1]);
+    },
+  }) as ReturnType<typeof strip>);
+  const [one, two] = [me(world, 1), me(world, 2)];
+  one.cell = [0, 0]; two.cell = [1, 0];
+  // What a creature lets be done to it, and what not, is written with the creature.
+  assert.equal(await act('pet', { what: '(0, 1)' }), 'The sheep leans against you.');
+  assert.equal(await act('push', { what: '(0, 1)' }), 'The sheep does not move.');
+  assert.equal(await act('pet', { what: '(1, 0)' }), 'You cannot pet someone.');
+  // ... and what agents can do to each other, with the world's kind of agent.
+  assert.equal(await act('push', { what: '(1, 0)' }), 'You pushed someone.');
+  assert.match(await act('look', { what: 'hand' }, 2), /Someone pushed you\./);
+  await act('name', { name: 'Robin', what: '(1, 0)' });
+  assert.equal(await act('push', { what: 'Robin' }), 'You pushed Robin.');
+  // Where nobody stands, it is about what is there. Verbs that usually go one way are not for somebody.
+  assert.equal(await act('pet', { what: '(-1, 0)' }), 'There is nothing to pet at (-1, 0).');
+  assert.equal(await act('destroy', { what: '(0, 1)' }), 'You cannot destroy a sheep.');
+  world.drop({ kind: 'note', text: 'under the sheep' }, [0, 1]);
+  assert.match(await act('take', { what: '(0, 1)' }), /You took a note\./);
+  assert.deepEqual([run.tools(1).pet !== undefined, run.tools(1).push !== undefined], [true, true]);
 });
 
 test('a grey block put into the water sinks, a blue one floats and can be walked on', async () => {

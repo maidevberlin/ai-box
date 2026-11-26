@@ -15,9 +15,10 @@
 //   An agent chooses how loud it speaks: a whisper stays close, a shout carries far.
 // - Verbs: everything an agent can do is a verb. Some it does itself (walk, say, leave),
 //   some it does to a thing (take, destroy, eat). A world says which verbs its agents have.
-//   Whether a verb can be done to a thing is up to the kind of the thing (`can`): so a world
-//   decides what "destroy" or "eat" means by what it lets its kinds do, not by writing a
-//   verb for every kind. A verb that no kind of the world allows is not offered at all.
+//   What a verb does to a thing is up to the kind of the thing (`can`): a kind says that it
+//   can be done to it, or why not, or does it its own way. So eating a fruit is written
+//   with the fruit. A thing is a block, an item, or somebody: a creature or another agent.
+//   A verb that no kind of the world allows is not offered at all.
 // - Pointing: for a verb that is done to a thing, the agent says to what: by where it is
 //   ("(2, 1)", "here"), by "hand", or by a name it gave it.
 // - The verbs in `basic` (verbs.ts).
@@ -56,6 +57,17 @@ export interface Happened {
 /** A kind reacts by changing the world. If it returns a sentence, whoever did it is told. */
 export type Reaction = (world: BlockWorld<any>, happened: Happened) => string | void;
 
+/** What a kind does when a verb is done to a thing of it. What it returns, the agent reads. */
+export type Deed<A extends Args = any> = (world: BlockWorld<any>, me: Body, thing: Thing, args: Given<A>) => string;
+
+/** What can be done to the things of a kind, by the name of the verb.
+ *  - `true`: it can, the way the verb usually goes: `can: { destroy: true }`.
+ *  - a function: it can, and this is what happens: `can: { eat: (world, me, fruit) => ... }`.
+ *  - a sentence: it cannot, and that is why: `can: { dig: 'The stone is too hard to dig.' }`.
+ *  What a kind of block or item does not mention is up to the verb (anything loose can be
+ *  taken). To somebody, a creature or an agent, nothing is done that their kind does not mention. */
+export type Can = Record<string, boolean | string | Deed>;
+
 export interface BlockKind {
   colour: string;
   /** What agents are told it is. Left out: its name and "block". */
@@ -68,10 +80,7 @@ export interface BlockKind {
   sticky?: true;
   /** Nothing can stand on it (leaves). */
   soft?: true;
-  /** What can be done to it, by the name of the verb: `can: { destroy: true }`. A sentence
-   *  instead says why not: `can: { dig: 'The stone is too hard to dig.' }`. What a kind does
-   *  not mention is up to the verb (anything loose can be taken, nothing can be eaten). */
-  can?: Record<string, boolean | string>;
+  can?: Can;
   on?: {
     /** A block of this kind appeared in the world, however it got there. The place to ask
      *  for something to happen later (`world.after`, `world.every`). */
@@ -95,8 +104,7 @@ export interface ItemKind {
   colour: string;
   called: string;
   shape: 'sheet' | 'ball' | 'small block';
-  /** What can be done to it, by the name of the verb: `can: { eat: true }` (see BlockKind.can). */
-  can?: Record<string, boolean | string>;
+  can?: Can;
   on?: {
     /** It came to rest on this cell: dropped, put down or thrown. */
     landed?: Reaction;
@@ -134,6 +142,14 @@ export interface CreatureKind {
   called: string;
   every: number;
   does(world: BlockWorld<any>, me: Body): void;
+  can?: Can;
+  [more: string]: unknown;
+}
+
+/** The agents of a world as a kind of thing: what other agents can do to them. */
+export interface AgentKind {
+  can?: Can;
+  [more: string]: unknown;
 }
 
 // ---------------------------------------------------------------- what a world's code can use
@@ -224,13 +240,16 @@ export interface BlockWorld<S extends Settings = Settings> {
 
 /** One thing a verb is done to. */
 export interface Thing {
-  /** What agents are told it is: "note", "grey block". */
+  /** What agents are told it is: "note", "grey block", "rabbit". For another agent: the name
+   *  the agent gave it, or "someone". */
   called: string;
-  kind: BlockKind | ItemKind;
+  kind: BlockKind | ItemKind | CreatureKind | AgentKind;
   /** It is an item: lying at `cell`, or in the agent's hand. */
   item?: Item;
   /** It is a block, at this place. */
   block?: Place;
+  /** It is somebody: a creature, or another agent. */
+  body?: Body;
   cell: Cell;
   inHand: boolean;
 }
@@ -239,9 +258,11 @@ export interface Thing {
  *  answers is what the agent reads. The engine hands every verb to the agents as a tool.
  *
  *  There are two sorts. A verb the agent does itself, like walk or say, gets what the agent
- *  gave for its `args`. A verb that is done `to` a thing, like take or eat, also gets the
- *  thing: the agent points at it (its argument `what`), and the base has made sure that it
- *  is in reach, on top, and of a kind the verb can be done to. */
+ *  gave for its `args`. A verb that is done `to` a thing, like take or eat, is done to what
+ *  the agent points at (its argument `what`). The base makes sure that the thing is in
+ *  reach, on top, and of a kind the verb can be done to. What happens then is up to the
+ *  kind of the thing; the verb itself only knows how it usually goes, if it usually goes
+ *  one way at all. */
 export type Verb<A extends Args = any> = {
   about: string;
   /** The world does not work without it: it cannot be switched off. */
@@ -254,9 +275,12 @@ export type Verb<A extends Args = any> = {
   to: 'thing';
   /** What the agent says besides what it points at. */
   args?: A;
-  /** Whether it can be done to a thing whose kind says nothing about it. Left out: no. */
+  /** Whether it can be done to a block or an item whose kind says nothing about it. Left
+   *  out: no. (To somebody it is only done if their kind says so.) */
   usually?(kind: BlockKind | ItemKind): boolean;
-  does(world: BlockWorld<any>, me: Body, thing: Thing, args: Given<A>): string;
+  /** How it usually goes: for a kind that only says it can be done (`true`), or says
+   *  nothing. Left out: every kind it can be done to says itself what happens. */
+  does?: Deed<A>;
 });
 
 // ---------------------------------------------------------------- a block world
@@ -273,6 +297,8 @@ export interface BlockWorldDefinition<S extends Settings> {
   /** A kind "note" is always there, for the verb `note`, unless a world brings its own. */
   items?: Record<string, ItemKind>;
   creatures?: Record<string, CreatureKind>;
+  /** What agents can do to each other. Left out: nothing. */
+  agent?: AgentKind;
   /** What agents can do here: the basic verbs the world wants (`basic`), and its own. */
   verbs: Record<string, Verb> | ((chosen: Chosen<NoInfer<S>>) => Record<string, Verb>);
   /** How far an agent sees from the ground. Usually 3. */

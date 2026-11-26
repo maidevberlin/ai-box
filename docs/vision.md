@@ -1,6 +1,6 @@
 # AI Box: what we want to build
 
-> Working notes for the new version (TypeScript). The Python version is in `archive/`.
+> Working notes.
 > "Settled" is what we agreed on. "Open" is still being discussed: nothing there is decided.
 
 ## The idea
@@ -63,10 +63,12 @@ Fixed, in every world:
   Whether a new agent takes the place of one that is gone is one more switch. If nobody
   does, the world ends with its last agent.
 - **In a block world, everything an agent can do is a verb.** Some it does itself (walk,
-  say, leave), some it does to a thing (take, destroy, eat, dig). For those the agent says
-  to what: by a position, by "here" or "hand", or by a name it gave the thing. Whether a
-  verb can be done to a thing is up to the kind of the thing, so a world decides what
-  "destroy" means by what it lets its kinds do. A verb that no kind allows is not offered.
+  say, leave), some it does to a thing it points at: by where it is, by "hand", or by a
+  name it gave. A thing is a block, an item, or somebody (a creature, another agent).
+  **The thing owns what happens:** its kind says that a verb can be done to it, or why
+  not, or does it its own way. So eating a fruit is written with the fruit, not in a verb
+  "eat" that knows about fruit. A verb only knows how it usually goes (take, destroy), if
+  it usually goes one way at all. A verb that no kind allows is not offered.
   To the engine, and to the agent, every verb is a tool.
 - **Tools are switched on and off per run**, on the start screen, for each role. A world
   marks the tools it does not work without; those stay on.

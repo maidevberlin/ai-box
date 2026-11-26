@@ -1,12 +1,12 @@
 // The verbs every block world can give its agents: what an agent can do. A world takes the
 // ones it wants (`verbs: basic`, or `verbs: { look: basic.look, ... }`) and adds its own.
 //
-// What a verb does differently for a special block is not written here: it comes from
-// the kind of block (sticky, floats, what can be done to it, its reactions: see types.ts).
+// What a verb does to a special thing is not written here: it comes from the kind of the
+// thing (sticky, floats, what can be done to it and how, its reactions: see types.ts).
 
 import type { Blocks } from './world.ts';
 import type { Tool } from '../engine/types.ts';
-import { DIRECTIONS, WAYS, verb, verbTo, type BlockKind, type BlockWorld, type Body, type Cell, type Item, type ItemKind, type Loudness, type Place, type Thing, type Verb } from './types.ts';
+import { DIRECTIONS, WAYS, verb, verbTo, type AgentKind, type BlockKind, type BlockWorld, type Body, type Cell, type CreatureKind, type Deed, type Item, type ItemKind, type Loudness, type Place, type Thing, type Verb } from './types.ts';
 
 const BEGINNING = 3;       // how many words of a note can be made out without looking at it
 const REACH = 2;           // put reaches stacks at most this much higher or lower than your feet
@@ -265,14 +265,21 @@ export function aim(world: BlockWorld<any>, me: Body, said: string, within: 'rea
   return target;
 }
 
-/** Can this verb be done to a thing of this kind? If not: why not, if the kind says why. */
-function allowed(name: string, made: Extract<Verb, { to: 'thing' }>, kind: BlockKind | ItemKind): boolean | string {
-  return kind.can?.[name] ?? made.usually?.(kind) ?? false;
+type VerbTo = Extract<Verb, { to: 'thing' }>;
+type Kind = BlockKind | ItemKind | CreatureKind | AgentKind;
+
+/** What doing a verb to a thing of a kind comes to: what happens (the kind's own way, or
+ *  the way the verb usually goes), or the sentence that says why it cannot be done, or
+ *  nothing if it just cannot. */
+function deed(name: string, made: VerbTo, kind: Kind, somebody: boolean): Deed | string | undefined {
+  const said = kind.can?.[name] ?? (!somebody && made.usually?.(kind as BlockKind | ItemKind));
+  if (said === true && !made.does) throw new Error(`"${name}" has no usual way of being done: a kind it can be done to has to say what happens.`);
+  return said === true ? made.does : said || undefined;
 }
 
 /** A verb that is done to a thing, as the agent uses it: it points at something, and the
  *  verb is done to what is on top there, if it can be done to a thing of that kind. */
-function doneTo(name: string, made: Extract<Verb, { to: 'thing' }>, world: BlockWorld<any>, me: Body, args: { what: string }): string {
+function doneTo(name: string, made: VerbTo, world: BlockWorld<any>, me: Body, args: { what: string }): string {
   const target = aim(world, me, args.what);
   if (typeof target === 'string') return target;
   const { cell } = target, things: Thing[] = [];
@@ -285,48 +292,62 @@ function doneTo(name: string, made: Extract<Verb, { to: 'thing' }>, world: Block
     const kind = world.blockKind(world.block(place) ?? '');
     if (kind) things.push({ called: world.called(world.block(place)!), kind, block: place, cell, inHand: false });
   };
-  const lying = world.items(cell).at(-1), top = world.column(cell).at(-1);
+  const ofBody = (body: Body) => {
+    const { creatures, agent } = inner(world).definition;
+    const kind = body.creature ? creatures![body.creature]! : agent ?? {};
+    things.push({ called: inner(world).nameFor(me, body) ?? (body.creature ? creatures![body.creature]!.called : 'someone'), kind, body, cell, inHand: false });
+  };
+  const there = world.bodyAt(cell), lying = world.items(cell).at(-1), top = world.column(cell).at(-1);
   if (target.hand) {
     if (!me.hand) return 'Your hand is empty.';
     ofItem(me.hand, true);
   } else if (target.body) {
-    return `You cannot ${name} ${someone(world, me, target.body, true)}.`;
+    ofBody(target.body);
   } else if (target.item || target.block) {
     // Pointed at by its name: this one thing, and only if nothing is on top of it.
     if (target.item ? lying !== target.item : lying || top?.[0] !== target.block![2]) return 'Something lies on top of it.';
     if (target.item) ofItem(target.item, false);
     else ofBlock(target.block!);
   } else {
-    // A position: what lies on top there, or else the block under it.
+    // A position: who stands there, or what lies on top there, or else the block under it.
+    if (there && there !== me) ofBody(there);
     if (lying) ofItem(lying, false);
     if (top) ofBlock([cell[0], cell[1], top[0]]);
     if (!things.length) return 'There is only water.';
   }
-  const thing = things.find(found => allowed(name, made, found.kind) === true);
-  if (!thing) {
-    const why = things.map(found => allowed(name, made, found.kind)).find(said => typeof said === 'string');
-    const first = things[0]!;
-    return why || (!first.inHand && 'ground' in first.kind && first.kind.ground ? `There is nothing to ${name} at ${at(cell)}.` : `You cannot ${name} a ${first.called}.`);
+  const found = things.map(thing => [thing, deed(name, made, thing.kind, !!thing.body)] as const);
+  const [thing, does] = found.find(([, does]) => typeof does === 'function') ?? [];
+  if (!thing || typeof does !== 'function') {
+    const why = found.map(([, said]) => said).find(said => typeof said === 'string');
+    // (The sentence is about something loose there, or else about what is on top.)
+    const bare = (other: Thing) => !!other.block && !!(other.kind as BlockKind).ground;
+    const first = things.find(other => !other.body && !bare(other)) ?? things[0]!;
+    const named = first.body ? someone(world, me, first.body, true) : `a ${first.called}`;
+    return why || (bare(first) ? `There is nothing to ${name} at ${at(cell)}.` : `You cannot ${name} ${named}.`);
   }
   if (!thing.inHand) {
     const out = outOfReach(world, me, cell, !!thing.block);
     if (out) return out;
   }
-  return made.does(world, me, thing, args);
+  return does(world, me, thing, args);
 }
 
 /** The verbs of a world as the engine hands them to the agents: as tools. A verb that is
  *  done to a thing gets the argument `what`, and is left out if no kind of the world lets
  *  it be done. `on` says, for the start screen, what such a verb can be done to. */
-export function asTools(verbs: Record<string, Verb>, kinds: Record<string, BlockKind | ItemKind>): Record<string, Tool<BlockWorld<any>, Body, any> & { on?: string[] }> {
+export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<string, BlockKind | ItemKind>; creatures: Record<string, CreatureKind>; agent: AgentKind }): Record<string, Tool<BlockWorld<any>, Body, any> & { on?: string[] }> {
   const tools: ReturnType<typeof asTools> = {};
   for (const [name, made] of Object.entries(verbs)) {
     if (made.to !== 'thing') {
       tools[name] = { about: made.about, args: made.args, needed: made.needed, run: (world, me, args) => made.does(world, me, args) };
       continue;
     }
-    const on = Object.entries(kinds).filter(([, kind]) => allowed(name, made, kind) === true)
-      .map(([kindName, kind]) => kind.called ?? `${kindName} block`);
+    const can = (kind: Kind, somebody: boolean) => typeof deed(name, made, kind, somebody) === 'function';
+    const on = [
+      ...Object.entries(kinds.things).filter(([, kind]) => can(kind, false)).map(([kindName, kind]) => kind.called ?? `${kindName} block`),
+      ...Object.values(kinds.creatures).filter(kind => can(kind, true)).map(kind => kind.called),
+      ...(can(kinds.agent, true) ? ['other agents'] : []),
+    ];
     if (!on.length) continue;
     tools[name] = { about: made.about, args: { what: WHAT, ...made.args }, needed: made.needed, on: made.usually ? undefined : on,
                     run: (world, me, args: { what: string }) => doneTo(name, made, world, me, args) };
@@ -436,6 +457,7 @@ const take = verbTo({
   about: 'Take something: what lies on top where you point.',
   usually: kind => !('ground' in kind && kind.ground),   // anything loose
   does(world, me, thing) {
+    if (thing.body) return 'You cannot carry somebody.';
     if (thing.inHand) return 'You hold it already.';
     if (me.hand) return 'Your hands are full.';
     let said = '';
@@ -650,10 +672,52 @@ const name = verb({
 /** Whether something can be destroyed is up to its kind. Usually only notes can. */
 const destroy = verbTo({
   about: 'Destroy something for good.',
-  does(world, _me, thing) {
+  does(world, me, thing) {
+    if (thing.body) return world.die(thing.body, 'You were destroyed.') && `You destroyed ${someone(world, me, thing.body, true)}.`;
     if (thing.item) world.removeItem(thing.item);
     else world.removeBlock(thing.block!);
     return `You destroyed the ${thing.called}${thing.inHand ? ' in your hand' : ` at ${at(thing.cell)}`}. It is gone.`;
+  },
+});
+
+/** Pushing moves what is next to you one step further away from you. What is pushed off
+ *  an edge falls, and what is pushed into the water is in the water. Nothing can be pushed
+ *  unless its kind says so. */
+const push = verbTo({
+  about: 'Push something or somebody next to you away from you.',
+  does(world, me, thing) {
+    const [x, y] = thing.cell, dx = x - me.cell[0], dy = y - me.cell[1];
+    if (thing.inHand) return 'You hold it.';
+    if (!dx && !dy) return 'You cannot push what is under you.';
+    const to: Cell = [x + dx, y + dy], behind = world.bodyAt(to);
+    if (behind) return `${someone(world, me, behind)} at ${at(to)} is in the way.`;
+    if (thing.body) {
+      const other = thing.body, who = someone(world, me, other, true), pusher = someone(world, other, me);
+      if (world.column(to).length && (!world.standable(to) || world.height(to) > world.height(thing.cell)))
+        return `You pushed ${who}, but what is at ${at(to)} is in the way.`;
+      world.move(other, to);
+      if (!world.standable(to)) {
+        world.die(other, `${pusher} pushed you into the water. You drown.`);
+        return `You pushed ${who} into the water.`;
+      }
+      world.notice(other, `${pusher} pushed you. ${world.where(other)}`);
+      return `You pushed ${who} to ${at(to)}.`;
+    }
+    if (thing.item) {
+      world.removeItem(thing.item);
+      world.drop(thing.item, to);
+      return `You pushed the ${thing.called} to ${at(to)}.${world.column(to).length ? '' : ' It fell into the water and is gone.'}`;
+    }
+    const place = thing.block!, kind = world.block(place)!, moving = { kind };
+    if (world.bodyAt(thing.cell)) return 'Somebody stands on it.';
+    if (world.height(to) > place[2]) return `You pushed the ${thing.called}, but what is at ${at(to)} is in the way.`;
+    inner(world).carryName(place, moving);   // (what it was called, it is still called where it comes to rest)
+    world.removeBlock(place);
+    const rest = world.release([to[0], to[1], place[2]], kind);
+    if (!rest) return `You pushed the ${thing.called} into the water. It sinks and is gone.`;
+    inner(world).carryName(moving, rest);
+    const how = rest[2] === -1 ? 'It floats in the water, level with the ground.' : `The stack there is ${world.height(to)} high.`;
+    return `You pushed the ${thing.called} to ${at(to)}. ${how}`;
   },
 });
 
@@ -670,5 +734,5 @@ const leave = verb({
 });
 
 /** The verbs every block world can give its agents. */
-export const basic: Record<'look' | 'walk' | 'jump' | 'take' | 'put' | 'throw' | 'say' | 'note' | 'name' | 'destroy' | 'clock' | 'leave', Verb> =
-  { look, walk, jump, take, put, throw: throwIt, say, note, name, destroy, clock, leave };
+export const basic: Record<'look' | 'walk' | 'jump' | 'take' | 'put' | 'throw' | 'say' | 'note' | 'name' | 'destroy' | 'push' | 'clock' | 'leave', Verb> =
+  { look, walk, jump, take, put, throw: throwIt, say, note, name, destroy, push, clock, leave };

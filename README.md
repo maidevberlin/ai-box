@@ -7,9 +7,7 @@ through the tools its world gives it. Nobody talks to an agent while it lives.
 Every action is recorded. A local web page plays a run back in 3D, next to what the agents
 thought, said and did.
 
-> This is a new version, written in TypeScript and still being built. The first version
-> (Python) is in [`archive/`](archive/) and still works from there. What we are building and
-> why is in [docs/vision.md](docs/vision.md).
+> Still being built. What we are building and why is in [docs/vision.md](docs/vision.md).
 
 ## What you need
 

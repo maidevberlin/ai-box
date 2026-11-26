@@ -103,7 +103,7 @@ function row(event: Event, index: number): HTMLElement | null {
       el('div', 'text', String(event.answer)));
     // An agent that had stopped talking is told what is around it: its next turn begins.
     case 'senses': return made('act turn', `${who} looks up`,
-      el('div', 'turnline', event.turn ? `Turn ${event.turn} · after ${event.after} s of silence` : 'Next turn'),
+      el('div', 'turnline', `Turn ${event.turn} · after ${event.after} s of silence`),
       el('div', 'text', String(event.text)));
     case 'death': return made('death', event.left ? `${who} has left` : `${who} died`, el('div', 'text', String(event.why)));
     case 'error': return made('death', 'A mistake in the world', el('div', 'text', String(event.error)));
@@ -158,7 +158,7 @@ function drawMoment(): void {
   slider.value = String(at);
   once('count', `${clock(at)} / ${clock(length)}`, () => { $('count').textContent = `${clock(at)} / ${clock(length)}`; });
   once('play', String(playing), () => { $('play').textContent = playing ? '❚❚' : '▶'; });
-  once('live', String(live), () => $('live').classList.toggle('on', live));
+  once('live', String(live), () => { $('live').classList.toggle('on', live); $('speed').hidden = live; });
   if (index !== shown && index >= 0) {
     const forward = index > shown && index - shown < 20;
     // A throw is played when the film runs onto it, not when jumping around in the run.
