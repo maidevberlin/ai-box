@@ -1,13 +1,13 @@
 // The usual settings for who lives in a block world, for worlds that want them: how many
-// agents, what happens when one dies, leaves or stops talking, whether friends can be called, and a note that lies
-// in the world from the start. A world takes them with `settings: { ...people, ... }`.
+// agents, how many at most, what happens when one dies, leaves or stops talking, and a note
+// that lies in the world from the start. A world takes them with `settings: { ...people, ... }`.
 
 import type { Chosen, Role, Settings } from '../engine/types.ts';
-import { callingNote, type BlockWorld, type ItemKind } from './types.ts';
+import type { BlockWorld } from './types.ts';
 
 export const people = {
   agents: { type: 'number', title: 'Alive at the start', usual: 1, min: 1, max: 8, about: 'agents' },
-  friends: { type: 'number', title: 'Alive at most (more than at the start: friends can be called in)', usual: 0, min: 0, max: 8, about: 'agents' },
+  most: { type: 'number', title: 'Max population', usual: 1, min: 1, max: 8, about: 'agents' },
   comesBack: { type: 'switch', title: 'An agent that dies comes back, and remembers', usual: false, about: 'agents' },
   followed: { type: 'switch', title: 'A new agent takes the place of one that is gone', usual: true, about: 'agents' },
   stopping: { type: 'switch', title: 'An agent that ends its turn has left', usual: false, about: 'agents' },
@@ -33,7 +33,10 @@ export const ALONE = 'You are in a world. There is no user, and nobody will answ
  *  - It ends its turn: it stops talking. Usually nothing happens then. It stays where it is,
  *    and after a while its senses tell it what is around it. With "has left" switched on it
  *    is gone instead, and it is told so before: that is how the first islands worked.
- *  Whether a new agent follows one that is gone is one more switch. */
+ *  Whether a new agent follows one that is gone is one more switch.
+ *
+ *  The max population is only a limit: whether and how more agents come into a world while
+ *  it runs is up to the world (`world.call`). The engine keeps the limit. */
 export function agents(chosen: People): Record<string, Role> {
   return {
     agent: {
@@ -41,14 +44,10 @@ export function agents(chosen: People): Record<string, Role> {
       knows: `${ALONE}${chosen.stopping ? ' If you end your turn you are gone.' : ''}`,
       told: 'Live!',
       comesBack: chosen.comesBack, followed: chosen.followed, stoppingLeaves: chosen.stopping,
-      room: chosen.friends > chosen.agents ? chosen.friends : undefined,
+      most: chosen.most > chosen.agents ? chosen.most : undefined,
     },
   };
 }
-
-/** The kind of note of such a world: one that begins with "friend" and goes into the water
- *  calls a friend, who wakes up next to the caller with that note in its hand. */
-export const note: ItemKind = callingNote('agent');
 
 /** Lays the note of the settings where agents wake up. Call it at the end of `make`. */
 export function startNote(world: BlockWorld<any>): void {

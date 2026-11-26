@@ -2,7 +2,7 @@
 //
 // An example of a world with its own verbs (dig, eat), a creature, things that grow by
 // themselves over time, and something its agents have to keep up (their strength).
-import { agents, basic, blockWorld, note, people, startNote, verbTo, type BlockWorld, type Body, type Cell, type Deed, type Place } from '../blocks/index.ts';
+import { agents, basic, blockWorld, people, startNote, verbTo, type BlockWorld, type Body, type Cell, type Deed, type Place } from '../blocks/index.ts';
 
 const HIGHEST = 9;      // the map of the ground shows heights as one digit
 const TREE = 2;         // how many trunk blocks a tree has under its leaves
@@ -123,7 +123,6 @@ The agents are told nothing about it. The world says what happens, never why.
   },
   agent: { can: { push: true } },
   items: {
-    note,
     fruit: {
       colour: '#c0392b', called: 'fruit', shape: 'ball',
       can: {

@@ -8,7 +8,7 @@ import type { Event } from '../../engine/run.ts';
 import { openCreate } from './create.ts';
 import { Film } from './film.ts';
 import { $, api, clock, el, started } from './page.ts';
-import { PLACE_COLOURS, Scene } from './scene.ts';
+import { PLACE_COLOURS, Scene, type View } from './scene.ts';
 
 interface About {
   id: string; world: string; title: string; minutes: number; models: string[];
@@ -31,6 +31,8 @@ let speed = 1;
 let rows: HTMLElement[] = [];     // the conversation: one row per event that has one
 let rowOf: number[] = [];         // ... and for every event, which row shows it (-1: none)
 let marked: HTMLElement | undefined;   // the row of the moment on screen
+let woken: number[] = [];         // for every event, how many agents have woken up until then (not counting waking again)
+let notesOpen = false;            // the panel with the notes lying in the world is open
 
 // ---------------------------------------------------------------- the list of runs
 
@@ -60,7 +62,7 @@ async function open(id: string, follow = false): Promise<void> {
   about = answer.about;
   film = new Film();
   film.add(answer.events);
-  rows = []; rowOf = []; marked = undefined;
+  rows = []; rowOf = []; woken = []; marked = undefined;
   kept.clear();
   $('log').replaceChildren();
   scene ??= new Scene($('scene'));
@@ -139,7 +141,8 @@ function draw(): void {
   // The conversation: rows are only added, never built again.
   const added: HTMLElement[] = [];
   for (let i = rowOf.length; i < film.events.length; i++) {
-    const made = row(film.events[i]!, i);
+    const event = film.events[i]!, made = row(event, i);
+    woken.push((woken.at(-1) ?? 0) + (event.type === 'wake' && !event.again ? 1 : 0));
     rowOf.push(made ? rows.length : -1);
     if (made) { rows.push(made); added.push(made); }
   }
@@ -168,7 +171,9 @@ function drawMoment(): void {
         if (event.type === 'fact' && event.what === 'flight' && data) scene!.throw(data.path, film.at(i).kinds[data.kind]?.colour ?? '#ccc');
       }
     }
-    scene!.show(film.at(index), film.bubbles(index, at), !forward);
+    const view = film.at(index);
+    scene!.show(view, film.bubbles(index, at), !forward);
+    drawFacts(view, woken[index]!);
     // The row of the newest thing that happened is marked, and kept in sight.
     let last = index;
     while (last >= 0 && rowOf[last] === -1) last--;
@@ -183,6 +188,23 @@ function drawMoment(): void {
     }
     shown = index;
   }
+}
+
+/** What is written on the drawing: how many agents there have been up to this moment, and
+ *  the notes that are in the world now, lying somewhere or held by an agent. */
+function drawFacts(view: View, agents: number): void {
+  const notes = [
+    ...view.items.filter(item => item[4] !== undefined).map(([x, y, , , text]) => ({ where: `at (${x}, ${y})`, text: text! })),
+    ...view.bodies.filter(body => body.holds !== undefined).map(body => ({ where: `in the hand of agent ${body.number}`, text: body.holds! })),
+  ];
+  once('agents', String(agents), () => { $('agents').textContent = `${agents} agent${agents === 1 ? '' : 's'} so far`; });
+  once('notes', JSON.stringify([notes, notesOpen]), () => {
+    $('notesButton').textContent = `${notesOpen ? '✕' : '✎'} ${notes.length} note${notes.length === 1 ? '' : 's'}`;
+    $('notes').hidden = !notesOpen;
+    $('notes').replaceChildren(...(notes.length ? notes.map(note =>
+      el('div', 'note', el('div', 'where', note.where), el('div', 'text', note.text)))
+      : [el('div', 'note', 'There are no notes in the world at this moment.')]));
+  });
 }
 
 // Playing: time goes on. At the end of a run that is going, the film waits for more.
@@ -230,6 +252,11 @@ $('play').onclick = () => {
 $('slider').oninput = event => {
   at = Number((event.target as HTMLInputElement).value);
   playing = live = false;
+  draw();
+};
+$('notesButton').onclick = () => {
+  notesOpen = !notesOpen;
+  shown = -2;   // (drawn again, with the panel)
   draw();
 };
 $('speed').onchange = event => { speed = Number((event.target as HTMLSelectElement).value); };

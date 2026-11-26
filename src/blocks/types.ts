@@ -198,7 +198,7 @@ export interface BlockWorld<S extends Settings = Settings> {
   spawn(creature: string, cell: Cell): Body;
   move(body: Body, cell: Cell): void;
   /** Calls one more agent of a role into the world: it wakes up near a cell, holding an item
-   *  if one is given. Only if the role has room for more (Role.room). If the world is full,
+   *  if one is given. Only if the role allows more than it started with (Role.most). If the world is full,
    *  the agent that has been alive longest is gone. Says whether it worked. */
   call(role: string, near: Cell, hand?: Item): boolean;
   /** A body dies. Says why, for the answer to whoever is told. An agent comes back, or is
@@ -318,20 +318,6 @@ export interface BlockWorldDefinition<S extends Settings> {
   afterAction?(world: BlockWorld<NoInfer<S>>, me: Body): string | void;
   /** More lines for an agent that looks around. */
   alsoSeen?(world: BlockWorld<NoInfer<S>>, me: Body): string[];
-}
-
-/** A note that calls a friend: when it begins with "friend" and is thrown or put into the
- *  water, one more agent of the role wakes up next to whoever sent it, with that note in
- *  its hand. Use it as a world's kind of note: `items: { note: callingNote('agent') }`. */
-export function callingNote(role: string): ItemKind {
-  return {
-    colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true },
-    on: {
-      sunk(world, { item, by }) {
-        if (by && item?.text?.trim().toLowerCase().startsWith('friend')) world.call(role, by.cell, { kind: 'note', text: item.text });
-      },
-    },
-  };
 }
 
 /** A verb an agent does itself, with typed arguments. */

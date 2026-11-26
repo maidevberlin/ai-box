@@ -46,6 +46,18 @@
   #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
   #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
+  /* On the drawing: how many agents there have been, and the notes lying in the world (a
+     button, and a panel that opens from it). */
+  #facts { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; }
+  #facts .chip { padding: 4px 10px; background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
+  #notesButton { cursor: pointer; }
+  #notes { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
+           overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+           padding: 6px 14px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+  #notes .note { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  #notes .note:last-child { border: 0; }
+  #notes .where { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #notes .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
   #scene, #scene canvas, .bubbles { position: absolute; inset: 0; }
   #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75;
@@ -177,6 +189,8 @@
     </header>
     <div id="view">
       <div id="scene"></div>
+      <div id="facts"><span id="agents" class="chip"></span><button id="notesButton" class="chip"></button></div>
+      <div id="notes" hidden></div>
       <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
     </div>
     <div id="controls">

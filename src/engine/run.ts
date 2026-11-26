@@ -306,11 +306,11 @@ export class Run {
   /** One more agent of a role is called into the world (see Host.call). */
   private call(roleName: string, greeting: unknown): boolean {
     const role = this.roles[roleName];
-    if (!role?.room || this.ended) return false;
+    if (!role?.most || this.ended) return false;
     this.time.after(0, () => {   // (a moment later: not in the middle of the action that called it)
       if (this.ended) return;
       const mine = [...this.seats.values()].filter(seat => seat.roleName === roleName);
-      if (mine.length < role.room!) {
+      if (mine.length < role.most!) {
         let place = 1;
         while (this.seats.has(place)) place++;
         const seat: Seat = { place, roleName, role, agent: null, filled: 0, notices: [], stopWaiting: null,

@@ -19,8 +19,8 @@ export interface Picture {
   kinds: Record<string, { colour: string; shape: string; soft?: boolean; ground?: boolean }>;
   blocks: [x: number, y: number, z: number, kind: string][];
   items: [x: number, y: number, z: number, kind: string, text?: string][];
-  /** `sees`: how far an agent sees from where it stands, in cells. */
-  bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; dead: boolean; sees?: number }[];
+  /** `sees`: how far an agent sees from where it stands, in cells. `holds`: what is written on what it holds. */
+  bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; holds?: string; dead: boolean; sees?: number }[];
 }
 export interface Changes {
   blocks?: [x: number, y: number, z: number, kind: string | null][];
@@ -603,7 +603,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   private bodiesNow(): Picture['bodies'] {
     return this.living.map(body => ({
       id: body.id, place: body.agent?.place, number: body.agent?.number, creature: body.creature,
-      x: body.cell[0], y: body.cell[1], z: this.height(body.cell), hand: body.hand?.kind ?? null, dead: body.dead,
+      x: body.cell[0], y: body.cell[1], z: this.height(body.cell), hand: body.hand?.kind ?? null, holds: body.hand?.text, dead: body.dead,
       sees: body.agent ? this.sight(body) : undefined,
     }));
   }

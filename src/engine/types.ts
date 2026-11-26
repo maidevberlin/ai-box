@@ -53,9 +53,9 @@ export interface Role {
   stoppingLeaves: boolean;
   /** How often its place is filled again. Left out: as long as the world lasts. */
   lives?: number;
-  /** How many of them the world has room for, if more can be called in while it runs (see
-   *  Host.call). Left out: nobody can be called. */
-  room?: number;
+  /** The most of them that are alive at the same time, if the world lets more come in
+   *  while it runs (see Host.call). Left out: nobody can be called. */
+  most?: number;
   /** Tools switched off for this role (only tools the world does not need). `wait` too. */
   without?: readonly string[];
 }
@@ -116,7 +116,7 @@ export interface Host {
   /** An agent left the world for good: it chose to, or the world ended its part (it has
    *  made its one decision). It never comes back, whatever its role says about dying. */
   left(place: number, why: string): void;
-  /** Calls one more agent of a role into the world, if the role has room for more (`room`).
+  /** Calls one more agent of a role into the world, if its role allows more than it started with (`most`).
    *  If it is full, the one that has been alive longest is gone, and the new one takes its
    *  place. The new agent wakes up a moment later, with `greeting` as its `called`. An agent
    *  that was called in is not followed by a new one when it is gone. Says whether it worked. */

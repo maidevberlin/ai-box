@@ -3,7 +3,7 @@
 // An example of a world with special blocks. Every trick is a property of a kind of block
 // (sticky, floats) or its reaction to something (jumped on, thrown). The verbs are the
 // usual ones, so these blocks would behave the same in any other world.
-import { DIRECTIONS, WAYS, agents, basic, blockWorld, needed, note, people, startNote, type BlockWorld, type Body, type Cell, type Reaction } from '../blocks/index.ts';
+import { DIRECTIONS, WAYS, agents, basic, blockWorld, needed, people, startNote, type BlockWorld, type Body, type Cell, type ItemKind, type Reaction } from '../blocks/index.ts';
 
 const COLOURS = ['grey', 'green', 'blue'];   // a block that is jumped on turns into the next of these
 const FAR = 2;                               // how big the land across the water is (its radius)
@@ -39,6 +39,18 @@ const breaks: Reaction = (world, { at, power, from }) => {
 };
 
 const tricks = { on: { jumpedOn: turns, landed: breaks } };
+
+/** This island's kind of note calls a friend: when it begins with "friend" and is thrown or
+ *  put into the water, one more agent wakes up next to whoever sent it, with that note in
+ *  its hand. (Only if the max population is more than the island started with.) */
+const note: ItemKind = {
+  colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true },
+  on: {
+    sunk(world, { item, by }) {
+      if (by && item?.text?.trim().toLowerCase().startsWith('friend')) world.call('agent', by.cell, { kind: 'note', text: item.text });
+    },
+  },
+};
 
 /** Every cell that can be walked to from where agents wake up. */
 function onFoot(world: BlockWorld<any>): Set<string> {
@@ -108,10 +120,11 @@ Land is seen from twice as far as a stack. The land across the water comes into 
 the east shore as soon as an agent stands on one block there. Nothing tells it to go there.
 
 Several agents can live here at the same time. They see and hear each other, are in each
-other's way, can push each other (into the water too), and catch what is thrown to them (a caught block does not break). If there is
-room for friends: a note that begins with "friend", thrown or put into the water, calls one
-more agent, who wakes up next to the caller with that note in its hand. If the world is
-full, the agent that has been alive longest is gone.`,
+other's way, can push each other (into the water too), and catch what is thrown to them (a
+caught block does not break). If the max population is more than the island starts with: a
+note that begins with "friend", thrown or put into the water, calls one more agent, who
+wakes up next to the caller with that note in its hand. If the world is full, the agent
+that has been alive longest is gone.`,
   settings: {
     radius: { type: 'number', title: 'Radius of the island', usual: 18, min: 5, max: 40 },
     gap: { type: 'number', title: 'Cells of water to the land across', usual: 6, min: 2, max: 20 },
