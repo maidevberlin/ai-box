@@ -27,7 +27,7 @@ Then open http://127.0.0.1:8765, press "New world", set it up and start it. Runs
 Without the page:
 
 ```
-npm run world -- island --minutes 2 --model haiku --set size=12 --set agents=2
+npm run world -- magic --minutes 2 --model haiku --set size=small --set agents=2
 ```
 
 Running agents uses your Claude usage.
@@ -42,7 +42,7 @@ Running agents uses your Claude usage.
 | `src/viewer/` | The local web page, and its server. |
 | `test/` | The worlds tried without any AI: `npm test`. |
 
-A world is one file in `src/worlds/`: see `island.ts`. It says which kinds of block, item and
+A world is one file in `src/worlds/`: see `orchard.ts`. It says which kinds of block, item and
 creature it has, what its agents can do, what a person can set, and what happens in it by
 itself. `src/blocks/types.ts` lists everything a world's code can use.
 

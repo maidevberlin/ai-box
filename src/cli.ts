@@ -1,7 +1,7 @@
 // Runs a world from the command line and prints what happens:
 //
-//   node src/cli.ts island                       with the world's usual settings
-//   node src/cli.ts island --minutes 2 --model haiku --set size=12 --set agents=2
+//   node src/cli.ts magic                        with the world's usual settings
+//   node src/cli.ts magic --minutes 2 --model haiku --set size=small --set agents=2
 //
 // The record is written to runs/<id>/. The viewer (npm start) does the same from a web page.
 

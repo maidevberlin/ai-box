@@ -6,6 +6,11 @@
 import { DIRECTIONS, WAYS, agents, basic, blockWorld, needed, people, startNote, type BlockWorld, type Body, type Cell, type ItemKind, type Reaction } from '../blocks/index.ts';
 
 const COLOURS = ['grey', 'green', 'blue'];   // a block that is jumped on turns into the next of these
+const SPLIT = 6;                             // a throw with at least this power breaks the block in two
+/** How big the island is, and how much water lies between it and the land across. */
+const SIZES = { small: { radius: 8, gap: 4 }, medium: { radius: 18, gap: 6 }, large: { radius: 28, gap: 8 }, huge: { radius: 40, gap: 10 } };
+/** How many loose blocks lie on the island at the start, besides the one near the middle: for every cell of land. */
+const LOOSE = { one: 0, few: 0.01, many: 0.04, loads: 0.12 };
 const FAR = 2;                               // how big the land across the water is (its radius)
 const REACH = 3;                             // a stack up to this high can be taken from, standing next to it
 
@@ -22,7 +27,7 @@ const turns: Reaction = (world, { at }) => {
  *  cell next to it: further along the throw if it can, else to another side. Never onto
  *  somebody, and into the water only if it floats. With no such cell it lands on top. */
 const breaks: Reaction = (world, { at, power, from, by }) => {
-  if ((power ?? 0) < world.chosen.split) return;
+  if ((power ?? 0) < SPLIT) return;
   const [x, y, z] = at, kind = world.block(at)!;
   const sign = (n: number) => Math.sign(n);
   const ahead: readonly [number, number] = [sign(x - (from?.[0] ?? x)), sign(y - (from?.[1] ?? y))];
@@ -40,14 +45,15 @@ const breaks: Reaction = (world, { at, power, from, by }) => {
 
 const tricks = { on: { jumpedOn: turns, landed: breaks } };
 
-/** This island's kind of note calls a friend: when it begins with "friend" and is thrown or
+/** This island's kind of note can call a friend: when it begins with "friend" and is thrown or
  *  put into the water, one more agent wakes up next to whoever sent it, with that note in
- *  its hand. (Only if the max population is more than the island started with.) */
+ *  its hand. (Only if that is switched on, and the max population is more than the island
+ *  started with.) */
 const note: ItemKind = {
   colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true },
   on: {
     sunk(world, { item, by }) {
-      if (by && item?.text?.trim().toLowerCase().startsWith('friend')) world.call('agent', by.cell, { kind: 'note', text: item.text });
+      if (world.chosen.friends && by && item?.text?.trim().toLowerCase().startsWith('friend')) world.call('agent', by.cell, { kind: 'note', text: item.text });
     },
   },
 };
@@ -91,14 +97,15 @@ function restock(world: BlockWorld<any>, me: Body): string | void {
 export default blockWorld({
   name: 'magic',
   title: 'Magic island',
-  about: `A round island with a single grey block near the middle, where agents wake up. Across the
-water to the east lies a second, small piece of land with one golden block on it.
+  about: `A round island with loose grey blocks on it: usually a single one, near the middle, where
+agents wake up. Across the water to the east lies a second, small piece of land with one
+golden block on it.
 
 The agents are told nothing about the island. It has tricks. Each is set off by using the
 usual tools in some way, and the world says what happened ("The block under you turns
 green.") but never why.
 
-- A block thrown hard breaks in two where it lands. One piece stays, the other rolls to a
+- A block thrown hard (with a power of 6 or more) breaks in two where it lands. One piece stays, the other rolls to a
   cell next to it. This is the way to get more blocks.
 - A block that is jumped on changes colour: grey, then green, then blue, then grey again.
 - A green block is sticky. It sticks to blocks beside it, and holds on to whatever is
@@ -121,15 +128,16 @@ the east shore as soon as an agent stands on one block there. Nothing tells it t
 
 Several agents can live here at the same time. They see and hear each other, are in each
 other's way, can push each other (into the water too), and catch what is thrown to them (a
-caught block does not break). If the max population is more than the island starts with: a
-note that begins with "friend", thrown or put into the water, calls one more agent, who
-wakes up next to the caller with that note in its hand. If the world is full, the agent
+caught block does not break). They can call friends, if that is switched on and the max
+population is more than the island starts with: a note that begins with "friend", thrown or
+put into the water, calls one more agent, who wakes up next to the caller with that note in
+its hand. If the world is full, the agent
 that has been alive longest is gone.`,
   settings: {
-    radius: { type: 'number', title: 'Radius of the island', usual: 18, min: 5, max: 40 },
-    gap: { type: 'number', title: 'Cells of water to the land across', usual: 6, min: 2, max: 20 },
-    split: { type: 'number', title: 'A throw with at least this power breaks the block in two', usual: 6, min: 1, max: 10 },
+    size: { type: 'choice', title: 'Size of the island', usual: 'medium', options: Object.keys(SIZES) },
+    loose: { type: 'choice', title: 'Loose blocks at the start', usual: 'one', options: Object.keys(LOOSE) },
     ...people,
+    friends: { type: 'switch', title: 'A note that begins with "friend", sent into the water, calls one more agent', usual: true, about: 'agents' },
   },
   minutes: 10,
   roles: agents,
@@ -145,11 +153,18 @@ that has been alive longest is gone.`,
   // Without throwing there is no way to get more blocks, without jumping no colours.
   verbs: { ...basic, throw: needed(basic.throw), jump: needed(basic.jump) },
   make(world) {
-    const far: Cell = [world.chosen.radius + world.chosen.gap + 1 + FAR, 0];
+    const { radius, gap } = SIZES[world.chosen.size as keyof typeof SIZES];
+    const far: Cell = [radius + gap + 1 + FAR, 0];
     world.own.far = far;
-    for (const [x, y] of [...world.disc(world.chosen.radius), ...world.disc(FAR, far)]) world.setBlock([x, y, -1], 'ground');
-    world.setBlock([2, 1, 0], 'grey');
+    for (const [x, y] of [...world.disc(radius), ...world.disc(FAR, far)]) world.setBlock([x, y, -1], 'ground');
     world.setBlock([far[0], far[1], 0], 'gold');
+    // The loose blocks: one near the middle, the others anywhere (but not where agents wake up).
+    const land = world.disc(radius).filter(([x, y]) => x || y);
+    const loose = 1 + Math.round(land.length * LOOSE[world.chosen.loose as keyof typeof LOOSE]);
+    for (let i = 0; i < loose; i++) {
+      const [x, y] = i ? land[world.pick(land.length)]! : [2, 1];
+      world.setBlock([x, y, world.height([x, y])], 'grey');
+    }
     startNote(world);
   },
   afterAction: restock,
@@ -166,6 +181,6 @@ that has been alive longest is gone.`,
         if (closer) nearest = cell;
       }
     }
-    return nearest ? [`Across the water you see land, the nearest of it at (${nearest[0]}, ${nearest[1]}).`] : [];
+    return nearest ? [`Across the water you see land, the nearest of it at ${world.at(me, nearest)}.`] : [];
   },
 });

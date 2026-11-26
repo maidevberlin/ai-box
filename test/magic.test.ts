@@ -7,9 +7,9 @@ import { testTime } from '../src/engine/time.ts';
 import { act } from './help.ts';
 import magic from '../src/worlds/magic.ts';
 
-function started(roles = {}) {
+function started(roles = {}, chosen = {}) {
   const time = testTime();
-  const run = new Run(magic, { time, seed: 1, minutes: 0, roles: { agent: roles } });
+  const run = new Run(magic, { time, seed: 1, minutes: 0, chosen, roles: { agent: roles } });
   run.start();
   const world = run.world as unknown as BlockWorld<any>;
   const me: Body = world.bodies().find(body => body.agent?.place === 1)!;
@@ -167,4 +167,24 @@ test('a grey block can be pushed along, and agents can push each other, into the
   one.cell = [0, -17]; two.cell = [0, -18];
   assert.equal(first(await act('push', { what: '(0, -18)' })), 'You pushed someone into the water.');
   assert.match(String(run.events.find(event => event.type === 'death')!.why), /Someone pushed you into the water\. You drown\./);
+});
+
+test('the size of the island, how many loose blocks there are, and whether friends can be called can be set', async () => {
+  const loose = (world: BlockWorld<any>) => world.disc(18).flatMap(cell => world.column(cell).map(([, kind]) => kind)).filter(kind => kind !== 'ground');
+  // More loose blocks: one near the middle, the others anywhere, none where agents wake up.
+  assert.equal(loose(started().world).length, 1);
+  const many = started({}, { loose: 'many' });
+  assert.ok(loose(many.world).length > 30);
+  // A small island is closer to the land across, a huge one further away.
+  assert.equal(started({}, { size: 'small' }).world.block([8 + 4 + 1 + 2, 0, 0]), 'gold');
+  assert.equal(started({}, { size: 'huge' }).world.block([40 + 10 + 1 + 2, 0, 0]), 'gold');
+  assert.equal(many.world.block([2, 1, 0]), 'grey');
+  assert.equal(many.world.height([0, 0]), 0);
+  // With calling friends switched off, a note in the water is just gone.
+  const alone = started({}, { most: 2, friends: false });
+  alone.me.cell = [18, 0];
+  await alone.act('note', { text: 'friend, come' });
+  await alone.act('put', { where: 'east' });
+  alone.time.pass(0);
+  assert.equal(alone.world.bodies().length, 1);
 });
