@@ -1,6 +1,7 @@
 // Puts AI agents into the places of a run. Each agent is a process of Claude Code with
 // nothing but its world's tools: no built-in tools, no settings, no skills, no memory.
-// Nobody talks to an agent while it lives. It is told one thing when it wakes up.
+// Nobody talks to an agent while it lives. It is told one thing when it wakes up. If it
+// stops talking, all it is ever told is what its senses tell it in its world.
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -29,8 +30,8 @@ export function populate(run: Run, address: (place: number) => string): void {
   mkdirSync(NEUTRAL, { recursive: true });
   const log = (name: string, text: string) => run.folder && appendFileSync(join(run.folder, name), text);
 
-  const tell = (process: ChildProcess, agent: Agent, role: Role) => {
-    process.stdin!.write(JSON.stringify({ type: 'user', message: { role: 'user', content: filled(role.told, agent, run) } }) + '\n');
+  const tell = (process: ChildProcess, text: string) => {
+    process.stdin!.write(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n');
   };
 
   function wake(agent: Agent, role: Role): void {
@@ -66,12 +67,12 @@ export function populate(run: Run, address: (place: number) => string): void {
             if (part.type === 'thinking' && part.thinking?.trim()) run.inner(place, 'think', part.thinking.trim());
             if (part.type === 'text' && part.text?.trim()) run.inner(place, 'write', part.text.trim());
           }
-        } else if (event.type === 'result') {   // it ended its turn: nobody answers
+        } else if (event.type === 'result') {   // it ended its turn: nobody answers (see Run.stopped)
           run.stopped(place);
         }
       }
     });
-    tell(process, agent, role);
+    tell(process, filled(role.told, agent, run));
   }
 
   run.listeners.push({
@@ -80,9 +81,9 @@ export function populate(run: Run, address: (place: number) => string): void {
       // (The same agent again, after it died in its world: it goes on with its next action.)
       if (!agent.again || !process) wake(agent, role);
     },
-    again(agent, role) {
+    told(agent, text) {
       const process = alive.get(agent.place);
-      if (process) tell(process, agent, role);
+      if (process) tell(process, text);
     },
     gone(place) {
       alive.get(place)?.kill();

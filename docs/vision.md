@@ -50,9 +50,26 @@ Fixed, in every world:
   off when the block is gone. A world that asks for nothing has no time of its own.
 - **What an agent did not ask for** (something said nearby) reaches it with the answer to its
   next action. A tool `wait` returns as soon as there is something to notice.
-- **After a death** the usual is: the world goes on, and a new agent or the same agent
-  (with its memory) wakes up. A world can also say that nobody follows; then it ends when
-  its last agent has died.
+- **Dying, leaving and stopping are three things**, each set by itself:
+  - An agent *dies* in its world (it drowns, it starves). It is gone, or it comes back
+    where agents wake up and remembers.
+  - An agent *leaves* with a tool, or the world ends its part (it has made its one
+    decision). That is always for good.
+  - An agent *stops talking* (it ends its turn). Nothing happens to it: it stays where it
+    is, and after a while it is told what its senses tell it, which in a block world is
+    what looking around says. It is never told anything from outside its world. A run can
+    also say that stopping is leaving, as on the first islands.
+
+  Whether a new agent takes the place of one that is gone is one more switch. If nobody
+  does, the world ends with its last agent.
+- **In a block world, everything an agent can do is a verb.** Some it does itself (walk,
+  say, leave), some it does to a thing (take, destroy, eat, dig). For those the agent says
+  to what: by a position, by "here" or "hand", or by a name it gave the thing. Whether a
+  verb can be done to a thing is up to the kind of the thing, so a world decides what
+  "destroy" means by what it lets its kinds do. A verb that no kind allows is not offered.
+  To the engine, and to the agent, every verb is a tool.
+- **Tools are switched on and off per run**, on the start screen, for each role. A world
+  marks the tools it does not work without; those stay on.
 - **Roles are declared in the world's code.**
 - **Everything carried is an item.** A block that is taken becomes an item, and a block
   again when it is put down.
@@ -62,6 +79,13 @@ Fixed, in every world:
 - **Sharing worlds.** Worlds are shared through git for now.
 - **Evaluation.** For now one reviewer sums up what happened in a run. What a world wants
   measured or judged comes later.
+
+## Ideas to talk through next
+
+- **Walking by angle and distance** instead of steps north, south, east or west. Throwing
+  already takes an angle and a power.
+- **Angles and distances everywhere?** Also in what looking around says about where
+  things are. Open: whether that makes the world easier or harder for an agent to picture.
 
 ## Where it is built
 

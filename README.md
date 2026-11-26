@@ -39,7 +39,7 @@ Running agents uses your Claude usage.
 | Folder | What it is |
 |---|---|
 | `src/engine/` | The engine: runs a world, its agents and its time, and writes the record. Knows nothing about blocks. |
-| `src/blocks/` | The block base: worlds made of blocks in a 3D grid, with falling, water, sight, hearing, hands, and the basic tools. |
+| `src/blocks/` | The block base: worlds made of blocks in a 3D grid, with falling, water, sight, hearing, hands, and the basic verbs (what agents can do). |
 | `src/worlds/` | The worlds, one file each. |
 | `src/viewer/` | The local web page, and its server. |
 | `test/` | The worlds tried without any AI: `npm test`. |

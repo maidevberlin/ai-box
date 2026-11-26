@@ -1,11 +1,12 @@
-// The tools every block world can hand to its agents. A world takes the ones it wants
-// (`tools: basic`, or `tools: { look: basic.look, ... }`) and adds its own.
+// The verbs every block world can give its agents: what an agent can do. A world takes the
+// ones it wants (`verbs: basic`, or `verbs: { look: basic.look, ... }`) and adds its own.
 //
-// What a tool does differently for a special block is not written here: it comes from
-// the kind of block (sticky, floats, or its reactions, see types.ts).
+// What a verb does differently for a special block is not written here: it comes from
+// the kind of block (sticky, floats, what can be done to it, its reactions: see types.ts).
 
 import type { Blocks } from './world.ts';
-import { DIRECTIONS, WAYS, tool, type BlockTool, type BlockWorld, type Body, type Cell, type Item, type Loudness, type Place } from './types.ts';
+import type { Tool } from '../engine/types.ts';
+import { DIRECTIONS, WAYS, verb, verbTo, type BlockKind, type BlockWorld, type Body, type Cell, type Item, type ItemKind, type Loudness, type Place, type Thing, type Verb } from './types.ts';
 
 const BEGINNING = 3;       // how many words of a note can be made out without looking at it
 const REACH = 2;           // put reaches stacks at most this much higher or lower than your feet
@@ -201,38 +202,162 @@ function news(world: BlockWorld<any>, me: Body): string {
   return `${world.where(me)}${feet}\n${lines.join('\n') || 'Nothing new in sight.'}`;
 }
 
-// ---------------------------------------------------------------- the tools
+/** Everything a body sees around it, as it is told. From then on, this is what it has seen.
+ *  It is what looking around answers, and what an agent's senses tell it when it has
+ *  stopped talking (whether it can `look` or not). */
+export function surroundings(world: BlockWorld<any>, me: Body): string {
+  const seen = around(world, me);
+  inner(world).sawLast.set(me, seen);
+  return [
+    world.where(me) + seen.feet,
+    `You carry: ${me.hand ? `a ${world.called(me.hand)}${called(world, me, me.hand)}` : 'nothing'}.`,
+    `Stacks in sight (up to ${seen.reach} away), as position: height: ${[...seen.stacks].map(([cell, text]) => `${cell}: ${text}`).join(', ') || 'none'}.`,
+    `Water in sight: ${[...seen.water].map(([direction, text]) => `${direction}: ${text}`).join('; ') || 'none'}.`,
+    ...seen.beings,
+    ...seen.also,
+  ].join('\n');
+}
 
-const look = tool({
-  about: 'Look around, or at something.',
-  args: { at: { type: 'one of', options: ['around', 'hand', 'here', 'north', 'south', 'east', 'west'], optional: true } },
-  run(world, me, args) {
-    const where = args.at ?? 'around';
-    if (where === 'hand') {
+// ---------------------------------------------------------------- pointing at things
+
+/** How an agent says what a verb is done to. */
+export const WHAT = { type: 'text', about: 'a position like "(2, 1)", or "here", or "hand", or a name you gave something' } as const;
+
+/** What an agent pointed at. */
+export interface Target {
+  /** It is what the agent holds. */
+  hand: boolean;
+  /** Where it is. (For what the agent holds: where the agent stands.) */
+  cell: Cell;
+  /** The agent pointed by a name it gave: it means this one thing, wherever it is in its
+   *  cell. (Pointing at a position means whatever is on top there.) */
+  item?: Item;
+  block?: Place;
+  body?: Body;
+}
+
+/** Makes out what an agent points at: by a position, "here", "hand", or a name it gave.
+ *  `within`: how far a verb reaches. "reach" is the agent's own cell and the four next to
+ *  it, "sight" is as far as it sees. If it cannot be made out, or is too far: the sentence
+ *  that says so. */
+export function aim(world: BlockWorld<any>, me: Body, said: string, within: 'reach' | 'sight' = 'reach'): Target | string {
+  const text = said.trim();
+  let target: Target;
+  const position = text.match(/^\(?\s*(-?\d+)\s*[,;\s]\s*(-?\d+)\s*\)?$/);
+  if (/^(my |the )?hand$/i.test(text)) return { hand: true, cell: me.cell };
+  if (/^here$/i.test(text)) target = { hand: false, cell: me.cell };
+  else if (position) target = { hand: false, cell: [Number(position[1]), Number(position[2])] };
+  else {
+    const thing = inner(world).named(me, text);
+    if (!thing) return `You have given nothing the name "${text}". Say what you mean by a position like "(2, 1)", by "here", by "hand", or by a name you gave.`;
+    if ('item' in thing) {
+      if (me.hand === thing.item) return { hand: true, cell: me.cell };
+      const lies = inner(world).whereLies(thing.item);
+      if (!lies) return `You do not know where "${text}" is now.`;
+      target = { hand: false, cell: lies, item: thing.item };
+    } else if ('block' in thing) target = { hand: false, cell: [thing.block[0], thing.block[1]], block: thing.block };
+    else if ('body' in thing) target = { hand: false, cell: thing.body.cell, body: thing.body };
+    else target = { hand: false, cell: thing.place };
+  }
+  const dx = Math.abs(target.cell[0] - me.cell[0]), dy = Math.abs(target.cell[1] - me.cell[1]);
+  if (within === 'sight' ? Math.max(dx, dy) > world.sight(me) : dx + dy > 1)
+    return within === 'sight' ? 'That is out of your sight.' : `${at(target.cell)} is out of your reach: you reach where you stand and one step north, south, east or west of it. ${world.where(me)}`;
+  return target;
+}
+
+/** Can this verb be done to a thing of this kind? If not: why not, if the kind says why. */
+function allowed(name: string, made: Extract<Verb, { to: 'thing' }>, kind: BlockKind | ItemKind): boolean | string {
+  return kind.can?.[name] ?? made.usually?.(kind) ?? false;
+}
+
+/** A verb that is done to a thing, as the agent uses it: it points at something, and the
+ *  verb is done to what is on top there, if it can be done to a thing of that kind. */
+function doneTo(name: string, made: Extract<Verb, { to: 'thing' }>, world: BlockWorld<any>, me: Body, args: { what: string }): string {
+  const target = aim(world, me, args.what);
+  if (typeof target === 'string') return target;
+  const { cell } = target, things: Thing[] = [];
+  const ofItem = (item: Item, inHand: boolean) => {
+    // (What is held can be a block that was taken: then the kind of block says what can be done.)
+    const kind = world.itemKind(item.kind) ?? world.blockKind(item.kind);
+    if (kind) things.push({ called: world.called(item), kind, item, cell, inHand });
+  };
+  const ofBlock = (place: Place) => {
+    const kind = world.blockKind(world.block(place) ?? '');
+    if (kind) things.push({ called: world.called(world.block(place)!), kind, block: place, cell, inHand: false });
+  };
+  const lying = world.items(cell).at(-1), top = world.column(cell).at(-1);
+  if (target.hand) {
+    if (!me.hand) return 'Your hand is empty.';
+    ofItem(me.hand, true);
+  } else if (target.body) {
+    return `You cannot ${name} ${someone(world, me, target.body, true)}.`;
+  } else if (target.item || target.block) {
+    // Pointed at by its name: this one thing, and only if nothing is on top of it.
+    if (target.item ? lying !== target.item : lying || top?.[0] !== target.block![2]) return 'Something lies on top of it.';
+    if (target.item) ofItem(target.item, false);
+    else ofBlock(target.block!);
+  } else {
+    // A position: what lies on top there, or else the block under it.
+    if (lying) ofItem(lying, false);
+    if (top) ofBlock([cell[0], cell[1], top[0]]);
+    if (!things.length) return 'There is only water.';
+  }
+  const thing = things.find(found => allowed(name, made, found.kind) === true);
+  if (!thing) {
+    const why = things.map(found => allowed(name, made, found.kind)).find(said => typeof said === 'string');
+    const first = things[0]!;
+    return why || (!first.inHand && 'ground' in first.kind && first.kind.ground ? `There is nothing to ${name} at ${at(cell)}.` : `You cannot ${name} a ${first.called}.`);
+  }
+  if (!thing.inHand) {
+    const out = outOfReach(world, me, cell, !!thing.block);
+    if (out) return out;
+  }
+  return made.does(world, me, thing, args);
+}
+
+/** The verbs of a world as the engine hands them to the agents: as tools. A verb that is
+ *  done to a thing gets the argument `what`, and is left out if no kind of the world lets
+ *  it be done. `on` says, for the start screen, what such a verb can be done to. */
+export function asTools(verbs: Record<string, Verb>, kinds: Record<string, BlockKind | ItemKind>): Record<string, Tool<BlockWorld<any>, Body, any> & { on?: string[] }> {
+  const tools: ReturnType<typeof asTools> = {};
+  for (const [name, made] of Object.entries(verbs)) {
+    if (made.to !== 'thing') {
+      tools[name] = { about: made.about, args: made.args, needed: made.needed, run: (world, me, args) => made.does(world, me, args) };
+      continue;
+    }
+    const on = Object.entries(kinds).filter(([, kind]) => allowed(name, made, kind) === true)
+      .map(([kindName, kind]) => kind.called ?? `${kindName} block`);
+    if (!on.length) continue;
+    tools[name] = { about: made.about, args: { what: WHAT, ...made.args }, needed: made.needed, on: made.usually ? undefined : on,
+                    run: (world, me, args: { what: string }) => doneTo(name, made, world, me, args) };
+  }
+  return tools;
+}
+
+// ---------------------------------------------------------------- the verbs
+
+const look = verb({
+  about: 'Look around, or closely at something next to you.',
+  args: { what: { ...WHAT, about: `left out: all around you. Or ${WHAT.about}`, optional: true } },
+  does(world, me, { what }) {
+    if (what === undefined || /^(all )?around$/i.test(what.trim())) return surroundings(world, me);
+    const target = aim(world, me, what);
+    if (typeof target === 'string') return target;
+    if (target.hand) {
       if (!me.hand) return 'Your hand is empty.';
       return `You hold a ${world.called(me.hand)}${called(world, me, me.hand)}.${me.hand.text === undefined ? '' : ` It says "${me.hand.text}"`}`;
     }
-    if (where !== 'around') return lookedAt(world, me, world.next(me.cell, where));
-    const seen = around(world, me);
-    inner(world).sawLast.set(me, seen);
-    return [
-      world.where(me) + seen.feet,
-      `You carry: ${me.hand ? `a ${world.called(me.hand)}${called(world, me, me.hand)}` : 'nothing'}.`,
-      `Stacks in sight (up to ${seen.reach} away), as position: height: ${[...seen.stacks].map(([cell, text]) => `${cell}: ${text}`).join(', ') || 'none'}.`,
-      `Water in sight: ${[...seen.water].map(([direction, text]) => `${direction}: ${text}`).join('; ') || 'none'}.`,
-      ...seen.beings,
-      ...seen.also,
-    ].join('\n');
+    return lookedAt(world, me, target.cell);
   },
 });
 
-const walk = tool({
+const walk = verb({
   about: 'Walk in a direction: one step, or more, up to as far as you see. Tells what is new in sight then.',
   args: {
     direction: { type: 'one of', options: Object.keys(WAYS) },
     steps: { type: 'number', min: 1, whole: true, optional: true },
   },
-  run(world, me, args) {
+  does(world, me, args) {
     const steps = args.steps ?? 1, far = world.sight(me), { direction } = args;
     if (steps > far) return `You can only walk as far as you see: ${far} steps from here. ${world.where(me)}`;
     const walked = (n: number) => (n === 1 ? 'a step' : `${n} steps`);
@@ -261,13 +386,13 @@ const walk = tool({
   },
 });
 
-const jump = tool({
+const jump = verb({
   about: 'Jump in a direction. More strength gets you further and higher.',
   args: {
     direction: { type: 'one of', options: Object.keys(DIRECTIONS) },
     strength: { type: 'number', min: 1, whole: true },
   },
-  run(world, me, { direction, strength }) {
+  does(world, me, { direction, strength }) {
     const strongest = inner(world).definition.jump ?? 2;
     if (strength > strongest) return `Strength must be a whole number from 1 to ${strongest}.`;
     const [dx, dy] = DIRECTIONS[direction as keyof typeof DIRECTIONS], own = world.height(me.cell);
@@ -307,38 +432,37 @@ function outOfReach(world: BlockWorld<any>, me: Body, cell: Cell, takingBlock = 
   return null;
 }
 
-const take = tool({
-  about: 'Take what lies on top.',
-  args: { where: { type: 'one of', options: ['here', 'north', 'south', 'east', 'west'] } },
-  run(world, me, { where }) {
-    const cell = world.next(me.cell, where), lying = world.items(cell);
-    const loose = world.column(cell).filter(([, kind]) => !world.blockKind(kind)!.ground);
-    if (!lying.length && !loose.length) return world.column(cell).length ? 'There is nothing to take.' : 'There is only water.';
-    const out = outOfReach(world, me, cell, !lying.length);
-    if (out) return out;
+const take = verbTo({
+  about: 'Take something: what lies on top where you point.',
+  usually: kind => !('ground' in kind && kind.ground),   // anything loose
+  does(world, me, thing) {
+    if (thing.inHand) return 'You hold it already.';
     if (me.hand) return 'Your hands are full.';
     let said = '';
-    if (lying.length) {
-      me.hand = lying.at(-1)!;
-      world.removeItem(me.hand);
+    if (thing.item) {
+      world.removeItem(thing.item);
+      me.hand = thing.item;
     } else {
-      const [z, kind] = loose.at(-1)!;
+      const place = thing.block!, kind = world.block(place)!;
       me.hand = { kind };
-      inner(world).carryName([cell[0], cell[1], z], me.hand);   // (what it was called, it is still called in a hand)
-      world.removeBlock([cell[0], cell[1], z]);
-      said = inner(world).react(world.blockKind(kind)!.on?.taken, { at: [cell[0], cell[1], z], by: me });
+      inner(world).carryName(place, me.hand);   // (what it was called, it is still called in a hand)
+      world.removeBlock(place);
+      said = inner(world).react(world.blockKind(kind)!.on?.taken, { at: place, by: me });
     }
-    return `You took a ${world.called(me.hand)}.${said} ${world.where(me)}`;
+    return `You took a ${thing.called}.${said} ${world.where(me)}`;
   },
 });
 
-const put = tool({
+const put = verb({
   about: 'Put down what you carry.',
-  args: { where: { type: 'one of', options: ['here', 'north', 'south', 'east', 'west'] } },
-  run(world, me, { where }) {
+  args: { where: { type: 'text', about: 'a position like "(2, 1)", or "here", or a name you gave a place or a thing there' } },
+  does(world, me, { where }) {
     const thing = me.hand;
     if (!thing) return 'You carry nothing.';
-    const cell = world.next(me.cell, where), [x, y] = cell;
+    const target = aim(world, me, where);
+    if (typeof target === 'string') return target;
+    if (target.hand) return 'Say where to put it down.';
+    const { cell } = target, [x, y] = cell;
     const there = world.bodyAt(cell);
     if (there && there !== me) return `${someone(world, me, there)} stands there.`;
     if (!world.blockKind(thing.kind)) {   // a note, a fruit: it lies on top
@@ -370,14 +494,14 @@ const put = tool({
   },
 });
 
-const throwIt = tool({
+const throwIt = verb({
   about: 'Throw what you carry.',
   args: {
     direction: { type: 'number', about: 'compass degrees: 0 is north, 90 is east' },
     angle: { type: 'number', about: 'degrees above the ground, 0 to 90', min: 0, max: 90 },
     power: { type: 'number', about: '1 to 10', min: 1, max: 10 },
   },
-  run(world, me, { direction, angle, power }) {
+  does(world, me, { direction, angle, power }) {
     const thing = me.hand;
     if (!thing) return 'You carry nothing.';
     me.hand = null;
@@ -463,44 +587,47 @@ const throwIt = tool({
   },
 });
 
-const say = tool({
+const say = verb({
   about: 'Say something out loud.',
   args: { text: { type: 'text' }, loudness: { type: 'one of', options: ['whisper', 'normal', 'shout'], optional: true } },
-  run(world, me, { text, loudness }) {
+  does(world, me, { text, loudness }) {
     const said = text.slice(0, 500), how = (loudness ?? 'normal') as Loudness;
     world.say(me, said, how);
     return `You ${{ whisper: 'whispered', normal: 'said', shout: 'shouted' }[how]}: "${said}"`;
   },
 });
 
-const note = tool({
+const note = verb({
   about: 'Write a note.',
   args: { text: { type: 'text' } },
-  run(_world, me, { text }) {
+  does(_world, me, { text }) {
     if (me.hand) return 'Your hands are full.';
     me.hand = { kind: 'note', text: text.slice(0, 1000) };
     return 'You wrote a note. You hold it in your hand.';
   },
 });
 
-const name = tool({
-  about: 'Give something a name of your own: what you hold, or what is at a position you can see.',
-  args: {
-    name: { type: 'text' },
-    x: { type: 'number', whole: true, optional: true },
-    y: { type: 'number', whole: true, optional: true },
-  },
-  run(world, me, args) {
+const name = verb({
+  about: 'Give something a name of your own: what you hold, or someone or something you see. You can point at it by that name then.',
+  args: { name: { type: 'text' }, what: WHAT },
+  does(world, me, args) {
     const given = args.name.trim().slice(0, 40), names = inner(world);
     if (!given) return 'Name is missing.';
-    if (args.x === undefined || args.y === undefined) {
-      if (!me.hand) return 'You hold nothing. Say where the thing is: x and y.';
+    if (/^(here|hand|around)$/i.test(given) || /^\(?\s*-?\d+\s*[,;\s]\s*-?\d+\s*\)?$/.test(given)) return 'That cannot be a name: it already means something.';
+    const target = aim(world, me, args.what, 'sight');
+    if (typeof target === 'string') return target;
+    if (target.hand) {
+      if (!me.hand) return 'Your hand is empty.';
       names.callIt(me, me.hand, given);
       return `You call the ${world.called(me.hand)} in your hand "${given}" now.`;
     }
-    const cell: Cell = [args.x, args.y], far = world.sight(me);
-    if (Math.abs(cell[0] - me.cell[0]) > far || Math.abs(cell[1] - me.cell[1]) > far) return 'That is out of your sight.';
-    const there = world.bodyAt(cell), lying = world.items(cell).at(-1), top = world.column(cell).at(-1);
+    const { cell } = target;
+    // Pointed at by a name it has: that one thing gets the new name. By a position: who
+    // stands there, or what lies on top, or the top block, or else the place itself.
+    const pointed = target.body || target.item || target.block;
+    const there = target.body ?? (pointed ? undefined : world.bodyAt(cell));
+    const lying = target.item ?? (pointed ? undefined : world.items(cell).at(-1));
+    const top = target.block ? [target.block[2], world.block(target.block)!] as const : pointed ? undefined : world.column(cell).at(-1);
     if (there && there !== me) {
       const before = someone(world, me, there, true);
       names.callIt(me, there, given);
@@ -520,12 +647,28 @@ const name = tool({
   },
 });
 
-const clock = tool({
-  about: 'Look at your watch.',
-  args: {},
-  run: () => `It is ${new Date().toTimeString().slice(0, 8)}.`,
+/** Whether something can be destroyed is up to its kind. Usually only notes can. */
+const destroy = verbTo({
+  about: 'Destroy something for good.',
+  does(world, _me, thing) {
+    if (thing.item) world.removeItem(thing.item);
+    else world.removeBlock(thing.block!);
+    return `You destroyed the ${thing.called}${thing.inHand ? ' in your hand' : ` at ${at(thing.cell)}`}. It is gone.`;
+  },
 });
 
-/** The tools every block world can hand to its agents. */
-export const basic: Record<'look' | 'walk' | 'jump' | 'take' | 'put' | 'throw' | 'say' | 'note' | 'name' | 'clock', BlockTool> =
-  { look, walk, jump, take, put, throw: throwIt, say, note, name, clock };
+const clock = verb({
+  about: 'Look at your watch.',
+  args: {},
+  does: () => `It is ${new Date().toTimeString().slice(0, 8)}.`,
+});
+
+const leave = verb({
+  about: 'Leave this world for good.',
+  args: {},
+  does: (world, me) => world.leave(me, 'It left the world.') && 'You have left.',
+});
+
+/** The verbs every block world can give its agents. */
+export const basic: Record<'look' | 'walk' | 'jump' | 'take' | 'put' | 'throw' | 'say' | 'note' | 'name' | 'destroy' | 'clock' | 'leave', Verb> =
+  { look, walk, jump, take, put, throw: throwIt, say, note, name, destroy, clock, leave };

@@ -6,13 +6,15 @@
 
 // ---------------------------------------------------------------- settings
 
-/** What a world lets a person set before it starts. The form is drawn from these. */
-export type Setting =
-  | { type: 'number'; title: string; usual: number; min?: number; max?: number }
-  | { type: 'switch'; title: string; usual: boolean }
-  | { type: 'choice'; title: string; usual: string; options: readonly string[] }
-  | { type: 'choices'; title: string; usual: readonly string[]; options: readonly string[] }
-  | { type: 'text'; title: string; usual: string };
+/** What a world lets a person set before it starts. The form is drawn from these.
+ *  `about`: what the setting is about. The start screen shows settings about the agents
+ *  (how many, what becomes of them) with the agents, and the others with the world. */
+export type Setting = { title: string; about?: 'agents' } & (
+  | { type: 'number'; usual: number; min?: number; max?: number }
+  | { type: 'switch'; usual: boolean }
+  | { type: 'choice'; usual: string; options: readonly string[] }
+  | { type: 'choices'; usual: readonly string[]; options: readonly string[] }
+  | { type: 'text'; usual: string });
 
 export type Settings = Record<string, Setting>;
 
@@ -34,19 +36,27 @@ export interface Role {
   /** How many of them are alive at the same time. */
   count: number;
   model: string;
-  /** What it knows before it is told anything (the system prompt). */
+  /** What it knows before it is told anything (the system prompt). It belongs to the world:
+   *  the start screen does not offer it. */
   knows: string;
-  /** What it is told once, when it wakes up. */
+  /** The world's message to it, once, when it wakes up. A person starting a run can change it. */
   told: string;
-  /** When it dies or ends its turn: a new agent with an empty memory takes its place, the
-   *  same agent wakes up again and remembers, or nobody follows. */
-  afterDeath: 'new agent' | 'same agent' | 'nobody';
+  /** It dies in its world. On: the same agent wakes up again where agents wake up, and
+   *  remembers. Off: it is gone. */
+  comesBack: boolean;
+  /** One is gone: it died and does not come back, or it left. On: a new agent with an empty
+   *  memory takes its place. Off: nobody does, and the world ends with its last agent. */
+  followed: boolean;
+  /** It ends its turn (it stops talking, without having left). Off: nothing happens to it. It
+   *  stays where it is, and after a while it is told what its senses tell it (World.senses).
+   *  On: it has left. */
+  stoppingLeaves: boolean;
   /** How often its place is filled again. Left out: as long as the world lasts. */
   lives?: number;
   /** How many of them the world has room for, if more can be called in while it runs (see
    *  Host.call). Left out: nobody can be called. */
   room?: number;
-  /** Tools switched off for this role only (only tools the world does not need). */
+  /** Tools switched off for this role (only tools the world does not need). `wait` too. */
   without?: readonly string[];
 }
 
@@ -101,8 +111,11 @@ export interface Host {
    *  that moment. Of several notices `about` the same thing, the agent is told once.
    *  A `quiet` notice does not end a wait: it is told with whatever comes next. */
   notice(place: number, text: string | (() => string), how?: { about?: string; quiet?: boolean }): void;
-  /** An agent died in the world. The engine does what its role says comes after. */
+  /** An agent died in the world. If its role says so it comes back, otherwise it is gone. */
   died(place: number, why: string): void;
+  /** An agent left the world for good: it chose to, or the world ended its part (it has
+   *  made its one decision). It never comes back, whatever its role says about dying. */
+  left(place: number, why: string): void;
   /** Calls one more agent of a role into the world, if the role has room for more (`room`).
    *  If it is full, the one that has been alive longest is gone, and the new one takes its
    *  place. The new agent wakes up a moment later, with `greeting` as its `called`. An agent
@@ -127,8 +140,12 @@ export interface Host {
 export interface World {
   /** An agent wakes up in its place (the first time, or again). */
   wake(agent: Agent): void;
-  /** Nobody follows in this place: its body leaves the world. */
-  leave(place: number): void;
+  /** Nobody follows in this place: its body is taken out of the world. */
+  remove(place: number): void;
+  /** What its senses tell an agent right now, without it asking: what it would know by
+   *  simply being there. An agent that stopped talking is told this, so it never learns
+   *  that there is anything but its world. */
+  senses?(agent: Agent): string;
   /** What this agent can do. */
   tools(agent: Agent): Record<string, Tool<any, any, any>>;
   /** An agent uses a tool. The arguments have been checked against the tool's `args`. */
@@ -151,6 +168,9 @@ export interface WorldDefinition<S extends Settings = Settings> {
   /** How long it lasts unless a person says otherwise. */
   minutes: number;
   roles(chosen: Chosen<S>): Record<string, Role>;
+  /** What agents can do in this world, for the start screen: there a person switches tools off. */
+  tools(chosen: Chosen<S>): Record<string, { about: string; needed?: true; on?: string[] }>;
+  // (`on`: if it can only be done to some kinds of thing, what they are called.)
   create(chosen: Chosen<S>, host: Host): World;
 }
 

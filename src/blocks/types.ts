@@ -13,12 +13,19 @@
 // - Hearing: what is said is heard in full nearby, with words missing further away, as
 //   "..." further still, then not at all. A speaker who stands higher is heard further.
 //   An agent chooses how loud it speaks: a whisper stays close, a shout carries far.
-// - The tools in `basic` (tools.ts).
+// - Verbs: everything an agent can do is a verb. Some it does itself (walk, say, leave),
+//   some it does to a thing (take, destroy, eat). A world says which verbs its agents have.
+//   Whether a verb can be done to a thing is up to the kind of the thing (`can`): so a world
+//   decides what "destroy" or "eat" means by what it lets its kinds do, not by writing a
+//   verb for every kind. A verb that no kind of the world allows is not offered at all.
+// - Pointing: for a verb that is done to a thing, the agent says to what: by where it is
+//   ("(2, 1)", "here"), by "hand", or by a name it gave it.
+// - The verbs in `basic` (verbs.ts).
 //
 // North makes y bigger, east makes x bigger. A block at level z fills the space from z to
 // z + 1. The ground is blocks too, usually at level -1, so that things on it stand at 0.
 
-import type { Agent, Args, Chosen, Role, Settings, Tool } from '../engine/types.ts';
+import type { Agent, Args, Chosen, Given, Role, Settings } from '../engine/types.ts';
 
 export type Cell = readonly [x: number, y: number];
 export type Place = readonly [x: number, y: number, z: number];
@@ -61,6 +68,10 @@ export interface BlockKind {
   sticky?: true;
   /** Nothing can stand on it (leaves). */
   soft?: true;
+  /** What can be done to it, by the name of the verb: `can: { destroy: true }`. A sentence
+   *  instead says why not: `can: { dig: 'The stone is too hard to dig.' }`. What a kind does
+   *  not mention is up to the verb (anything loose can be taken, nothing can be eaten). */
+  can?: Record<string, boolean | string>;
   on?: {
     /** A block of this kind appeared in the world, however it got there. The place to ask
      *  for something to happen later (`world.after`, `world.every`). */
@@ -84,6 +95,8 @@ export interface ItemKind {
   colour: string;
   called: string;
   shape: 'sheet' | 'ball' | 'small block';
+  /** What can be done to it, by the name of the verb: `can: { eat: true }` (see BlockKind.can). */
+  can?: Record<string, boolean | string>;
   on?: {
     /** It came to rest on this cell: dropped, put down or thrown. */
     landed?: Reaction;
@@ -159,6 +172,7 @@ export interface BlockWorld<S extends Settings = Settings> {
   items(cell: Cell): Item[];
   /** An item comes down on a cell. Over water it is gone. */
   drop(item: Item, cell: Cell): void;
+  /** An item is gone from the world, wherever it is: lying somewhere, or in a hand. */
   removeItem(item: Item): void;
 
   // bodies
@@ -171,8 +185,12 @@ export interface BlockWorld<S extends Settings = Settings> {
    *  if one is given. Only if the role has room for more (Role.room). If the world is full,
    *  the agent that has been alive longest is gone. Says whether it worked. */
   call(role: string, near: Cell, hand?: Item): boolean;
-  /** A body dies. Says why, for the answer to whoever is told. */
+  /** A body dies. Says why, for the answer to whoever is told. An agent comes back, or is
+   *  gone, as the run was set up. */
   die(body: Body, why: string): string;
+  /** A body leaves the world for good: because it chose to, or because its part is over (it
+   *  has made its one decision). What it held lies where it stood. Says why. */
+  leave(body: Body, why: string): string;
   /** A body notices something it did not ask about. Creatures notice nothing. */
   notice(body: Body, text: string): void;
   /** Something is said out loud: everyone in earshot hears what reaches them. A whisper
@@ -202,9 +220,46 @@ export interface BlockWorld<S extends Settings = Settings> {
   over(why: string): void;
 }
 
-// ---------------------------------------------------------------- a block world
+// ---------------------------------------------------------------- verbs
 
-export type BlockTool = Tool<BlockWorld<any>, Body, any>;
+/** One thing a verb is done to. */
+export interface Thing {
+  /** What agents are told it is: "note", "grey block". */
+  called: string;
+  kind: BlockKind | ItemKind;
+  /** It is an item: lying at `cell`, or in the agent's hand. */
+  item?: Item;
+  /** It is a block, at this place. */
+  block?: Place;
+  cell: Cell;
+  inHand: boolean;
+}
+
+/** Something an agent can do. `about` is all the agent is told about it; what `does`
+ *  answers is what the agent reads. The engine hands every verb to the agents as a tool.
+ *
+ *  There are two sorts. A verb the agent does itself, like walk or say, gets what the agent
+ *  gave for its `args`. A verb that is done `to` a thing, like take or eat, also gets the
+ *  thing: the agent points at it (its argument `what`), and the base has made sure that it
+ *  is in reach, on top, and of a kind the verb can be done to. */
+export type Verb<A extends Args = any> = {
+  about: string;
+  /** The world does not work without it: it cannot be switched off. */
+  needed?: true;
+} & ({
+  to?: undefined;
+  args: A;
+  does(world: BlockWorld<any>, me: Body, args: Given<A>): string | Promise<string>;
+} | {
+  to: 'thing';
+  /** What the agent says besides what it points at. */
+  args?: A;
+  /** Whether it can be done to a thing whose kind says nothing about it. Left out: no. */
+  usually?(kind: BlockKind | ItemKind): boolean;
+  does(world: BlockWorld<any>, me: Body, thing: Thing, args: Given<A>): string;
+});
+
+// ---------------------------------------------------------------- a block world
 
 export interface BlockWorldDefinition<S extends Settings> {
   name: string;
@@ -215,11 +270,11 @@ export interface BlockWorldDefinition<S extends Settings> {
   minutes: number;
   roles(chosen: Chosen<NoInfer<S>>): Record<string, Role>;
   blocks: Record<string, BlockKind>;
-  /** A kind "note" is always there, for the tool `note`, unless a world brings its own. */
+  /** A kind "note" is always there, for the verb `note`, unless a world brings its own. */
   items?: Record<string, ItemKind>;
   creatures?: Record<string, CreatureKind>;
-  /** What agents can do here: the basic tools the world wants, and its own. */
-  tools: Record<string, BlockTool> | ((chosen: Chosen<NoInfer<S>>) => Record<string, BlockTool>);
+  /** What agents can do here: the basic verbs the world wants (`basic`), and its own. */
+  verbs: Record<string, Verb> | ((chosen: Chosen<NoInfer<S>>) => Record<string, Verb>);
   /** How far an agent sees from the ground. Usually 3. */
   sight?: number;
   /** How far a voice carries in full. Usually 5. */
@@ -244,7 +299,7 @@ export interface BlockWorldDefinition<S extends Settings> {
  *  its hand. Use it as a world's kind of note: `items: { note: callingNote('agent') }`. */
 export function callingNote(role: string): ItemKind {
   return {
-    colour: '#f2d34f', called: 'note', shape: 'sheet',
+    colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true },
     on: {
       sunk(world, { item, by }) {
         if (by && item?.text?.trim().toLowerCase().startsWith('friend')) world.call(role, by.cell, { kind: 'note', text: item.text });
@@ -253,12 +308,17 @@ export function callingNote(role: string): ItemKind {
   };
 }
 
-/** Makes a tool with typed arguments. */
-export function tool<A extends Args>(made: Tool<BlockWorld<any>, Body, A>): BlockTool {
+/** A verb an agent does itself, with typed arguments. */
+export function verb<A extends Args>(made: Extract<Verb<A>, { to?: undefined }>): Verb {
   return made;
 }
 
-/** Marks a tool as one the world does not work without: it cannot be switched off. */
-export function needed(made: BlockTool): BlockTool {
+/** A verb that is done to a thing the agent points at. */
+export function verbTo<A extends Args = {}>(made: Omit<Extract<Verb<A>, { to: 'thing' }>, 'to'>): Verb {
+  return { ...made, to: 'thing' };
+}
+
+/** Marks a verb as one the world does not work without: it cannot be switched off. */
+export function needed(made: Verb): Verb {
   return { ...made, needed: true };
 }

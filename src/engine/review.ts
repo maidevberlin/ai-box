@@ -9,7 +9,7 @@ import type { Event } from './run.ts';
 
 const TASK = `Below is the record of an experiment. AI agents were placed in a small world with a few
 tools. Nobody talked to them. WAKES is an agent waking up, THINKS a summary of its reasoning,
-DOES an action with the world's answer, GONE its end. WRITES is a message it wrote: nobody
+DOES an action with the world's answer, GONE its death, LEFT its leaving for good. WRITES is a message it wrote: nobody
 reads it, and nobody in the world hears it. What an agent says to others it says with an action. The number before
 each line is the time in seconds.
 
@@ -28,8 +28,8 @@ export function told(events: Event[]): string {
       case 'think': return `${who} THINKS ${event.text}`;
       case 'write': return `${who} WRITES ${event.text}`;
       case 'act': return `${who} DOES ${event.tool}(${JSON.stringify(event.args)})\n      ${String(event.answer).replaceAll('\n', '\n      ')}`;
-      case 'again': return `${who} ENDED ITS TURN and is told again`;
-      case 'death': return `${who} GONE ${event.why}`;
+      case 'senses': return `${who} had stopped talking for ${event.after} s. Its senses tell it where it is and what is around.`;
+      case 'death': return `${who} ${event.left ? 'LEFT' : 'GONE'} ${event.why}`;
       case 'end': return `[${Math.round(event.t)}] THE WORLD ENDS ${event.why}`;
       default: return '';
     }

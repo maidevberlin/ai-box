@@ -101,8 +101,11 @@ function row(event: Event, index: number): HTMLElement | null {
     case 'act': return made('act', `${who} does`,
       el('div', 'call', `${event.tool}(${Object.entries(event.args as object).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})`),
       el('div', 'text', String(event.answer)));
-    case 'again': return made('wake', `${who} ended its turn · it is told again`);
-    case 'death': return made('death', `${who} is gone`, el('div', 'text', String(event.why)));
+    // An agent that had stopped talking is told what is around it: its next turn begins.
+    case 'senses': return made('act turn', `${who} looks up`,
+      el('div', 'turnline', event.turn ? `Turn ${event.turn} · after ${event.after} s of silence` : 'Next turn'),
+      el('div', 'text', String(event.text)));
+    case 'death': return made('death', event.left ? `${who} has left` : `${who} died`, el('div', 'text', String(event.why)));
     case 'error': return made('death', 'A mistake in the world', el('div', 'text', String(event.error)));
     case 'end': return made('stop', 'The world ends', el('div', 'text', String(event.why)));
     default: return null;

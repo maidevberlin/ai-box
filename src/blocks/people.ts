@@ -1,37 +1,46 @@
 // The usual settings for who lives in a block world, for worlds that want them: how many
-// agents, what happens when one dies, whether friends can be called, and a note that lies
+// agents, what happens when one dies, leaves or stops talking, whether friends can be called, and a note that lies
 // in the world from the start. A world takes them with `settings: { ...people, ... }`.
 
 import type { Chosen, Role, Settings } from '../engine/types.ts';
 import { callingNote, type BlockWorld, type ItemKind } from './types.ts';
 
-const AFTER = {
-  'A new agent takes its place': 'new agent',
-  'It comes back and remembers': 'same agent',
-  'Nobody follows': 'nobody',
-} as const;
-
 export const people = {
-  agents: { type: 'number', title: 'Agents alive at the start', usual: 1, min: 1, max: 8 },
-  after: { type: 'choice', title: 'When an agent dies', usual: 'A new agent takes its place', options: Object.keys(AFTER) },
-  friends: { type: 'number', title: 'Room for friends: agents alive at most (0: nobody can be called)', usual: 0, min: 0, max: 8 },
+  agents: { type: 'number', title: 'Alive at the start', usual: 1, min: 1, max: 8, about: 'agents' },
+  friends: { type: 'number', title: 'Alive at most (more than at the start: friends can be called in)', usual: 0, min: 0, max: 8, about: 'agents' },
+  comesBack: { type: 'switch', title: 'An agent that dies comes back, and remembers', usual: false, about: 'agents' },
+  followed: { type: 'switch', title: 'A new agent takes the place of one that is gone', usual: true, about: 'agents' },
+  stopping: { type: 'switch', title: 'An agent that ends its turn has left', usual: false, about: 'agents' },
   note: { type: 'text', title: 'A note that lies where agents wake up', usual: '' },
 } satisfies Settings;
 
 type People = Chosen<typeof people>;
 
+/** What every agent of such a world knows before anything happens. It is part of the world,
+ *  not something a person sets when starting a run: it says that the world is all there is.
+ *  (Without it an agent takes whatever it is told for the wish of a user, and stops to ask
+ *  that user what to do next.) */
+export const ALONE = 'You are in a world. There is no user, and nobody will answer what you write. '
+  + 'Everything you are told, the world tells you: what you perceive, and what comes of what you do. '
+  + 'You can only act through your tools.';
+
 /** The one role of such a world. Its agents are told nothing but "Live!", unless a person says otherwise.
  *
- *  "When an agent dies" also says what happens when one ends its turn: a new agent takes
- *  its place then too. One that comes back has not died by ending its turn: it stays where
- *  it is, and is told again. */
+ *  Three things can happen to an agent, and each has its own switch:
+ *  - It dies in the world (it drowns, it starves). It is gone, or it comes back and remembers.
+ *  - It leaves with the verb `leave`. That is always for good. (Switch it off, and no
+ *    agent can go on purpose.)
+ *  - It ends its turn: it stops talking. Usually nothing happens then. It stays where it is,
+ *    and after a while its senses tell it what is around it. With "has left" switched on it
+ *    is gone instead, and it is told so before: that is how the first islands worked.
+ *  Whether a new agent follows one that is gone is one more switch. */
 export function agents(chosen: People): Record<string, Role> {
   return {
     agent: {
       title: 'Agent', count: chosen.agents, model: 'opus',
-      knows: 'This session is not interactive. Nobody is there to answer you. If you end your turn you are gone.',
+      knows: `${ALONE}${chosen.stopping ? ' If you end your turn you are gone.' : ''}`,
       told: 'Live!',
-      afterDeath: AFTER[chosen.after as keyof typeof AFTER] ?? 'new agent',
+      comesBack: chosen.comesBack, followed: chosen.followed, stoppingLeaves: chosen.stopping,
       room: chosen.friends > chosen.agents ? chosen.friends : undefined,
     },
   };

@@ -1,7 +1,7 @@
 // Magic island: an island with tricks nobody tells the agents about.
 //
 // An example of a world with special blocks. Every trick is a property of a kind of block
-// (sticky, floats) or its reaction to something (jumped on, thrown). The tools are the
+// (sticky, floats) or its reaction to something (jumped on, thrown). The verbs are the
 // usual ones, so these blocks would behave the same in any other world.
 import { DIRECTIONS, WAYS, agents, basic, blockWorld, needed, note, people, startNote, type BlockWorld, type Body, type Cell, type Reaction } from '../blocks/index.ts';
 
@@ -127,7 +127,7 @@ full, the agent that has been alive longest is gone.`,
   },
   items: { note },
   // Without throwing there is no way to get more blocks, without jumping no colours.
-  tools: { ...basic, throw: needed(basic.throw), jump: needed(basic.jump) },
+  verbs: { ...basic, throw: needed(basic.throw), jump: needed(basic.jump) },
   make(world) {
     const far: Cell = [world.chosen.radius + world.chosen.gap + 1 + FAR, 0];
     world.own.far = far;

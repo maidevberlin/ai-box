@@ -3,11 +3,11 @@
 // the engine can run.
 
 import type { Agent, Chosen, Host, Settings, World, WorldDefinition } from '../engine/types.ts';
-import { glimpse, pattern, seenNow, startles } from './tools.ts';
-import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockTool, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
+import { asTools, glimpse, pattern, seenNow, startles, surroundings } from './verbs.ts';
+import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
          type Happened, type Item, type ItemKind, type Place, type Reaction } from './types.ts';
 
-const NOTE: ItemKind = { colour: '#f2d34f', called: 'note', shape: 'sheet' };
+const NOTE: ItemKind = { colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true } };
 const DROWNED = 'The ground under you is gone. You are in the water. You drown.';
 
 const at3 = (x: number, y: number, z: number) => `${x},${y},${z}`;
@@ -31,8 +31,8 @@ export interface Changes {
 export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, World {
   readonly own: Record<string, any> = {};
   home: Cell = [0, 0];
-  readonly toolset: Record<string, BlockTool>;
-  /** What each body saw the last time it looked around (see tools.ts). */
+  readonly toolset: ReturnType<typeof asTools>;
+  /** What each body saw the last time it looked around (see verbs.ts). */
   readonly sawLast = new Map<Body, unknown>();
   private readonly blockKinds: Record<string, BlockKind>;
   private readonly itemKinds: Record<string, ItemKind>;
@@ -61,7 +61,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.host = host;
     this.blockKinds = definition.blocks;
     this.itemKinds = { note: NOTE, ...definition.items };
-    this.toolset = typeof definition.tools === 'function' ? definition.tools(chosen) : definition.tools;
+    this.toolset = tools(definition, chosen);
     definition.make(this);
     this.settle();
   }
@@ -224,6 +224,12 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
 
   removeItem(item: Item): void {
     this.lying = this.lying.filter(found => found.item !== item);
+    for (const body of this.living) if (body.hand === item) body.hand = null;
+  }
+
+  /** Where an item lies, if it lies somewhere. */
+  whereLies(item: Item): Cell | undefined {
+    return this.lying.find(found => found.item === item)?.cell;
   }
 
   // ---------------------------------------------------------------- bodies
@@ -265,6 +271,16 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     if (body.agent) {
       if (this.acting !== body) this.notice(body, why);
       this.host.died(body.agent.place, why);
+    } else {
+      this.living = this.living.filter(other => other !== body);
+    }
+    return why;
+  }
+
+  leave(body: Body, why: string): string {
+    if (body.dead) return why;
+    if (body.agent) {
+      this.host.left(body.agent.place, why);   // (its body goes when the engine says who follows: see `wake`, `remove`)
     } else {
       this.living = this.living.filter(other => other !== body);
     }
@@ -336,6 +352,27 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   /** The name an agent gave a thing, if it gave it one. */
   nameFor(namer: Body, thing: Body | Item | Place | Cell): string | undefined {
     return namer.agent ? this.names.get(namer.agent.number)?.get(this.filedAs(thing)) : undefined;
+  }
+
+  /** What an agent gave this name, if it gave it to something that is still there: somebody,
+   *  an item, a block (by its place) or a place (by its cell). */
+  named(namer: Body, name: string): { body: Body } | { item: Item } | { block: Place } | { place: Cell } | undefined {
+    const wanted = name.trim().toLowerCase();
+    for (const [filed, given] of (namer.agent && this.names.get(namer.agent.number)) || []) {
+      if (given.toLowerCase() !== wanted) continue;
+      if (typeof filed === 'string') {
+        const [what, where] = filed.split(' ') as [string, string], numbers = where.split(',').map(Number);
+        if (what === 'agent') {
+          const body = this.living.find(found => found.agent?.number === numbers[0] && !found.dead);
+          if (body) return { body };
+        } else if (what === 'block') {
+          if (this.block(numbers as unknown as Place)) return { block: numbers as unknown as Place };
+        } else return { place: numbers as unknown as Cell };
+      } else if ((filed as Body).creature !== undefined) {
+        if (this.living.includes(filed as Body)) return { body: filed as Body };
+      } else return { item: filed as Item };
+    }
+    return undefined;
   }
 
   /** A thing becomes another thing and keeps its names: a block that is taken becomes an
@@ -479,7 +516,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.lookOut(body);
   }
 
-  leave(place: number): void {
+  remove(place: number): void {
     const body = this.living.find(found => found.agent?.place === place);
     if (!body) return;
     if (!body.dead) this.letGo(body);
@@ -488,7 +525,12 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.lookOut(null);
   }
 
-  tools(): Record<string, BlockTool> {
+  senses(agent: Agent): string {
+    const body = this.living.find(found => found.agent?.place === agent.place);
+    return body && !body.dead ? surroundings(this, body) : '';
+  }
+
+  tools(): ReturnType<typeof asTools> {
     return this.toolset;
   }
 
@@ -593,6 +635,13 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   }
 }
 
+/** What the agents of a world can do, as tools: its verbs, without those that are done to
+ *  a thing and that no kind of the world allows. */
+function tools<S extends Settings>(definition: BlockWorldDefinition<S>, chosen: Chosen<S>): ReturnType<typeof asTools> {
+  const verbs = typeof definition.verbs === 'function' ? definition.verbs(chosen) : definition.verbs;
+  return asTools(verbs, { ...definition.blocks, note: NOTE, ...definition.items });
+}
+
 /** A world built on the block base, ready for the engine. */
 export function blockWorld<S extends Settings>(definition: BlockWorldDefinition<S>): WorldDefinition<S> {
   return {
@@ -603,6 +652,7 @@ export function blockWorld<S extends Settings>(definition: BlockWorldDefinition<
     drawnBy: 'blocks',
     minutes: definition.minutes,
     roles: definition.roles,
+    tools: chosen => tools(definition, chosen),
     create: (chosen, host) => new Blocks(definition, chosen, host),
   };
 }

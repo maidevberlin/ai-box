@@ -4,10 +4,11 @@
 //
 //   npm start        then open http://127.0.0.1:8765      (PORT=8766 npm start for another port)
 //
-//   GET  /api/worlds            the worlds, with their settings and roles
+//   GET  /api/worlds            the worlds, with their settings, roles and tools
+//   GET  /api/worlds/<name>?chosen=<json>   one world's roles and tools with these settings
 //   GET  /api/runs              the runs, newest first
 //   GET  /api/runs/<id>?from=N  one run: what it is about, and its record from line N on
-//   POST /api/runs              start a run: { world, chosen, minutes, agents, roles }
+//   POST /api/runs              start a run: { world, chosen, minutes, roles }
 //   POST /api/runs/<id>/stop    end a run that is going
 
 import { build } from 'esbuild';
@@ -17,7 +18,8 @@ import { join } from 'node:path';
 import { populate } from '../engine/agents.ts';
 import { Doors } from '../engine/doors.ts';
 import { review } from '../engine/review.ts';
-import { Run, runId, type Event } from '../engine/run.ts';
+import { Run, runId, WAIT, type Event } from '../engine/run.ts';
+import type { WorldDefinition } from '../engine/types.ts';
 import { usual } from '../engine/types.ts';
 import { worlds } from '../worlds/index.ts';
 
@@ -66,13 +68,20 @@ function start(wish: Record<string, any>): string | null {
   if (going.has(id)) return null;   // one started this very second already
   const folder = join(RUNS, id);
   const run = new Run(definition, { id, folder, chosen: wish.chosen, roles: wish.roles,
-                                    minutes: wish.minutes === undefined ? undefined : Number(wish.minutes),
-                                    agents: wish.agents ? Number(wish.agents) : undefined });
+                                    minutes: wish.minutes === undefined ? undefined : Number(wish.minutes) });
   going.set(id, run);
   populate(run, doors.let(run));
   run.listeners.push({ ended: () => void review(run.events, folder) });
   run.start();
   return id;
+}
+
+/** What the start screen shows of a world: with the usual settings, or with the ones chosen so far. */
+function shown(world: WorldDefinition<any>, chosen: Record<string, unknown> = {}): Record<string, unknown> {
+  const all = { ...usual(world.settings), ...chosen };
+  const tools = Object.entries({ ...world.tools(all), wait: WAIT }).map(([name, tool]) => ({ name, about: tool.about, needed: tool.needed, on: 'on' in tool ? tool.on : undefined }));
+  return { name: world.name, title: world.title, about: world.about, settings: world.settings, minutes: world.minutes,
+           roles: world.roles(all), tools };
 }
 
 function send(response: ServerResponse, body: unknown, type = 'application/json', status = 200): void {
@@ -84,7 +93,7 @@ function send(response: ServerResponse, body: unknown, type = 'application/json'
 async function serve(request: IncomingMessage, response: ServerResponse): Promise<void> {
   if (!HOSTS.has(request.headers.host ?? '')) return send(response, { error: 'not allowed' }, undefined, 403);
   const url = new URL(request.url ?? '/', 'http://x'), path = url.pathname;
-  const [, , , id, action] = path.split('/');   // /api/runs/<id>/<action>
+  const [, , , id, action] = path.split('/');   // /api/runs/<id>/<action>, /api/worlds/<name>
   if (request.method === 'GET') {
     if (path === '/') return send(response, readFileSync(join(HERE, 'app', 'index.html')), 'text/html; charset=utf-8');
     if (path === '/app.js') {
@@ -92,10 +101,9 @@ async function serve(request: IncomingMessage, response: ServerResponse): Promis
       return send(response, code, 'text/javascript; charset=utf-8');
     }
     if (path === '/assets/robot.glb') return send(response, readFileSync(join(HERE, 'assets', 'robot.glb')), 'model/gltf-binary');
-    if (path === '/api/worlds')
-      return send(response, Object.values(all).map(world => ({
-        name: world.name, title: world.title, about: world.about, settings: world.settings, minutes: world.minutes,
-        roles: world.roles(usual(world.settings)) })));
+    if (path === '/api/worlds') return send(response, Object.values(all).map(world => shown(world)));
+    if (path.startsWith('/api/worlds/') && all[id ?? ''])
+      return send(response, shown(all[id!]!, JSON.parse(url.searchParams.get('chosen') || '{}')));
     if (path === '/api/runs') {
       const ids = new Set([...(existsSync(RUNS) ? readdirSync(RUNS) : []), ...going.keys()]);
       return send(response, [...ids].filter(found => RUN_ID.test(found)).sort().reverse().map(about).filter(Boolean));

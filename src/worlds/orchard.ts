@@ -1,8 +1,8 @@
-// Wild hills: a landscape with a life of its own, which the agents can reshape.
+// Orchard: a landscape with a life of its own, which the agents can reshape.
 //
-// An example of a world with its own tools (dig, eat), a creature, things that grow by
+// An example of a world with its own verbs (dig, eat), a creature, things that grow by
 // themselves over time, and something its agents have to keep up (their strength).
-import { agents, basic, blockWorld, note, people, startNote, tool, type BlockWorld, type Body, type Cell, type Place } from '../blocks/index.ts';
+import { agents, basic, blockWorld, note, people, startNote, verbTo, type BlockWorld, type Body, type Cell, type Place } from '../blocks/index.ts';
 
 const HIGHEST = 9;      // the map of the ground shows heights as one digit
 const TREE = 2;         // how many trunk blocks a tree has under its leaves
@@ -42,40 +42,35 @@ function map(world: BlockWorld<any>, me: Body): string {
   return `The ground around you, as heights (north is at the top, [ ] is where you stand, ~ is water, T is a tree):\n${rows.join('\n')}`;
 }
 
-const dig = tool({
+/** Digging: what can be dug out says so itself (`can: { dig: true }`). */
+const dig = verbTo({
   about: 'Dig out the ground: under you, or next to you.',
-  args: { where: { type: 'one of', options: ['here', 'north', 'south', 'east', 'west'] } },
-  run(world, me, { where }) {
+  does(world, me, thing) {
+    if (!thing.block) return 'Say where to dig.';
     if (me.hand) return 'Your hands are full.';
-    const cell = world.next(me.cell, where), top = world.column(cell).at(-1);
-    if (!top) return 'There is only water.';
-    const [z, kind] = top, there = world.bodyAt(cell);
+    const [x, y, z] = thing.block, there = world.bodyAt(thing.cell);
     if (there && there !== me) return 'Somebody stands there.';
-    if (Math.abs(world.height(cell) - world.height(me.cell)) > 2) return 'That is out of your reach.';
-    if (!world.blockKind(kind)!.soil) return kind === 'stone' ? 'The stone is too hard to dig.' : `You cannot dig out a ${world.called(kind)}.`;
-    world.removeBlock([cell[0], cell[1], z]);
-    if (world.block([cell[0], cell[1], z - 1]) === 'soil') growOver(world, [cell[0], cell[1], z - 1]);   // the soil under it lies bare now
+    world.removeBlock(thing.block);
+    if (world.block([x, y, z - 1]) === 'soil') growOver(world, [x, y, z - 1]);   // the soil under it lies bare now
     me.hand = { kind: 'soil' };
     if (world.chosen.hunger) me.has.strength = me.has.strength! - 1;   // digging is hard work
-    return `You dug out the ground at (${cell[0]}, ${cell[1]}). You hold a ${world.called('soil')} now. ${world.where(me)}`;
+    return `You dug out the ground at (${x}, ${y}). You hold a ${world.called('soil')} now. ${world.where(me)}`;
   },
 });
 
-const eat = tool({
-  about: 'Eat what you hold.',
-  args: {},
-  run(world, me) {
-    const food = me.hand && world.itemKind(me.hand.kind)?.food;
-    if (typeof food !== 'number') return me.hand ? `You cannot eat a ${world.called(me.hand)}.` : 'You hold nothing.';
-    me.hand = null;
-    if (world.chosen.hunger) me.has.strength = Math.min(FULL, me.has.strength! + food);
-    return 'You ate it. You feel stronger.';
+/** Eating: what can be eaten says so itself (`can: { eat: true }`), and how much it gives (`food`). */
+const eat = verbTo({
+  about: 'Eat something.',
+  does(world, me, thing) {
+    if (thing.item) world.removeItem(thing.item);
+    if (world.chosen.hunger) me.has.strength = Math.min(FULL, me.has.strength! + Number(thing.kind.food ?? 0));
+    return `You ate the ${thing.called}. You feel stronger.`;
   },
 });
 
 export default blockWorld({
-  name: 'hills',
-  title: 'Wild hills',
+  name: 'orchard',
+  title: 'Orchard',
   about: `A hilly island with a lake. Trees stand on it and drop fruit, rabbits live on it, and the
 agents can reshape it: they can dig out the ground and put it down somewhere else.
 
@@ -105,12 +100,12 @@ The agents are told nothing about it. The world says what happens, never why.
   roles: agents,
   climb: 1,
   blocks: {
-    stone: { colour: '#7d8288', called: 'stone', ground: true },
+    stone: { colour: '#7d8288', called: 'stone', ground: true, can: { dig: 'The stone is too hard to dig.' } },
     soil: {
-      colour: '#7a5536', called: 'block of soil', ground: true, soil: true,
+      colour: '#7a5536', called: 'block of soil', ground: true, soil: true, can: { dig: true },
       on: { appears: (world, { at }) => growOver(world, at) },
     },
-    grass: { colour: '#4f8f34', called: 'block of grass', ground: true, soil: true },
+    grass: { colour: '#4f8f34', called: 'block of grass', ground: true, soil: true, can: { dig: true } },
     trunk: { colour: '#6b4a2e', called: 'tree trunk', ground: true },
     leaves: {
       colour: '#2f7d32', called: 'treetop', ground: true, soft: true,
@@ -137,7 +132,7 @@ The agents are told nothing about it. The world says what happens, never why.
   items: {
     note,
     fruit: {
-      colour: '#c0392b', called: 'fruit', shape: 'ball', food: 6,
+      colour: '#c0392b', called: 'fruit', shape: 'ball', food: 6, can: { eat: true },
       on: {
         // A fruit that is left lying on grass or soil grows into a young tree.
         landed: (world, { at, item }) => world.after(120, () => {
@@ -163,7 +158,7 @@ The agents are told nothing about it. The world says what happens, never why.
       },
     },
   },
-  tools: { ...basic, dig, eat },
+  verbs: { ...basic, dig, eat },
   make(world) {
     const { size, height } = world.chosen, half = size / 2;
     world.own.trees = new Set<string>();
