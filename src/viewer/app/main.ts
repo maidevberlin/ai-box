@@ -5,7 +5,7 @@
 // happen between the agents' actions too.
 
 import type { Event } from '../../engine/run.ts';
-import { openCreate } from './create.ts';
+import { openCreate, type WorldInfo } from './create.ts';
 import { Film } from './film.ts';
 import { $, api, clock, el, started } from './page.ts';
 import { PLACE_COLOURS, Scene, type View } from './scene.ts';
@@ -14,6 +14,8 @@ interface About {
   id: string; world: string; title: string; minutes: number; models: string[];
   ended: string | null; seconds: number; going: boolean;
   review: { name: string; summary: string } | null;
+  chosen?: Record<string, unknown>;
+  roles?: Record<string, { title: string; count: number; model: string; told: string; without: string[] }>;
 }
 
 const LIST = 4000;   // how often the list of runs is read again, in milliseconds
@@ -259,6 +261,28 @@ $('notesButton').onclick = () => {
   notesOpen = !notesOpen;
   shown = -2;   // (drawn again, with the panel)
   draw();
+};
+// How the run on screen was set up: its settings, and who lived in it. (What differs from
+// what is usual for the world now is marked.)
+$('setupButton').onclick = async () => {
+  if (!about) return;
+  const run = about, world = (await api<WorldInfo[]>('/api/worlds')).find(found => found.name === run.world);
+  const said = (value: unknown) => (value === true ? 'on' : value === false ? 'off' : value === '' ? '–' : Array.isArray(value) ? value.join(', ') || '–' : String(value));
+  const fact = (title: string, value: unknown, usual?: unknown) =>
+    el('div', `fact${usual !== undefined && JSON.stringify(usual) !== JSON.stringify(value) ? ' changed' : ''}`, el('span', '', title), el('b', '', said(value)));
+  $('setupTitle').textContent = `${run.title} · ${started(run.id)}`;
+  $('setupBody').replaceChildren(
+    el('h3', '', 'The world'),
+    fact('It ends after', run.minutes ? `${run.minutes} minute${run.minutes === 1 ? '' : 's'}` : 'no time limit', world && (world.minutes ? `${world.minutes} minute${world.minutes === 1 ? '' : 's'}` : 'no time limit')),
+    ...Object.entries(run.chosen ?? {}).map(([name, value]) => fact(world?.settings[name]?.title ?? name, value, world?.settings[name]?.usual)),
+    ...Object.entries(run.roles ?? {}).flatMap(([name, role]) => [
+      el('h3', '', role.title),
+      fact('At the start', role.count),
+      fact('Model', role.model, world?.roles[name]?.model),
+      fact("The world's message to an agent that wakes up", role.told),
+      fact('Cannot', role.without.join(', ') || 'nothing is switched off', role.without.length ? null : undefined),
+    ]));
+  ($('runSetup') as HTMLDialogElement).showModal();
 };
 $('speed').onchange = event => { speed = Number((event.target as HTMLSelectElement).value); };
 $('live').onclick = () => { live = playing = true; at = film.length; draw(); };

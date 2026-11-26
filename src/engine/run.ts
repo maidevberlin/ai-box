@@ -405,6 +405,8 @@ export class Run {
   about(): Record<string, unknown> {
     return { id: this.id, world: this.definition.name, title: this.definition.title, minutes: this.minutes,
              chosen: this.chosen, models: [...new Set(Object.values(this.roles).map(role => role.model))],
+             roles: Object.fromEntries(Object.entries(this.roles).map(([name, role]) =>
+               [name, { title: role.title, count: role.count, model: role.model, told: role.told, without: role.without ?? [] }])),
              ended: this.ended, seconds: Math.round(this.lasted ?? this.time.now()) };
   }
 

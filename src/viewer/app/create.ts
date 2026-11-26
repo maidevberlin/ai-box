@@ -49,6 +49,14 @@ function value(setting: Setting, id: string): unknown {
   return node.value;
 }
 
+/** Sets a field to a value, if it can have it. */
+function fill(setting: Setting, id: string, given: unknown): void {
+  const node = $(id) as HTMLInputElement & HTMLSelectElement;
+  if (setting.type === 'switch') node.checked = given === true;
+  else if (setting.type === 'choices') for (const option of node.options) option.selected = Array.isArray(given) && given.includes(option.value);
+  else if (setting.type !== 'choice' || setting.options.includes(String(given))) node.value = String(given);
+}
+
 const chosen = (world: WorldInfo) => Object.fromEntries(Object.entries(world.settings).map(([name, setting]) => [name, value(setting, `set-${name}`)]));
 
 /** A setting was changed. What a role is told can depend on the settings: a text that
@@ -63,6 +71,69 @@ async function settingsChanged(world: WorldInfo): Promise<void> {
     }
   }
   world.roles = now.roles;
+}
+
+// ---------------------------------------------------------------- what was set last
+
+/** How the form is filled in. What a role is told is only kept if a person wrote it: else
+ *  it is what the world says, which can depend on the settings. */
+interface Filled {
+  chosen: Record<string, unknown>;
+  minutes: number;
+  roles: Record<string, { model: string; told: string | null; without: string[] }>;
+}
+
+const text = (id: string) => ($(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
+const switchedOff = (world: WorldInfo, role: string) => world.tools.filter(tool => !($(`role-${role}-tool-${tool.name}`) as HTMLInputElement).checked).map(tool => tool.name);
+
+/** How the form is filled in now. */
+const filled = (world: WorldInfo): Filled => ({
+  chosen: chosen(world), minutes: Number(text('minutes')),
+  roles: Object.fromEntries(Object.entries(world.roles).map(([name, role]) => [name, {
+    model: text(`role-${name}-model`), told: text(`role-${name}-told`) === role.told ? null : text(`role-${name}-told`), without: switchedOff(world, name) }])),
+});
+
+/** How the form is filled in when nobody has touched it. */
+const usually = (world: WorldInfo): Filled => ({
+  chosen: Object.fromEntries(Object.entries(world.settings).map(([name, setting]) => [name, setting.type === 'choices' ? [...setting.usual] : setting.usual])),
+  minutes: world.minutes,
+  roles: Object.fromEntries(Object.entries(world.roles).map(([name, role]) => [name, {
+    model: role.model, told: null, without: world.tools.filter(tool => !tool.needed && role.without?.includes(tool.name)).map(tool => tool.name) }])),
+});
+
+// What was set last is kept in the browser, for each world, and filled in again the next time.
+// (The browser may not let the page keep anything: then the form is just the usual one.)
+const key = (world: WorldInfo) => `ai-box:${world.name}`;
+function kept(world: WorldInfo): Filled | null {
+  try { return JSON.parse(localStorage.getItem(key(world)) ?? 'null'); } catch { return null; }
+}
+/** Keeps how the form is filled in, and shows the way back if it is not the usual. */
+function keep(world: WorldInfo): void {
+  const now = filled(world), usual = JSON.stringify(now) === JSON.stringify(usually(world));
+  try {
+    if (usual) localStorage.removeItem(key(world));
+    else localStorage.setItem(key(world), JSON.stringify(now));
+  } catch { /* nothing is kept */ }
+  $('reset').hidden = usual;
+}
+
+/** Fills the form in the way it was left the last time. */
+async function fillAgain(world: WorldInfo): Promise<void> {
+  const last = kept(world);
+  if (last) {
+    for (const [name, setting] of Object.entries(world.settings)) if (name in (last.chosen ?? {})) fill(setting, `set-${name}`, last.chosen[name]);
+    ($('minutes') as HTMLInputElement).value = String(last.minutes ?? world.minutes);
+    await settingsChanged(world);   // (what the roles are told with these settings)
+    if (picked !== world.name) return;
+    for (const [name, role] of Object.entries(last.roles ?? {})) {
+      if (!world.roles[name]) continue;
+      if (MODELS.includes(role.model)) ($(`role-${name}-model`) as HTMLSelectElement).value = role.model;
+      if (role.told !== null) ($(`role-${name}-told`) as HTMLTextAreaElement).value = role.told;
+      for (const tool of world.tools) if (!tool.needed) ($(`role-${name}-tool-${tool.name}`) as HTMLInputElement).checked = !role.without.includes(tool.name);
+      $(`role-${name}-tool-${world.tools[0]?.name}`)?.dispatchEvent(new Event('change', { bubbles: true }));   // (the count of tools that are on)
+    }
+  }
+  keep(world);
 }
 
 const ICONS: Record<string, string> = {
@@ -120,7 +191,6 @@ function draw(): void {
   $('worldSettings').parentElement!.hidden = !$('worldSettings').children.length;
   // Who lives in the world. With one kind of agent, who they are is on the same card.
   const living = el('div', 'rows', ...settings('agents'));
-  $('worldSettings').onchange = living.onchange = () => void settingsChanged(world);
   const several = Object.keys(world.roles).length > 1;
   const lives = el('section', '', el('h2', '', icon('users'), 'Who lives in it'), living);
   $('worldRoles').replaceChildren(...(several ? [lives] : []), ...Object.entries(world.roles).flatMap(([name, role]) => {
@@ -132,6 +202,7 @@ function draw(): void {
     return [several ? el('section', '', el('h2', '', icon('mind'), `${role.title}: who it is`), ...who) : lives, tools(world, name, role)];
   }));
   ($('minutes') as HTMLInputElement).value = String(world.minutes);
+  void fillAgain(world);
 }
 
 /** Opens the screen. `onStarted` is told the id of the run that was started. */
@@ -141,14 +212,24 @@ export async function openCreate(onStarted: (id: string) => void): Promise<void>
     if (!head.querySelector('.icon')) head.prepend(icon(head.dataset.icon!));
   }
   draw();
-  ($('create') as HTMLFormElement).onsubmit = async event => {
+  const form = $('create') as HTMLFormElement, now = () => worlds.find(found => found.name === picked)!;
+  // Whatever is set is kept at once. (After the settings have changed what the roles are told.)
+  form.oninput = () => keep(now());
+  form.onchange = async () => {
+    const world = now();
+    await settingsChanged(world);
+    if (picked === world.name) keep(world);
+  };
+  $('reset').onclick = async () => {
+    try { localStorage.removeItem(key(now())); } catch { /* nothing was kept */ }
+    worlds = await api<WorldInfo[]>('/api/worlds');
+    draw();
+  };
+  form.onsubmit = async event => {
     event.preventDefault();
-    const world = worlds.find(found => found.name === picked)!;
-    const text = (id: string) => ($(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
+    const world = now();
     const roles = Object.fromEntries(Object.keys(world.roles).map(name => [name, {
-      model: text(`role-${name}-model`), told: text(`role-${name}-told`),
-      without: world.tools.filter(tool => !($(`role-${name}-tool-${tool.name}`) as HTMLInputElement).checked).map(tool => tool.name),
-    }]));
+      model: text(`role-${name}-model`), told: text(`role-${name}-told`), without: switchedOff(world, name) }]));
     const answer = await api<{ id?: string; error?: string }>('/api/runs', {
       world: world.name, chosen: chosen(world), roles, minutes: Number(text('minutes')) });
     if (answer.id) onStarted(answer.id);

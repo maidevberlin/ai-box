@@ -129,6 +129,13 @@
   dialog h2 { margin: 0 0 10px; font-size: 18px; }
   dialog p { white-space: pre-line; color: var(--muted); margin: 0 0 16px; }
   dialog form { text-align: right; }
+  #runSetup { width: min(560px, calc(100% - 40px)); }
+  #setupBody { margin: 0 0 16px; }
+  #setupBody h3 { margin: 14px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #setupBody .fact { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  #setupBody .fact span { color: var(--muted); }
+  #setupBody .fact b { flex: none; max-width: 60%; font-weight: 600; text-align: right; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #setupBody .fact.changed b { color: var(--accent); }
   dialog button { border: 1px solid var(--line); border-radius: 10px; background: var(--soft); padding: 7px 16px; font-weight: 600; }
   .segments { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
   .segments button { border: 0; background: none; padding: 7px 13px; font-weight: 600; color: var(--muted); }
@@ -194,7 +201,7 @@
     </header>
     <div id="view">
       <div id="scene"></div>
-      <div id="facts"><span id="agents" class="chip"></span><button id="notesButton" class="chip"></button></div>
+      <div id="facts"><span id="agents" class="chip"></span><button id="notesButton" class="chip"></button><button id="setupButton" class="chip">⚙ Settings</button></div>
       <div id="notes" hidden></div>
       <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
     </div>
@@ -239,12 +246,18 @@
         <div class="column" id="worldRoles"></div>
       </div>
     </div>
-    <footer><button id="start">Start the world</button></footer>
+    <footer><button type="button" class="link" id="reset" hidden>Reset to the usual</button><button id="start">Start the world</button></footer>
   </form>
 
   <dialog id="aboutWorld">
     <h2 id="aboutTitle"></h2>
     <p id="aboutText"></p>
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
+
+  <dialog id="runSetup">
+    <h2 id="setupTitle"></h2>
+    <div id="setupBody"></div>
     <form method="dialog"><button>Close</button></form>
   </dialog>
 
