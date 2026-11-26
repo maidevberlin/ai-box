@@ -42,11 +42,14 @@ Fixed, in every world:
   the record. The block base sits on top: the grid, falling, sight, hearing, throwing, items,
   creatures, and the 3D drawing. Worlds extend the block base. Engine code never uses
   anything from the block base.
-- **With or without the map.** Every block world has one switch for how places are said to
-  its agents: by their position on the map ("(3, 4)", and an agent is told where it is), or
-  only by the steps from where the agent stands ("(2 east, 1 north)", and it is never told
-  where it is). The grid underneath is the same. Both ways are in `src/blocks/places.ts`,
-  and every sentence that speaks of a place gets it from there (`world.at(me, cell)`).
+- **How agents are told about the world is a setting of every block world,** not of a world:
+  - Whether they know where they are. Places are said by their position ("(3, 4)", and an
+    agent is told where it is), or only by the steps from where the agent stands ("(2 east,
+    1 north)", and it is never told where it is). The grid underneath is the same. Both ways
+    are in `src/blocks/places.ts`, and every sentence that speaks of a place gets it from
+    there (`world.at(me, cell)`).
+  - What is around them: a list in words, or a small map of heights with letters for what
+    stands and lies there.
 - **Tricks belong to kinds of block,** not to tools: a block is sticky, floats, or reacts to
   being put down, jumped on or thrown. So a kind can be used in any world.
 - **A world says which tools it needs.** Only the others can be switched off.

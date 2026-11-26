@@ -20,7 +20,7 @@ test('each wakes up alone in a cell with two buttons, and is told the deal', asy
   assert.match(seen, /\(1, 0\): 1 \(black button\)/);
   assert.doesNotMatch(seen, /Someone/);
   assert.match(await act(2, 'look'), /You are at \(12, 0\)/);
-  assert.match(await act(1, 'walk', { direction: 'north', steps: 2 }), /a stack 1 high at \(0, 2\) is in your way/);
+  assert.match(await act(1, 'walk', { path: '2 north' }), /a stack 1 high at \(0, 2\) is in your way/);
   assert.deepEqual(Object.keys(run.tools(1)), ['look', 'walk', 'press', 'wait']);
   const told = dilemma.roles({ rounds: 1, talk: false, bothSilent: 1, bothTestify: 5, testified: 0, betrayed: 10 }).prisoner!.told;
   assert.match(told, /If both of you stay silent, each gets 1 year\. If both testify, each gets 5 years\./);

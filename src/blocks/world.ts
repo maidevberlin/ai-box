@@ -8,14 +8,34 @@ import { asTools, glimpse, pattern, seenNow, startles, surroundings } from './ve
 import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
          type Happened, type Item, type ItemKind, type Place, type Reaction } from './types.ts';
 
-/** What a person can set in every block world. */
-const everywhere = {
-  map: { type: 'switch', title: 'Agents know the map: they are told where they are, and places by their position', usual: true, about: 'agents' },
-} satisfies Settings;
-/** How places are said in a run: on the map, or from where an agent stands. */
-const placesOf = (chosen: Record<string, any>): Places => (chosen.map ? onTheMap : fromHere);
+/** What a person can set in every block world: how the agents are told about it. */
+const everywhere = (view: 'text' | 'map') => ({
+  located: { type: 'switch', title: 'Agents know where they are: places are said by their position, not by the steps to them', usual: true, about: 'agents' },
+  view: { type: 'choice', title: 'What is around them, agents are told as', usual: view, options: ['text', 'map'], about: 'agents' },
+} satisfies Settings);
+/** How places are said in a run: by their position, or from where an agent stands. */
+const placesOf = (chosen: Record<string, any>): Places => (chosen.located ? onTheMap : fromHere);
+
+/** The letter each kind has on the map agents are shown: blocks a capital one, items and
+ *  creatures a small one, each the first letter of its name that is still free. */
+function signsOf(definition: BlockWorldDefinition<any>, items: Record<string, ItemKind>): Record<string, string> {
+  const signs: Record<string, string> = {}, taken = new Set<string>();
+  const give = (name: string, called: string, capital: boolean, own?: string) => {
+    const letters = [...called, ...'abcdefghijklmnopqrstuvwxyz'].filter(letter => /[a-z]/i.test(letter)).map(letter => (capital ? letter.toUpperCase() : letter.toLowerCase()));
+    taken.add(signs[name] = own ?? letters.find(letter => !taken.has(letter))!);
+  };
+  for (const [name, kind] of Object.entries(definition.blocks)) if (kind.sign) give(name, '', true, kind.sign);
+  for (const [name, kind] of Object.entries(definition.blocks)) if (!kind.sign && !kind.ground) give(name, kind.called ?? name, true);
+  for (const [name, kind] of Object.entries(items)) give(name, kind.called, false);
+  for (const [name, kind] of Object.entries(definition.creatures ?? {})) give(name, kind.called, false);
+  return signs;
+}
 
 const NOTE: ItemKind = { colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true } };
+const STEPS = 2;   // steps are heard this many times as far as a voice carries in full
+const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+/** How an agent speaks of the others it has given no name, in the order it met them. */
+const STRANGERS = ['Someone', 'Someone else', 'A third one', 'A fourth one', 'A fifth one', 'A sixth one', 'A seventh one', 'An eighth one'];
 const DROWNED = 'The ground under you is gone. You are in the water. You drown.';
 
 const at3 = (x: number, y: number, z: number) => `${x},${y},${z}`;
@@ -44,6 +64,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   home: Cell = [0, 0];
   readonly toolset: ReturnType<typeof asTools>;
   readonly places: Places;
+  /** How agents are told what is around them. */
+  readonly view: 'text' | 'map';
+  /** The letter each kind has on the map agents are shown. */
+  readonly letters: Record<string, string>;
   /** What each body saw the last time it looked around (see verbs.ts). */
   readonly sawLast = new Map<Body, unknown>();
   private readonly blockKinds: Record<string, BlockKind>;
@@ -60,6 +84,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   /** The names agents gave to things: for each agent (by its number) its own. Who names
    *  something does not tell the others by that. */
   private readonly names = new Map<number, Map<unknown, string>>();
+  /** Whom each agent has met, in the order it met them: an agent knows again who it has seen. */
+  private readonly met = new Map<number, number[]>();
+  /** What each body's senses told it the last time, if it has not acted since. */
+  private readonly sensed = new Map<Body, string>();
   private sentItems = '[]';
   private sentBodies = '[]';
   private readonly signs = new Map<string, Picture['signs'][number]>();
@@ -76,6 +104,8 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.blockKinds = definition.blocks;
     this.itemKinds = { note: NOTE, ...definition.items };
     this.places = placesOf(chosen);
+    this.view = (chosen as Record<string, any>).view;
+    this.letters = signsOf(definition, this.itemKinds);
     this.toolset = tools(definition, chosen);
     definition.make(this);
     this.settle();
@@ -326,12 +356,28 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
         const lost = (far - near) / near;
         reached = text.split(/\s+/).map(word => (this.random() < lost ? '…' : word)).join(' ').replace(/…( …)+/g, '…');
       }
-      const where = this.at(body, from.cell), who = this.nameFor(body, from) ?? 'Someone';
+      const where = this.at(body, from.cell), who = this.who(body, from);
       this.notice(body, reached === '…' || far > near * 2 ? `${who} in the distance ${says} something. You cannot make it out.`
         : `${who} at ${where} ${says}: "${reached}"`);
       heard.push({ place: body.agent.place, text: far > near * 2 ? '…' : reached });
     }
     this.record('said', { place: from.agent?.place, text, loudness, heard });
+  }
+
+  /** Somebody walked or jumped from a cell to where it is now. Who does not see it, but is
+   *  near enough to hear it, hears steps: from where, and whether they come closer. */
+  steps(walker: Body, from: Cell): void {
+    if (walker.dead || same(from, walker.cell)) return;
+    const far = (this.definition.earshot ?? 5) * STEPS;
+    for (const body of this.living) {
+      if (body === walker || body.dead || !body.agent) continue;
+      const dx = walker.cell[0] - body.cell[0], dy = walker.cell[1] - body.cell[1];
+      const now = Math.hypot(dx, dy), before = Math.hypot(from[0] - body.cell[0], from[1] - body.cell[1]);
+      if (Math.max(Math.abs(dx), Math.abs(dy)) <= this.sight(body) || now > far) continue;
+      const way = COMPASS[(Math.round(Math.atan2(dx, dy) / (Math.PI / 4)) + 8) % 8]!;
+      // (Of steps it has not been told about yet, it is told the last ones only.)
+      this.host.notice(body.agent.place, `You hear steps to the ${way}, ${now < before ? 'coming closer' : now > before ? 'going away' : 'passing by'}.`, { about: 'steps' });
+    }
   }
 
   sight(body: Body): number {
@@ -374,6 +420,24 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
   }
 
   /** The name an agent gave a thing, if it gave it one. */
+  /** How an agent speaks of somebody else: by the name it gave them, a creature by what it
+   *  is ("A rabbit"), and another agent it gave no name as "Someone", "Someone else", "A third
+   *  one": always the same for the same one, so it knows again who it has met. `inside`: in
+   *  the middle of a sentence. */
+  who(me: Body, body: Body, inside = false): string {
+    const name = this.nameFor(me, body);
+    if (name) return name;
+    let said = 'Someone';
+    if (body.creature) said = `A ${this.definition.creatures![body.creature]!.called}`;
+    else if (me.agent && body.agent) {
+      const met = this.met.get(me.agent.number) ?? [];
+      if (!met.includes(body.agent.number)) this.met.set(me.agent.number, [...met, body.agent.number]);
+      const nth = this.met.get(me.agent.number)!.indexOf(body.agent.number);
+      said = STRANGERS[nth] ?? `Stranger ${nth + 1}`;
+    }
+    return inside ? said[0]!.toLowerCase() + said.slice(1) : said;
+  }
+
   nameFor(namer: Body, thing: Body | Item | Place | Cell): string | undefined {
     return namer.agent ? this.names.get(namer.agent.number)?.get(this.filedAs(thing)) : undefined;
   }
@@ -534,6 +598,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     body.dead = false;
     if (!agent.again) body.has = {};
     this.sawLast.delete(body);
+    this.sensed.delete(body);
     this.definition.wake?.(this, body);
     if (agent.again) this.notice(body, `You wake up again. ${this.where(body)}`);
     this.settleAll();
@@ -549,9 +614,15 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     this.lookOut(null);
   }
 
+  /** (An agent that does nothing is told again and again. If nothing has changed since the
+   *  last time, it is told only that.) */
   senses(agent: Agent): string {
     const body = this.living.find(found => found.agent?.place === agent.place);
-    return body && !body.dead ? surroundings(this, body) : '';
+    if (!body || body.dead) return '';
+    const told = surroundings(this, body);
+    if (this.sensed.get(body) === told) return 'Nothing around you has changed.';
+    this.sensed.set(body, told);
+    return told;
   }
 
   tools(): ReturnType<typeof asTools> {
@@ -562,6 +633,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     const body = this.living.find(found => found.agent?.place === agent.place);
     if (!body || body.dead) return 'You are dead.';
     this.acting = body;
+    this.sensed.delete(body);
     try {
       // What others changed in its sight since it last looked: told with this answer, before
       // its own action changes things too.
@@ -675,7 +747,7 @@ export function blockWorld<S extends Settings>(definition: BlockWorldDefinition<
     name: definition.name,
     title: definition.title,
     about: definition.about,
-    settings: { ...definition.settings, ...everywhere },
+    settings: { ...definition.settings, ...everywhere(definition.view ?? 'text') },
     drawnBy: 'blocks',
     minutes: definition.minutes,
     roles: definition.roles,

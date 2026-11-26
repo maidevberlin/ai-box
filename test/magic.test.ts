@@ -53,7 +53,7 @@ test('green blocks make a bridge over the water, and it falls when it stops bein
   me.cell = [18, 0];   // the east shore
   me.hand = { kind: 'green' };
   assert.match(await act('put', { where: 'east' }), /It sticks to the side of the land, level with the ground\./);
-  assert.match(await act('walk', { direction: 'east' }), /You are at \(19, 0\), on a green block over the water\./);
+  assert.match(await act('walk', { path: 'east' }), /You are at \(19, 0\), on a green block over the water\./);
   me.hand = { kind: 'green' };
   await act('put', { where: 'east' });
   assert.equal(world.block([20, 0, -1]), 'green');
@@ -135,7 +135,7 @@ test('a note that begins with "friend", thrown into the water, calls a friend', 
   assert.equal(run.events.filter(event => event.replaced).length, 1);
   // A friend that was called is not followed by a new agent when it is gone.
   body(2).cell = [18, 1];
-  await act(run, 2, 'walk', { direction: 'east' });
+  await act(run, 2, 'walk', { path: 'east' });
   time.pass(0);
   assert.equal(run.agent(2), null);
   assert.equal(world.bodies().length, 1);

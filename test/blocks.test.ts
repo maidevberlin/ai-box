@@ -52,16 +52,17 @@ test('looking around says where you are and what is in sight', async () => {
 
 test('a walk of several steps stops at the water, a single step goes in', async () => {
   const { act, world, run } = started(strip());
-  assert.match(await act('walk', { direction: 'north', steps: 3 }), /You walked a step north and stopped: the next step north is water/);
+  assert.match(await act('walk', { path: '3 north' }), /You walked a step north and stopped: the next step north is water/);
   assert.deepEqual(me(world).cell, [0, 1]);
-  assert.match(await act('walk', { direction: 'north' }), /off the land\. You are in the water\. You drown\./);
+  assert.match(await act('walk', { path: 'north' }), /off the land\. You are in the water\. You drown\./);
   assert.equal(run.events.filter(event => event.type === 'death').length, 1);
 });
 
 test('what an agent gives is checked before the world sees it', async () => {
   const { act } = started(strip());
-  assert.equal(await act('walk', { direction: 'up' }), `Direction must be one of: ${['north', 'south', 'east', 'west', 'north-east', 'north-west', 'south-east', 'south-west'].join(', ')}.`);
-  assert.equal(await act('walk', {}), 'Direction is missing.');
+  assert.match(await act('walk', { path: 'up' }), /^That is no path\. Say steps and directions, one after the other, like "3 east"/);
+  assert.equal(await act('jump', { direction: 'up', strength: 1 }), 'Direction must be one of: north, south, east, west.');
+  assert.equal(await act('walk', {}), 'Path is missing.');
   assert.equal(await act('throw', { direction: 0, angle: 45, power: 11 }), 'Power must be a number from 1 to 10.');
   assert.equal(await act('fly'), 'There is no "fly" here.');
 });
@@ -165,7 +166,7 @@ test('a grey block put into the water sinks, a blue one floats and can be walked
   assert.match(await act('put', { where: 'east' }), /It sinks in the water and is gone\./);
   me(world).hand = { kind: 'blue' };
   assert.match(await act('put', { where: 'east' }), /It floats in the water, level with the ground\./);
-  assert.match(await act('walk', { direction: 'east' }), /You are at \(6, 0\), on a blue block floating in the water\./);
+  assert.match(await act('walk', { path: 'east' }), /You are at \(6, 0\), on a blue block floating in the water\./);
 });
 
 test('a sticky block hangs beside the block you stand on, and holds what is put next to it', async () => {
@@ -271,7 +272,7 @@ test('waiting ends when something is noticed, or when the time has passed', asyn
 });
 
 test('after a death: a new agent, the same one again, or nobody', async () => {
-  const drown = { direction: 'north' };
+  const drown = { path: 'north' };
   const fresh = started(strip());
   await fresh.act('walk', drown); await fresh.act('walk', drown);
   fresh.time.pass(0);
@@ -305,19 +306,22 @@ test('an agent notices what changes in its sight: it ends a wait, and is told on
   await act('look', {}, 2);                      // (who never looked has nothing to compare with)
   const waiting = act('wait', { seconds: 30 }, 2);
   await begun();
-  await act('walk', { direction: 'east' });      // still out of sight: 4 away, it sees 3
-  await act('walk', { direction: 'east' });      // now in sight
-  assert.equal(await waiting, 'At once: Someone is at (-3, 0).');
+  await act('walk', { path: 'east' });      // still out of sight: 4 away, it sees 3. But it hears the steps.
+  assert.equal(await waiting, 'At once: You hear steps to the west, coming closer.');
+  const watching = act('wait', { seconds: 30 }, 2);
+  await begun();
+  await act('walk', { path: 'east' });      // now in sight
+  assert.equal(await watching, 'At once: Someone is at (-3, 0).');
   // Two more steps while the other is busy: it is told where the walker is now, not every step.
-  await act('walk', { direction: 'east' }); await act('walk', { direction: 'east' });
+  await act('walk', { path: 'east' }); await act('walk', { path: 'east' });
   assert.equal(await act('look', { what: 'hand' }, 2), 'Your hand is empty.\nSomeone is at (-1, 0).');
   // Someone who only moves on within its sight does not end a wait: it is told when the wait ends.
   const calm = act('wait', { seconds: 10 }, 2);
   await begun();
-  await act('walk', { direction: 'north' });
+  await act('walk', { path: 'north' });
   time.pass(10);
   assert.equal(await calm, 'After 10 s: Someone is at (-1, 1).');
-  await act('walk', { direction: 'south' });
+  await act('walk', { path: 'south' });
   await act('look', { what: 'hand' }, 2);
   // What an agent changes itself is no news to it.
   two.hand = { kind: 'grey' };
@@ -340,7 +344,7 @@ test('an agent notices what changes in its sight: it ends a wait, and is told on
 
 test('an agent that ends its turn stays where it is, and its senses tell it what is around', async () => {
   const { act, world, run, time } = started(strip({ without: ['look'] }, w => w.setBlock([4, 0, 0], 'grey')));
-  await act('walk', { direction: 'east', steps: 3 });
+  await act('walk', { path: '3 east' });
   me(world).hand = { kind: 'grey' };
   const told: string[] = [];
   run.listeners.push({ told: (_, text) => { told.push(text); } });
@@ -390,7 +394,7 @@ test('what would end a wait also ends the rest of an agent that stopped: it is t
 
 test('with "ending a turn is leaving" an agent that stops is gone, and a new one follows', async () => {
   const fresh = started(strip({ stoppingLeaves: true }));
-  await fresh.act('walk', { direction: 'east', steps: 3 });
+  await fresh.act('walk', { path: '3 east' });
   fresh.run.stopped(1);
   fresh.time.pass(0);
   assert.equal(fresh.run.agent(1)!.number, 2);
@@ -455,7 +459,7 @@ test('an agent can give things names of its own, and is then told about them by 
   await act('note', { text: 'the way home' });
   assert.equal(await act('name', { name: 'map', what: 'hand' }), 'You call the note in your hand "map" now.');
   assert.equal(await act('name', { name: 'home', what: '(0, -1)' }), 'You call the place (0, -1) "home" now.');
-  assert.match(await act('walk', { direction: 'south' }), /You are at \(0, -1\), on the ground\. This is the place you call "home"\./);
+  assert.match(await act('walk', { path: 'south' }), /You are at \(0, -1\), on the ground\. This is the place you call "home"\./);
   assert.equal(await act('name', { name: 'far', what: '(5, 0)' }), 'That is out of your sight.');
 });
 
@@ -478,22 +482,22 @@ test('an agent chooses how loud it speaks: a whisper stays close, a shout carrie
   assert.equal(await act('look', { what: 'hand' }, 3), 'Your hand is empty.\nSomeone at (0, 0) shouts: "come over here"');
 });
 
-test('without the map, places are said by the steps from where an agent stands', async () => {
+test('agents that do not know where they are: places are said by the steps from where an agent stands', async () => {
   const land = strip({ count: 2 }, world => {
     world.setBlock([2, 1, 0], 'grey');
   });
-  assert.ok('map' in land.settings, 'every block world has the switch');
-  assert.match(JSON.stringify(land.tools({ map: false })), /a position like \\"\(2 east, 1 north\)\\"/);
-  assert.match(JSON.stringify(land.tools({ map: true })), /a position like \\"\(2, 1\)\\"/);
-  const { act, run, world } = started(land, { chosen: { map: false } });
+  assert.ok('located' in land.settings, 'every block world has the switch');
+  assert.match(JSON.stringify(land.tools({ located: false })), /a position like \\"\(2 east, 1 north\)\\"/);
+  assert.match(JSON.stringify(land.tools({ located: true })), /a position like \\"\(2, 1\)\\"/);
+  const { act, run, world } = started(land, { chosen: { located: false } });
   // It is not told where it is, and what it sees is told from where it stands.
   const seen = await act('look');
   assert.match(seen, /^You are on the ground\./);
   assert.match(seen, /Around you, as far as you see \(3 steps\), each place with its height: \(2 east, 1 north\): 1 \(grey\)\./);
   assert.match(seen, /Someone is at \(1 west\)\./);
   // A stack that was in sight before is no news after a step, though it is said differently now.
-  assert.equal(await act('walk', { direction: 'east' }), 'You walked a step east. You are on the ground.\nSomeone is at (2 west).');
-  assert.match(await act('walk', { direction: 'north' }), /^You walked a step north\. You are on the ground\.\nWater: /);
+  assert.equal(await act('walk', { path: 'east' }), 'You walked a step east. You are on the ground.\nSomeone is at (2 west).');
+  assert.match(await act('walk', { path: 'north' }), /^You walked a step north\. You are on the ground\.\nWater: /);
   // It points the same way: by steps, with or without brackets. A position on the map means nothing here.
   assert.match(await act('take', { what: '(2, 1)' }), /You have given nothing the name "\(2, 1\)"\. Say what you mean by a position like "\(2 east, 1 north\)"/);
   assert.match(await act('take', { what: '2 east' }), /^\(2 east\) is out of your reach/);
@@ -505,4 +509,64 @@ test('without the map, places are said by the steps from where an agent stands',
   await act('say', { text: 'hello' });
   assert.equal(run.events.findLast(event => event.type === 'notice')!.text, 'Someone at (2 east, 1 north) says: "hello"');
   assert.equal(world.at(me(world, 2), [0, 0]), '(1 east)');
+});
+
+test('what is around an agent can be told as a map instead of in words', async () => {
+  const land = strip({ count: 2 }, world => {
+    world.setBlock([2, 1, 0], 'grey');
+    world.setBlock([-2, -1, 0], 'green'); world.setBlock([-2, -1, 1], 'blue');
+    world.drop({ kind: 'berry' }, [1, -1]);
+    world.drop({ kind: 'note', text: 'read me please now' }, [3, 0]);
+  });
+  const { act, world } = started(land, { chosen: { view: 'map' } });
+  const seen = (await act('look')).split('\n');
+  assert.equal(seen[2], 'What is around you, as far as you see (3 steps). North is at the top, every place is one step, the number is its height. '
+    + '[ ] you, ~ water, G grey block, @ somebody, n note, B blue block, b berry.');
+  assert.deepEqual(seen.slice(3, 10), [
+    ' ~   ~   ~   ~   ~   ~   ~',
+    ' ~   ~   ~   ~   ~   ~   ~',
+    ' 0   0   0   0   0   1G  0',
+    ' 0   0   0@ [0]  0   0   0n',
+    ' 0   2B  0   0   0b  0   0',
+    ' ~   ~   ~   ~   ~   ~   ~',
+    ' ~   ~   ~   ~   ~   ~   ~',
+  ]);
+  // What a letter cannot say is said in words: a stack of several blocks, what is written on a note.
+  assert.equal(seen[10], 'More than the map shows: (-2, -1): 2 (by level: 1 green, 2 blue), (3, 0): 0 with a note ("read me please…") on top.');
+  assert.equal(seen[12], 'Someone is at (-1, 0).');
+  // A walk shows the map from where it leads.
+  assert.match(await act('walk', { path: 'east' }), /^You walked a step east\. You are at \(1, 0\), on the ground\.\nWhat is around you/);
+  assert.equal(me(world).cell[0], 1);
+});
+
+test('a walk follows a path, and stops where something is in the way', async () => {
+  const { act, world } = started(strip({}, w => w.setBlock([3, 1, 0], 'grey')));
+  assert.match(await act('walk', { path: '2 east, north' }), /^You walked 2 steps east, a step north\. You are at \(2, 1\), on the ground\./);
+  assert.match(await act('walk', { path: '(3 west then 2 south-east)' }), /^You walked 3 steps west, 2 steps south-east\. You are at \(1, -1\)/);
+  assert.match(await act('walk', { path: 'north 2, east 5' }), /^That is no path\./);
+  assert.match(await act('walk', { path: '2 north, 5 east' }), /^You walked 2 steps north, a step east\. Then a stack 1 high at \(3, 1\) is in your way\./);
+  assert.match(await act('walk', { path: '1 south, 9 east' }), /^You walked a step south, 3 steps east and stopped: the next step east is water\./);
+  assert.deepEqual(me(world).cell, [5, 0]);
+  assert.match(await act('walk', { path: '40 west' }), /^That is too far for one walk: at most 30 steps\./);
+});
+
+test('an agent knows again who it has met, and hears steps it does not see', async () => {
+  const { act, world, run } = started(strip({ count: 3 }));
+  const [one, two, three] = [me(world, 1), me(world, 2), me(world, 3)];
+  one.cell = [0, 0]; two.cell = [1, 0]; three.cell = [-1, 1];
+  // Whoever it has given no name is "Someone", "Someone else": the same one stays the same.
+  assert.match(await act('look'), /Someone is at \(1, 0\)\.\nSomeone else is at \(-1, 1\)\./);
+  three.cell = [-5, 0];
+  await act('look');
+  three.cell = [2, 1];
+  assert.match(await act('look'), /Someone is at \(1, 0\)\.\nSomeone else is at \(2, 1\)\./);
+  await act('say', { text: 'hello' }, 3);
+  assert.equal(run.events.findLast(event => event.type === 'notice' && event.place === 1)!.text, 'Someone else at (2, 1) says: "hello"');
+  // Steps out of sight are heard: from where, and whether they come closer or go away.
+  one.cell = [-5, 0]; two.cell = [0, 0]; three.cell = [5, 0];
+  const heard = () => run.events.filter(event => event.type === 'notice' && event.place === 2).map(event => event.text).at(-1);
+  await act('walk', { path: 'east' });
+  assert.equal(heard(), 'You hear steps to the west, coming closer.');
+  await act('walk', { path: 'north' }, 3);
+  assert.equal(heard(), 'You hear steps to the east, going away.');
 });

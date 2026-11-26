@@ -96,14 +96,8 @@ function lookedAt(world: BlockWorld<any>, me: Body, cell: Cell): string {
   return said + who;
 }
 
-/** How an agent speaks of somebody else: by the name it gave them, or "Someone" (for a
- *  creature what it is: "A rabbit"). `inside`: in the middle of a sentence. */
-function someone(world: BlockWorld<any>, me: Body, body: Body, inside = false): string {
-  const name = inner(world).nameFor(me, body);
-  if (name) return name;
-  const said = body.creature ? `A ${inner(world).definition.creatures![body.creature]!.called}` : 'Someone';
-  return inside ? said.toLowerCase() : said;
-}
+/** How an agent speaks of somebody else (see Blocks.who). */
+const someone = (world: BlockWorld<any>, me: Body, body: Body, inside = false) => inner(world).who(me, body, inside);
 /** ` called "Rocky"`, if the agent gave the thing a name. */
 const called = (world: BlockWorld<any>, me: Body, thing: Item | Place | Cell) => {
   const name = inner(world).nameFor(me, thing);
@@ -198,25 +192,60 @@ export function seenNow(world: BlockWorld<any>, me: Body): void {
 }
 
 /** Where a body is and what is new in its sight: so a walk tells it what it walks into,
- *  without telling it everything again. */
+ *  without telling it everything again. (Shown a map, it is shown the map from where it is now.) */
 function news(world: BlockWorld<any>, me: Body): string {
+  if (inner(world).view === 'map') return surroundings(world, me, false);
   const lines = glimpse(world, me, true);
   const lying = world.items(me.cell), said = lying.length ? pile(world, me, me.cell) : '';
   const feet = said ? ` ${said[0]!.toUpperCase()}${said.slice(1)} ${lying.length === 1 ? 'lies' : 'lie'} at your feet.` : '';
   return `${world.where(me)}${feet}\n${lines.join('\n') || 'Nothing new in sight.'}`;
 }
 
+/** Does a letter on the map say all there is to say of a cell: at most one loose block and
+ *  one thing lying there, nothing written on it, and nothing the body gave a name? */
+function plain(world: BlockWorld<any>, me: Body, cell: Cell): boolean {
+  const loose = world.column(cell).filter(([, kind]) => !world.blockKind(kind)!.ground), items = world.items(cell);
+  return loose.length <= 1 && items.length <= 1 && items[0]?.text === undefined && !names(world, me, cell) && !(items[0] && called(world, me, items[0]));
+}
+
+/** What is in sight as a small map: every place with its height, and a letter for what is
+ *  on top there, lies there, or stands there. Under it, what the letters mean. */
+function drawn(world: BlockWorld<any>, me: Body, reach: number): string {
+  const [x, y] = me.cell, { letters, definition } = inner(world), meant = new Map<string, string>(), rows: string[][] = [];
+  const letter = (kind: string, what: string) => (meant.set(letters[kind]!, what), letters[kind]!);
+  for (let cy = y + reach; cy >= y - reach; cy--) {
+    const row: string[] = [];
+    for (let cx = x - reach; cx <= x + reach; cx++) {
+      const cell: Cell = [cx, cy], top = world.top(cell), lying = world.items(cell).at(-1), there = world.bodyAt(cell);
+      let shown = world.column(cell).length ? String(world.height(cell)) : (meant.set('~', 'water'), '~');
+      if (top && letters[top]) shown += letter(top, world.called(top));
+      if (lying) shown += letter(lying.kind, world.called(lying));
+      if (there && there !== me) shown += there.creature ? letter(there.creature, definition.creatures![there.creature]!.called) : (meant.set('@', 'somebody'), '@');
+      row.push(same(cell, me.cell) ? `[${shown}]` : ` ${shown} `);
+    }
+    rows.push(row);
+  }
+  const wide = Math.max(...rows.flat().map(shown => shown.length));
+  const key = ['[ ] you', ...[...meant].map(([sign, what]) => `${sign} ${what}`)].join(', ');
+  return `What is around you, as far as you see (${reach} steps). North is at the top, every place is one step, the number is its height. ${key}.\n`
+    + rows.map(row => row.map(shown => shown.padEnd(wide)).join('').trimEnd()).join('\n');
+}
+
 /** Everything a body sees around it, as it is told. From then on, this is what it has seen.
  *  It is what looking around answers, and what an agent's senses tell it when it has
  *  stopped talking (whether it can `look` or not). */
-export function surroundings(world: BlockWorld<any>, me: Body): string {
+export function surroundings(world: BlockWorld<any>, me: Body, hand = true): string {
   const seen = around(world, me);
   inner(world).sawLast.set(me, seen);
+  const listed = (stacks: [string, string][]) => stacks.map(([cell, text]) => `${said(world, me, cell)}: ${text}`).join(', ');
+  // On the map a letter stands for what is on top. Whatever that does not say is said in words.
+  const more = [...seen.stacks].filter(([cell]) => !plain(world, me, cell.split(',').map(Number) as unknown as Cell));
   return [
     world.where(me) + seen.feet,
-    `You carry: ${me.hand ? `a ${world.called(me.hand)}${called(world, me, me.hand)}` : 'nothing'}.`,
-    seen.stacks.size ? `Around you, as far as you see (${seen.reach} steps), each place with its height: ${[...seen.stacks].map(([cell, text]) => `${said(world, me, cell)}: ${text}`).join(', ')}.`
-      : `Nothing stands or lies around you, as far as you see (${seen.reach} steps).`,
+    ...(hand ? [`You carry: ${me.hand ? `a ${world.called(me.hand)}${called(world, me, me.hand)}` : 'nothing'}.`] : []),
+    ...(inner(world).view === 'map' ? [drawn(world, me, seen.reach), ...(more.length ? [`More than the map shows: ${listed(more)}.`] : [])]
+      : [seen.stacks.size ? `Around you, as far as you see (${seen.reach} steps), each place with its height: ${listed([...seen.stacks])}.`
+        : `Nothing stands or lies around you, as far as you see (${seen.reach} steps).`]),
     `Water in sight: ${[...seen.water].map(([direction, text]) => `${direction}: ${text}`).join('; ') || 'none'}.`,
     ...seen.beings,
     ...seen.also,
@@ -304,7 +333,7 @@ function doneTo(name: string, made: VerbTo, world: BlockWorld<any>, me: Body, ar
   const ofBody = (body: Body) => {
     const { creatures, agent } = inner(world).definition;
     const kind = body.creature ? creatures![body.creature]! : agent ?? {};
-    things.push({ called: inner(world).nameFor(me, body) ?? (body.creature ? creatures![body.creature]!.called : 'someone'), kind, body, cell, inHand: false });
+    things.push({ called: someone(world, me, body, true), kind, body, cell, inHand: false });
   };
   const there = world.bodyAt(cell), lying = world.items(cell).at(-1), top = world.column(cell).at(-1);
   if (target.hand) {
@@ -384,38 +413,66 @@ const look = verb({
   },
 });
 
+const FAR = 30;   // a walk is at most this many steps
+
+/** A path as an agent says it: steps and where to, one after the other. "3 east", "east",
+ *  "2 north, 4 north-east". Nothing, if it cannot be made out. */
+function legs(text: string): [steps: number, way: string][] | undefined {
+  const words = text.toLowerCase().replace(/[()]/g, ' ').replace(/\b(north|south)[\s-]*(east|west)\b/g, '$1-$2')
+    .split(/[\s,;]+|\b(?:and|then|steps?)\b/).filter(Boolean);
+  const path: [number, string][] = [];
+  let steps: number | undefined;
+  for (const word of words) {
+    if (word in WAYS) {
+      path.push([steps ?? 1, word]);
+      steps = undefined;
+    } else if (/^\d+$/.test(word) && steps === undefined && Number(word) > 0) steps = Number(word);
+    else return undefined;
+  }
+  return path.length && steps === undefined ? path : undefined;
+}
+
 const walk = verb({
-  about: 'Walk in a direction: one step, or more, up to as far as you see. Tells what is new in sight then.',
-  args: {
-    direction: { type: 'one of', options: Object.keys(WAYS) },
-    steps: { type: 'number', min: 1, whole: true, optional: true },
-  },
+  about: 'Walk a path: steps and directions, one after the other, like "3 east" or "2 north, 4 north-east". You stop where something is in your way or the land ends. Tells what is in sight then.',
+  args: { path: { type: 'text', about: `directions are ${Object.keys(WAYS).join(', ')}` } },
   does(world, me, args) {
-    const steps = args.steps ?? 1, far = world.sight(me), { direction } = args;
-    if (steps > far) return `You can only walk as far as you see: ${far} steps from here. ${world.where(me)}`;
-    const walked = (n: number) => (n === 1 ? 'a step' : `${n} steps`);
-    for (let done = 0; done < steps; done++) {
-      const ahead = world.next(me.cell, direction);
-      if (!world.standable(ahead)) {
-        // Several steps at once stop at the edge: agents walked on without looking again
-        // and drowned. Only a single step, asked for as such, goes into the water.
-        if (steps > 1) return `${done ? `You walked ${walked(done)} ${direction} and stopped` : 'You did not move'}: the next step ${direction} is water. ${news(world, me)}`;
-        if (world.top(ahead)) return `You cannot stand on the ${world.called(world.top(ahead)!)} at ${world.at(me, ahead)}. ${world.where(me)}`;
+    const path = legs(args.path);
+    if (!path) return `That is no path. Say steps and directions, one after the other, like "3 east" or "2 north, 4 north-east". ${world.where(me)}`;
+    const all = path.reduce((sum, [steps]) => sum + steps, 0), from = me.cell;
+    if (all > FAR) return `That is too far for one walk: at most ${FAR} steps. ${world.where(me)}`;
+    const done: [number, string][] = [];
+    const walked = () => done.filter(([steps]) => steps).map(([steps, way]) => `${steps === 1 ? 'a step' : `${steps} steps`} ${way}`).join(', ');
+    /** The walk is over: who is near hears it, and it is told what is in sight where it stands now. */
+    const over = (said: string) => {
+      inner(world).steps(me, from);
+      return `${said} ${news(world, me)}`;
+    };
+    for (const [steps, way] of path) {
+      const leg: [number, string] = [0, way];
+      done.push(leg);
+      for (; leg[0] < steps; leg[0]++) {
+        const ahead = world.next(me.cell, way);
+        if (!world.standable(ahead)) {
+          // A walk of several steps stops at the edge: agents walked on without looking again
+          // and drowned. Only a single step, asked for as such, goes into the water.
+          if (all > 1) return over(`${walked() ? `You walked ${walked()} and stopped` : 'You did not move'}: the next step ${way} is water.`);
+          if (world.top(ahead)) return `You cannot stand on the ${world.called(world.top(ahead)!)} at ${world.at(me, ahead)}. ${world.where(me)}`;
+          world.move(me, ahead);
+          return `You stepped ${way}, off the land. ${world.die(me, 'You are in the water. You drown.')}`;
+        }
+        const there = world.bodyAt(ahead);
+        if (there) return over(`${walked() ? `You walked ${walked()}. Then ${someone(world, me, there, true)}` : someone(world, me, there)} at ${world.at(me, ahead)} is in your way.`);
+        const rise = world.height(ahead) - world.height(me.cell);
+        if (rise > (inner(world).definition.climb ?? 0)) {
+          const before = walked() ? `You walked ${walked()}. Then ` : '';
+          const what = world.blockKind(world.top(ahead)!)!.ground ? `the ground at ${world.at(me, ahead)} rises ${rise}: too steep to walk up`
+            : `a stack ${world.height(ahead)} high at ${world.at(me, ahead)} is in your way`;
+          return over(`${before}${before ? what : what[0]!.toUpperCase() + what.slice(1)}.`);
+        }
         world.move(me, ahead);
-        return `You stepped ${direction}, off the land. ${world.die(me, 'You are in the water. You drown.')}`;
       }
-      const there = world.bodyAt(ahead);
-      if (there) return `${done ? `You walked ${walked(done)} ${direction}. Then ${someone(world, me, there, true)}` : someone(world, me, there)} at ${world.at(me, ahead)} is in your way. ${news(world, me)}`;
-      const rise = world.height(ahead) - world.height(me.cell);
-      if (rise > (inner(world).definition.climb ?? 0)) {
-        const before = done ? `You walked ${walked(done)} ${direction}. Then ` : '';
-        const what = world.blockKind(world.top(ahead)!)!.ground ? `the ground at ${world.at(me, ahead)} rises ${rise}: too steep to walk up`
-          : `a stack ${world.height(ahead)} high at ${world.at(me, ahead)} is in your way`;
-        return `${before}${before ? what : what[0]!.toUpperCase() + what.slice(1)}. ${news(world, me)}`;
-      }
-      world.move(me, ahead);
     }
-    return `You walked ${walked(steps)} ${direction}. ${news(world, me)}`;
+    return over(`You walked ${walked()}.`);
   },
 });
 
@@ -449,7 +506,9 @@ const jump = verb({
       world.move(me, [me.cell[0] + dx, me.cell[1] + dy]);
       return `You jumped ${direction}, off the land. ${world.die(me, 'You are in the water. You drown.')}`;
     }
+    const from = me.cell;
     world.move(me, landing);
+    inner(world).steps(me, from);
     const under = world.height(landing) - 1, kind = world.top(landing)!;
     const said = inner(world).react(world.blockKind(kind)!.on?.jumpedOn, { at: [landing[0], landing[1], under], by: me });
     return `You jumped ${direction}.${said} ${world.where(me)}`;

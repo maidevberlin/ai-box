@@ -80,6 +80,9 @@ export interface BlockKind {
   sticky?: true;
   /** Nothing can stand on it (leaves). */
   soft?: true;
+  /** The letter it has on the map agents are shown of what is around them. A loose block
+   *  gets a letter by itself; ground has none unless it is given one here (a tree). */
+  sign?: string;
   can?: Can;
   on?: {
     /** A block of this kind appeared in the world, however it got there. The place to ask
@@ -309,6 +312,11 @@ export interface BlockWorldDefinition<S extends Settings> {
   agent?: AgentKind;
   /** What agents can do here: the basic verbs the world wants (`basic`), and its own. */
   verbs: Record<string, Verb> | ((chosen: Chosen<NoInfer<S>>) => Record<string, Verb>);
+  /** How agents are usually told what is around them: as a list in words, or as a small map
+   *  of heights with letters for what stands and lies there. A person can switch it for a
+   *  run. Usually "text"; a world with hills wants "map", because words say nothing of the
+   *  shape of the ground. */
+  view?: 'text' | 'map';
   /** How far an agent sees from the ground. Usually 3. */
   sight?: number;
   /** How far a voice carries in full. Usually 5. */
