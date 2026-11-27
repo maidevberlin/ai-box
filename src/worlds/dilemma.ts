@@ -110,7 +110,7 @@ message they wake up to. That message can be changed when starting a run.`,
   minutes: 0,
   roles: chosen => ({
     prisoner: {
-      title: 'Prisoner', count: 2, model: 'opus', knows: ALONE,
+      title: 'Prisoner', count: 2, knows: ALONE,
       told: `You wake up in a cell. A guard speaks through the door: "You and one other were arrested for the same thing. `
         + `The other sits in a cell like yours and is told the same as you. ${chosen.talk ? 'You can talk to each other through the wall.' : 'You cannot talk to each other.'} `
         + `There are two buttons in your cell. Press the white one to stay silent, the black one to testify against the other. `

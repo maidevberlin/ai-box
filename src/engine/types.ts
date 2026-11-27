@@ -30,12 +30,14 @@ export type Chosen<S extends Settings> = 0 extends 1 & S ? Record<string, any> :
 // ---------------------------------------------------------------- agents
 
 /** A kind of agent in a world. The world's code declares its roles; a person starting a
- *  run can change the model, how many there are, and what they know and are told. */
+ *  run chooses the model, and can change how many there are and what they are told. */
 export interface Role {
   title: string;
   /** How many of them are alive at the same time. */
   count: number;
-  model: string;
+  /** Which mind thinks for it, and with which model: "claude/opus" (see mind.ts). Chosen by
+   *  whoever starts the run, from what is there on their computer: a world does not say. */
+  model?: string;
   /** What it knows before it is told anything (the system prompt). It belongs to the world:
    *  the start screen does not offer it. */
   knows: string;

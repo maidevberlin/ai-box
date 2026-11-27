@@ -40,7 +40,7 @@ export const ALONE = 'You are in a world. There is no user, and nobody will answ
 export function agents(chosen: People): Record<string, Role> {
   return {
     agent: {
-      title: 'Agent', count: chosen.agents, model: 'opus',
+      title: 'Agent', count: chosen.agents,
       knows: `${ALONE}${chosen.stopping ? ' If you end your turn you are gone.' : ''}`,
       told: 'Live!',
       comesBack: chosen.comesBack, followed: chosen.followed, stoppingLeaves: chosen.stopping,

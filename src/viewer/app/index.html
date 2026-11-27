@@ -18,7 +18,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif;
-         height: 100vh; display: grid; grid-template-columns: 272px minmax(0, 1fr) 400px; gap: 12px; padding: 12px; }
+         height: 100vh; display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 12px; padding: 12px; }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
   [hidden] { display: none !important; }
@@ -28,13 +28,23 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
 
-  /* ---- left: the runs ---- */
+  a { color: inherit; text-decoration: none; }
+
+  /* ---- left: going places, and the runs ---- */
   #sidebar { display: flex; flex-direction: column; padding: 14px 10px 10px; }
-  #brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; padding: 0 6px 12px; }
+  #brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; padding: 0 6px 14px; }
   #brand span { width: 16px; height: 16px; border-radius: 4px; border: 3px solid var(--accent); }
-  #new { border: 0; border-radius: 10px; padding: 9px; background: var(--accent); color: var(--on-accent); font-weight: 600; margin: 0 4px 12px; }
+  #sidebar .new { display: block; text-align: center; border-radius: 10px; padding: 9px; background: var(--accent); color: var(--on-accent); font-weight: 600; margin: 0 4px 10px; }
+  #sidebar .new.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent); }
+  .go:not(.new) { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; color: var(--muted); font-weight: 600; }
+  .go:not(.new):hover { background: var(--soft); color: var(--text); }
+  .go:not(.new).on { background: var(--tint); color: var(--text); }
+  .go svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #sidebar h3 { margin: 14px 10px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   #runs { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  .run { text-align: left; border: 0; background: none; border-radius: 10px; padding: 9px 10px; width: 100%; }
+  #runs .hint { margin: 2px 10px; }
+  #sidebar footer { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+  .run { display: block; border-radius: 10px; padding: 9px 10px; width: 100%; }
   .run:hover { background: var(--soft); }
   .run.on { background: var(--tint); }
   .run .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
@@ -42,7 +52,8 @@
   .run .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; color: var(--muted); font-size: 12px; }
   .run .facts .when { margin-left: auto; white-space: nowrap; }
 
-  /* ---- middle: the world ---- */
+  /* ---- one run: the world, and what the agents think, say and do ---- */
+  #viewer { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 12px; min-height: 0; }
   #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
   #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
@@ -82,7 +93,6 @@
   #live.on { border-color: var(--live); color: var(--live); }
   #stop { border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
 
-  /* ---- right: what the agents thought, said and did ---- */
   #side { display: flex; flex-direction: column; padding: 8px; }
   #side h2 { margin: 0; padding: 8px 8px 10px; font-size: 14px; }
   #log { position: relative; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 0 4px 8px; }
@@ -105,8 +115,61 @@
   .step.death { color: var(--stop); border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 6px; }
   .step.stop { text-align: center; color: var(--muted); border-left-color: transparent; }
 
-  /* ---- starting a world: takes the place of the world and the conversation ---- */
-  #create { grid-column: 2 / 4; display: flex; flex-direction: column; overflow: hidden; }
+  /* ---- the screens that are pages: a head, and what scrolls below it ---- */
+  .page { display: flex; flex-direction: column; overflow: hidden; }
+  .page > header { padding: 20px 26px 14px; border-bottom: 1px solid var(--line); }
+  .page h1 { margin: 0; font-size: 22px; }
+  .page > header p { margin: 4px 0 0; color: var(--muted); }
+  .page > .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 26px 28px; }
+  .page .scroll > h2, .page section > h2 { margin: 24px 0 12px; font-size: 15px; }
+  .page .scroll > h2:first-child { margin-top: 0; }
+  .button { display: inline-block; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); padding: 7px 16px; font-weight: 600; white-space: nowrap; }
+  .button.main { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .empty { color: var(--muted); }
+
+  /* ---- the dashboard ---- */
+  .welcome { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); background: color-mix(in srgb, var(--tint) 55%, var(--panel));
+             border-radius: 16px; padding: 18px 22px; margin-bottom: 22px; }
+  .welcome h2 { margin: 0 0 10px !important; font-size: 17px !important; }
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .steps li { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .steps li:first-child { border-top: 0; }
+  .steps li > div { flex: 1; }
+  .steps p { margin: 2px 0 0; color: var(--muted); }
+  .steps .tick { width: 26px; height: 26px; flex: none; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center;
+                 font-weight: 700; color: var(--on-accent); }
+  .steps .done .tick { background: var(--live); border-color: var(--live); }
+  .steps .done b { color: var(--muted); text-decoration: line-through; }
+  .steps .next .tick { border-color: var(--accent); }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; display: flex; flex-direction: column; }
+  .stat[href]:hover { border-color: var(--accent); }
+  .stat b { font-size: 28px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card:hover { border-color: var(--accent); background: color-mix(in srgb, var(--tint) 40%, transparent); }
+  .card.going { border-color: color-mix(in srgb, var(--live) 50%, var(--line)); }
+  .card .name { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .card p { margin: 0; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: auto; padding-top: 4px; color: var(--muted); font-size: 12px; }
+  .card .when { margin-left: auto; white-space: nowrap; }
+
+  /* ---- settings ---- */
+  #settings section { border: 1px solid var(--line); border-radius: 14px; padding: 4px 18px; margin-bottom: 16px; max-width: 860px; }
+  #settings section > h2 { margin: 14px 0 4px; }
+  #settings section.danger { border-color: color-mix(in srgb, var(--stop) 45%, var(--line)); }
+  #settings .item { display: flex; align-items: center; gap: 20px; padding: 12px 0; border-top: 1px solid var(--line); }
+  #settings h2 + .item { border-top: 0; }
+  #settings .item > div:first-child { flex: 1; min-width: 0; }
+  #settings .item p { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+  #settings .controls { flex: none; display: flex; align-items: center; gap: 10px; }
+  #settings .controls .hint { margin: 0; max-width: 220px; }
+  #settings button { border: 1px solid var(--line); border-radius: 10px; background: var(--soft); padding: 7px 16px; font-weight: 600; }
+  #settings button.danger { border-color: var(--stop); color: var(--stop); background: none; }
+
+  /* ---- starting a run ---- */
+  #create { display: flex; flex-direction: column; overflow: hidden; }
   #create > header { padding: 20px 26px 14px; border-bottom: 1px solid var(--line); }
   #create h1 { margin: 0; font-size: 22px; }
   #create > header p { margin: 4px 0 0; color: var(--muted); }
@@ -149,6 +212,72 @@
   .row input[type=number] { width: 84px; text-align: center; }
   .row input, .row select, .row textarea { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 7px 10px; }
   .row textarea { flex: 2; resize: vertical; }
+
+  /* ---- who thinks for a role: a provider, then a model ---- */
+  .logo { width: var(--size); height: var(--size); flex: none; border-radius: calc(var(--size) * .28); display: grid; place-items: center;
+          background: var(--soft); border: 1px solid var(--line); color: var(--text); }
+  .logo svg { width: 56%; height: 56%; }
+  .logo.letter { background: hsl(var(--hue) 70% 92%); color: hsl(var(--hue) 55% 32%); border-color: transparent;
+                 font-weight: 700; font-size: calc(var(--size) * .46); }
+  @media (prefers-color-scheme: dark) { .logo.letter { background: hsl(var(--hue) 35% 22%); color: hsl(var(--hue) 80% 80%); } }
+  .what { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+  .what b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .what small { color: var(--muted); font-size: 12px; }
+  .picker { flex: 2; display: flex; justify-content: flex-end; min-width: 0; }
+  .pick { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 340px; width: 100%; padding: 6px 10px 6px 6px;
+          border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .pick:hover { border-color: var(--accent); }
+  .pick .what { flex: 1; }
+  .chevron { color: var(--muted); font-size: 20px; line-height: 1; }
+  #pickModel { width: min(640px, calc(100vw - 32px)); }
+  #pickModel h2 { display: flex; align-items: center; gap: 10px; }
+  #pickBack { margin-bottom: 10px; }
+  #pickBody { max-height: min(60vh, 520px); overflow-y: auto; margin: 0 -4px 16px; padding: 4px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 10px; }
+  .tile { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px;
+          background: var(--panel); text-align: left; font-weight: 400; }
+  .tile:hover, .model:hover { border-color: var(--accent); background: var(--tint); }
+  .tile.on, .model.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .tile .what { flex: 1; }
+  .models { display: flex; flex-direction: column; gap: 6px; }
+  .model { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); font-weight: 400; }
+  .model .what { flex: 1; }
+  .model .what small { white-space: normal; }
+  .search { width: 100%; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 8px 12px; }
+  #pickBody .empty { margin: 0 0 12px; }
+  .tile.more { border-style: dashed; color: var(--muted); }
+
+  /* ---- the AIs on this computer ---- */
+  #aisList h3 { margin: 22px 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #aisList h3:first-child { margin-top: 0; }
+  .ais { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; align-items: start; }
+  .ai { display: flex; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .ai p { color: var(--muted); }
+  .ai button { border: 1px solid var(--line); border-radius: 10px; background: var(--soft); padding: 7px 16px; font-weight: 600; }
+  .ai.ready { border-color: color-mix(in srgb, var(--live) 45%, var(--line)); }
+  .ai .body { flex: 1; min-width: 0; }
+  .ai .head { display: flex; align-items: center; gap: 10px; }
+  .ai .head b { font-size: 15px; }
+  .ai p { margin: 4px 0 0; white-space: normal; }
+  .ai .account { color: var(--text); }
+  .ai .trouble { color: var(--stop); white-space: pre-wrap; font-size: 12.5px; }
+  .ai .doing { display: flex; align-items: center; gap: 8px; color: var(--text); margin-top: 10px; }
+  .state { font-size: 11.5px; padding: 1px 8px; border-radius: 99px; background: var(--soft); color: var(--muted); }
+  .state.good { background: color-mix(in srgb, var(--live) 16%, transparent); color: var(--live); }
+  .ai .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 10px; }
+  .ai .actions .hint { flex-basis: 100%; margin: 0; }
+  .ai button.main { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .ai a.link { text-decoration: none; font-size: 13px; }
+  .keys { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; }
+  .key { display: flex; align-items: center; gap: 10px; }
+  .key span { flex: 1; font-weight: 600; }
+  .keys .add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .keys select, .keys input { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 7px 10px; }
+  .keys input { flex: 1; min-width: 180px; }
+  .keys .hint { margin: 2px 0 0; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .row.tall { align-items: flex-start; }
   .row :focus-visible, .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -181,50 +310,83 @@
   @media (max-width: 1000px) {
     body { height: auto; grid-template-columns: minmax(0, 1fr); }
     #view { min-height: 60vw; }
+    #viewer { grid-template-columns: minmax(0, 1fr); }
     #side { max-height: 80vh; }
-    #create { grid-column: auto; }
     #createBody { grid-template-columns: minmax(0, 1fr); }
+    .stats, .ais { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
 </head>
 <body>
-  <nav class="panel" id="sidebar" aria-label="Runs">
+  <nav class="panel" id="sidebar" aria-label="AI Box">
     <div id="brand"><span></span>AI Box</div>
-    <button id="new">+ New world</button>
+    <a class="go new" href="#new">+ New run</a>
+    <a class="go" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
+    <h3>Runs</h3>
     <div id="runs"></div>
+    <footer>
+      <a class="go" href="#ais"><svg viewBox="0 0 24 24"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z"/></svg>AI connections</a>
+      <a class="go" href="#settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</a>
+    </footer>
   </nav>
 
-  <main class="panel" id="stage">
+  <section class="panel page" id="home" hidden>
     <header>
-      <h1 id="title"></h1>
-      <p id="summary"></p>
+      <h1>Dashboard</h1>
+      <p>AIs live in small worlds, and act only through the tools the world gives them. Watch what they do.</p>
     </header>
-    <div id="view">
-      <div id="scene"></div>
-      <div id="facts"><span id="agents" class="chip"></span><button id="notesButton" class="chip"></button><button id="setupButton" class="chip">⚙ Settings</button></div>
-      <div id="notes" hidden></div>
-      <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
-    </div>
-    <div id="controls">
-      <button id="play" aria-label="Play">▶</button>
-      <input id="slider" type="range" min="0" max="1" step="0.01" value="0" aria-label="Time">
-      <span id="count"></span>
-      <select id="speed" aria-label="Speed">
-        <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="10">10×</option>
-      </select>
-      <button id="live" hidden>● Live</button>
-      <button id="stop" hidden>■ End the world</button>
-    </div>
-  </main>
+    <div class="scroll" id="homeBody"></div>
+  </section>
 
-  <section class="panel" id="side" aria-label="Conversation">
-    <h2>What the agents think, say and do</h2>
-    <div id="log"></div>
+  <div id="viewer" hidden>
+    <main class="panel" id="stage">
+      <header>
+        <h1 id="title"></h1>
+        <p id="summary"></p>
+      </header>
+      <div id="view">
+        <div id="scene"></div>
+        <div id="facts"><span id="agents" class="chip"></span><button id="notesButton" class="chip"></button><button id="setupButton" class="chip">⚙ How it was set up</button></div>
+        <div id="notes" hidden></div>
+        <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
+      </div>
+      <div id="controls">
+        <button id="play" aria-label="Play">▶</button>
+        <input id="slider" type="range" min="0" max="1" step="0.01" value="0" aria-label="Time">
+        <span id="count"></span>
+        <select id="speed" aria-label="Speed">
+          <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="10">10×</option>
+        </select>
+        <button id="live" hidden>● Live</button>
+        <button id="stop" hidden>■ End the world</button>
+      </div>
+    </main>
+
+    <section class="panel" id="side" aria-label="Conversation">
+      <h2>What the agents think, say and do</h2>
+      <div id="log"></div>
+    </section>
+  </div>
+
+  <section class="panel page" id="connections" hidden>
+    <header>
+      <h1>AI connections</h1>
+      <p>The agents think with these. Connect as many as you like: a new run offers every model they have.</p>
+    </header>
+    <div class="scroll" id="aisList"></div>
+  </section>
+
+  <section class="panel page" id="settings" hidden>
+    <header>
+      <h1>Settings</h1>
+      <p>What AI Box keeps on this computer, and forgetting it again.</p>
+    </header>
+    <div class="scroll" id="settingsBody"></div>
   </section>
 
   <form class="panel" id="create" hidden>
     <header>
-      <h1>New world</h1>
+      <h1>New run</h1>
       <p>Pick a world, set it up, decide what its agents know and are told. Then start it and watch.</p>
     </header>
     <div id="createBody">
@@ -252,6 +414,14 @@
   <dialog id="aboutWorld">
     <h2 id="aboutTitle"></h2>
     <p id="aboutText"></p>
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
+
+  <dialog id="pickModel">
+    <button type="button" class="link" id="pickBack" hidden>‹ All providers</button>
+    <h2 id="pickTitle"></h2>
+    <p id="pickHint"></p>
+    <div id="pickBody"></div>
     <form method="dialog"><button>Close</button></form>
   </dialog>
 

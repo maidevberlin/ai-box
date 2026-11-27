@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "esbuild": "^0.28.2",
+    "simple-icons": "^16.38.1",
     "three": "^0.187.0"
   }
 }

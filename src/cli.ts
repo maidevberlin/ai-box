@@ -1,12 +1,14 @@
 // Runs a world from the command line and prints what happens:
 //
 //   node src/cli.ts magic                        with the world's usual settings
-//   node src/cli.ts magic --minutes 2 --model haiku --set size=small --set agents=2
+//   node src/cli.ts magic --minutes 2 --model claude/haiku --set size=small --set agents=2
+//
+// Without --model, the usual model of the first AI on this computer (see engine/agents.ts).
 //
 // The record is written to runs/<id>/. The viewer (npm start) does the same from a web page.
 
 import { join } from 'node:path';
-import { populate } from './engine/agents.ts';
+import { populate, usualModel } from './engine/agents.ts';
 import { Doors } from './engine/doors.ts';
 import { Run, runId, type Event } from './engine/run.ts';
 import { worlds } from './worlds/index.ts';
@@ -28,8 +30,13 @@ for (let i = 0; i < rest.length; i += 2) {
   } else options[flag.replace(/^--/, '')] = value;
 }
 
+const model = options.model || await usualModel();
+if (!model) {
+  console.error('No AI is set up on this computer: neither Claude Code nor Codex answered.');
+  process.exit(1);
+}
 const roles = Object.fromEntries(Object.keys(definition.roles({ ...chosen } as never) ?? {}).map(role => [role, {
-  ...(options.model ? { model: options.model } : {}), ...(options.told ? { told: options.told } : {}),
+  model, ...(options.told ? { told: options.told } : {}),
 }]));
 const id = runId();
 const run = new Run(definition, {

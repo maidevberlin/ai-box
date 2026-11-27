@@ -1,7 +1,9 @@
 // The screen for starting a world. Its form is drawn from what the world declares: its
 // settings, its roles (what kinds of agent live in it) and its tools.
 
+import type { Model, Provider } from '../../engine/mind.ts';
 import type { Role, Setting } from '../../engine/types.ts';
+import { brand, logo } from './brands.ts';
 import { $, api, el } from './page.ts';
 
 export interface WorldInfo {
@@ -11,8 +13,11 @@ export interface WorldInfo {
   tools: { name: string; about: string; needed?: true; on?: string[] }[];
 }
 
-const MODELS = ['opus', 'fable', 'sonnet', 'haiku'];
+/** An AI on this computer, as the server found it: Claude Code, Codex, pi, Ollama … */
+interface MindInfo { kind: string; title: string; local: boolean; providers: Provider[] }
+
 let worlds: WorldInfo[] = [];
+let minds: MindInfo[] = [];
 let picked = '';
 
 /** A switch: a checkbox that looks like what it is. */
@@ -73,6 +78,100 @@ async function settingsChanged(world: WorldInfo): Promise<void> {
   world.roles = now.roles;
 }
 
+// ---------------------------------------------------------------- who thinks for a role
+
+/** One provider of models, as one AI offers it: Claude through Claude Code, Z.ai through pi. */
+interface Source { mind: MindInfo; provider: Provider }
+const sources = (): Source[] => minds.flatMap(mind => mind.providers.map(provider => ({ mind, provider })));
+const valueOf = (source: Source, model: Model) => `${source.mind.kind}/${model.id}`;
+const named = (source: Source) => brand(source.provider.id, source.provider.title).title;
+const via = (mind: MindInfo) => (mind.local ? 'on this computer' : `via ${mind.title}`);
+
+/** Where a role's model ("pi/zai/glm-5") comes from, if it is there on this computer. */
+function found(model: string): { source: Source; model: Model } | null {
+  for (const source of sources()) {
+    const match = source.provider.models.find(candidate => valueOf(source, candidate) === model);
+    if (match) return { source, model: match };
+  }
+  return null;
+}
+
+/** The field of a role's model: a button that shows it, and opens the picker. */
+function picker(name: string, role: Role): HTMLElement {
+  const input = el('input');
+  input.type = 'hidden'; input.id = `role-${name}-model`;
+  const button = el('button', 'pick');
+  button.type = 'button'; button.id = `role-${name}-pick`;
+  button.onclick = () => pick(name, role.title);
+  return el('span', 'picker', input, button);
+}
+
+/** Sets a role's model, and shows it. `byHand`: a person chose it (the form keeps it). */
+function choose(name: string, model: string, byHand = false): void {
+  const input = $(`role-${name}-model`) as HTMLInputElement;
+  input.value = model;
+  const there = found(model);
+  $(`role-${name}-pick`).replaceChildren(
+    ...(there ? [logo(there.source.provider.id, there.source.provider.title, 30),
+                 el('span', 'what', el('b', '', there.model.title), el('small', '', `${named(there.source)} · ${via(there.source.mind)}`))]
+      : [el('span', 'what', el('b', '', minds.length ? 'Choose a model' : 'No AI is connected yet'),
+            el('small', '', model ? `${model} is not there on this computer` : minds.length ? '' : 'Connect one under AI connections'))]),
+    el('span', 'chevron', '›'));
+  if (byHand) input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** The picker: first who provides the model, then the model. */
+function pick(name: string, roleTitle: string): void {
+  const dialog = $('pickModel') as HTMLDialogElement, now = ($(`role-${name}-model`) as HTMLInputElement).value;
+  const providers = () => {
+    $('pickBack').hidden = true;
+    $('pickTitle').textContent = `Who thinks for the ${roleTitle.toLowerCase()}?`;
+    $('pickHint').textContent = 'The AIs on this computer, and who provides their models.';
+    const tiles = sources().map(source => {
+      const tile = el('button', `tile${found(now)?.source === source ? ' on' : ''}`,
+        logo(source.provider.id, source.provider.title, 40),
+        el('span', 'what', el('b', '', named(source)), el('small', '', via(source.mind)),
+           el('small', '', `${source.provider.models.length} model${source.provider.models.length === 1 ? '' : 's'}`)));
+      tile.type = 'button';
+      tile.onclick = () => models(source);
+      return tile;
+    });
+    const more = el('a', 'tile more', el('span', 'what', el('b', '', 'Connect more AIs'), el('small', '', 'Install, log in, add a key')));
+    more.href = '#ais';
+    more.onclick = () => dialog.close();
+    $('pickBody').replaceChildren(...(tiles.length ? [] : [el('p', 'empty', 'No AI is connected yet.')]), el('div', 'tiles', ...tiles, more));
+  };
+  const models = (source: Source) => {
+    $('pickBack').hidden = false;
+    $('pickTitle').replaceChildren(logo(source.provider.id, source.provider.title, 28), named(source));
+    $('pickHint').textContent = `${source.provider.models.length} model${source.provider.models.length === 1 ? '' : 's'} ${via(source.mind)}.`;
+    const list = el('div', 'models');
+    const shown = (filter: string) => list.replaceChildren(...source.provider.models
+      .filter(model => !filter || `${model.title} ${model.id} ${model.about}`.toLowerCase().includes(filter.toLowerCase()))
+      .map(model => {
+        const row = el('button', `model${valueOf(source, model) === now ? ' on' : ''}`,
+          el('span', 'what', el('b', '', model.title), model.about && el('small', '', model.about)),
+          model.usual && el('span', 'chip', 'usual'));
+        row.type = 'button';
+        row.onclick = () => {
+          choose(name, valueOf(source, model), true);
+          dialog.close();
+        };
+        return row;
+      }));
+    const search = el('input', 'search');
+    search.type = 'search'; search.placeholder = 'Find a model';
+    search.oninput = () => shown(search.value);
+    shown('');
+    $('pickBody').replaceChildren(...(source.provider.models.length > 10 ? [search] : []), list);
+  };
+  $('pickBack').onclick = providers;
+  const current = found(now);
+  if (current && sources().length === 1) models(current.source);
+  else providers();
+  dialog.showModal();
+}
+
 // ---------------------------------------------------------------- what was set last
 
 /** How the form is filled in. What a role is told is only kept if a person wrote it: else
@@ -93,12 +192,21 @@ const filled = (world: WorldInfo): Filled => ({
     model: text(`role-${name}-model`), told: text(`role-${name}-told`) === role.told ? null : text(`role-${name}-told`), without: switchedOff(world, name) }])),
 });
 
+/** The model a role gets when nobody chose one: the usual one of the first AI there is. */
+function usualModel(): string {
+  const [first] = minds;
+  const models = first?.providers.flatMap(provider => provider.models) ?? [];
+  const model = models.find(found => found.usual) ?? models[0];
+  return first && model ? `${first.kind}/${model.id}` : '';
+}
+const offered = (model: string) => !!found(model);
+
 /** How the form is filled in when nobody has touched it. */
 const usually = (world: WorldInfo): Filled => ({
   chosen: Object.fromEntries(Object.entries(world.settings).map(([name, setting]) => [name, setting.type === 'choices' ? [...setting.usual] : setting.usual])),
   minutes: world.minutes,
   roles: Object.fromEntries(Object.entries(world.roles).map(([name, role]) => [name, {
-    model: role.model, told: null, without: world.tools.filter(tool => !tool.needed && role.without?.includes(tool.name)).map(tool => tool.name) }])),
+    model: role.model ?? usualModel(), told: null, without: world.tools.filter(tool => !tool.needed && role.without?.includes(tool.name)).map(tool => tool.name) }])),
 });
 
 // What was set last is kept in the browser, for each world, and filled in again the next time.
@@ -127,7 +235,7 @@ async function fillAgain(world: WorldInfo): Promise<void> {
     if (picked !== world.name) return;
     for (const [name, role] of Object.entries(last.roles ?? {})) {
       if (!world.roles[name]) continue;
-      if (MODELS.includes(role.model)) ($(`role-${name}-model`) as HTMLSelectElement).value = role.model;
+      if (offered(role.model)) choose(name, role.model);
       if (role.told !== null) ($(`role-${name}-told`) as HTMLTextAreaElement).value = role.told;
       for (const tool of world.tools) if (!tool.needed) ($(`role-${name}-tool-${tool.name}`) as HTMLInputElement).checked = !role.without.includes(tool.name);
       $(`role-${name}-tool-${world.tools[0]?.name}`)?.dispatchEvent(new Event('change', { bubbles: true }));   // (the count of tools that are on)
@@ -194,20 +302,20 @@ function draw(): void {
   const several = Object.keys(world.roles).length > 1;
   const lives = el('section', '', el('h2', '', icon('users'), 'Who lives in it'), living);
   $('worldRoles').replaceChildren(...(several ? [lives] : []), ...Object.entries(world.roles).flatMap(([name, role]) => {
-    const model = el('select', '', ...MODELS.map(option => el('option', '', option)));
-    model.id = `role-${name}-model`; model.value = role.model;
+    const model = picker(name, role);
     const told = el('textarea'); told.id = `role-${name}-told`; told.value = role.told; told.rows = 2;
     const who = [row('Model', model), row("The world's message to an agent that wakes up", told, 'tall')];
     if (!several) lives.append(...who);
     return [several ? el('section', '', el('h2', '', icon('mind'), `${role.title}: who it is`), ...who) : lives, tools(world, name, role)];
   }));
+  for (const [name, role] of Object.entries(world.roles)) choose(name, role.model ?? usualModel());
   ($('minutes') as HTMLInputElement).value = String(world.minutes);
   void fillAgain(world);
 }
 
 /** Opens the screen. `onStarted` is told the id of the run that was started. */
 export async function openCreate(onStarted: (id: string) => void): Promise<void> {
-  worlds = await api<WorldInfo[]>('/api/worlds');
+  [worlds, minds] = await Promise.all([api<WorldInfo[]>('/api/worlds'), api<MindInfo[]>('/api/minds')]);
   for (const head of document.querySelectorAll<HTMLElement>('#create h2[data-icon]')) {
     if (!head.querySelector('.icon')) head.prepend(icon(head.dataset.icon!));
   }
