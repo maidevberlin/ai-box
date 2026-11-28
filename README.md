@@ -25,6 +25,12 @@ curl -fsSL https://raw.githubusercontent.com/maidevberlin/tinkerlings/main/insta
 irm https://raw.githubusercontent.com/maidevberlin/tinkerlings/main/install.ps1 | iex
 ```
 
+**If you have Node.js:** this runs the same line for your system:
+
+```
+npx tinkerlings
+```
+
 Keep the window open while you use Tinkerlings: closing it ends Tinkerlings. To start it again
 later, double-click "Tinkerlings" on your desktop, or run the same line. Each start fetches the
 newest version.
