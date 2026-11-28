@@ -1,5 +1,5 @@
 // Draws a block world in 3D: blocks in the colours of their kinds, items, the agents as
-// robots and creatures as small boxes, a bubble over whoever just thought or said something.
+// robots and creatures as small boxes, a bubble over whoever just said something.
 // It is given a whole picture every time and works out by itself what has to be drawn again.
 //
 // A block at (x, y, z) is drawn at x to the right, z up, y away from the viewer (north).
@@ -13,7 +13,7 @@ import type { Picture } from '../../blocks/world.ts';
 
 /** A picture, and a number that changes whenever its blocks do. */
 export interface View extends Picture { blocksVersion: number }
-export interface Bubble { text: string; thought: boolean; loudness?: string }
+export interface Bubble { text: string; loudness?: string }
 
 export const PLACE_COLOURS = [0xe8553a, 0x8b5cf6, 0x14b8a6, 0xf59e0b, 0x3b82f6, 0xec4899, 0x84cc16, 0x64748b];
 const TALL = 1.45;          // how tall a figure is, in blocks
@@ -141,7 +141,7 @@ export class Scene {
       figure.bubble.visible = !!bubble && !body.dead;
       if (bubble) {
         element.textContent = bubble.text.length > BUBBLE_LETTERS ? `${bubble.text.slice(0, BUBBLE_LETTERS)}…` : bubble.text;
-        element.className = `bubble${bubble.thought ? ' thought' : ''}${bubble.loudness && bubble.loudness !== 'normal' ? ` ${bubble.loudness}` : ''}`;
+        element.className = `bubble${bubble.loudness && bubble.loudness !== 'normal' ? ` ${bubble.loudness}` : ''}`;
       }
     }
     for (const [id, figure] of this.figures) {

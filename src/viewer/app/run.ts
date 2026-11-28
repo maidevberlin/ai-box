@@ -13,6 +13,8 @@ import { PLACE_COLOURS, Scene, type View } from './scene.ts';
 const POLL = 1000;   // how often a run that is going is read again, in milliseconds
 
 let about: About | null = null;   // the run on screen
+let bubbled = '';                 // the bubbles on screen, as they were last drawn
+let heard = 0;                    // when it was last read (performance.now())
 let film = new Film();
 let scene: Scene | null = null;
 let at = 0;                       // the moment on screen, in seconds since the run started
@@ -31,12 +33,13 @@ let notesOpen = false;            // the panel with the notes lying in the world
 export async function openRun(id: string, moment?: number): Promise<void> {
   showing = true;
   if (about?.id === id && moment === undefined) {   // back to the run that was on screen
-    if (about.going) { live = playing = true; at = film.length; }
+    if (about.going) { live = playing = true; at = whole(); }
     return draw();
   }
   const answer = await api<{ about: About; events: Event[] }>(`/api/runs/${id}`);
   if (!answer.about) return void (location.hash = '');
   about = answer.about;
+  heard = performance.now();
   film = new Film();
   film.add(answer.events);
   rows = []; rowOf = []; woken = []; marked = undefined;
@@ -46,7 +49,7 @@ export async function openRun(id: string, moment?: number): Promise<void> {
   scene.reset();
   live = moment === undefined && about.going;
   playing = live;
-  at = moment === undefined ? (live ? film.length : 0) : Math.min(moment, film.length);
+  at = moment === undefined ? (live ? whole() : 0) : Math.min(moment, whole());
   shown = -2;
   draw();
 }
@@ -135,15 +138,19 @@ function draw(): void {
 function drawMoment(): void {
   if (!showing || !about) return;
   // (The very beginning shows the world as it started, before anything happened.)
-  const length = Math.max(film.length, 0.001), index = film.events.length ? Math.max(film.indexAt(at), 0) : -1;
+  const length = Math.max(whole(), 0.001), index = film.events.length ? Math.max(film.indexAt(at), 0) : -1;
   const slider = $('slider') as HTMLInputElement;
   once('length', String(length), () => { slider.max = String(length); });
   slider.value = String(at);
   once('count', `${clock(at)} / ${clock(length)}`, () => { $('count').textContent = `${clock(at)} / ${clock(length)}`; });
   once('play', String(playing), () => { $('play').textContent = playing ? '❚❚' : '▶'; });
   once('live', String(live), () => { $('live').classList.toggle('on', live); $('speed').hidden = live; });
-  if (index !== shown && index >= 0) {
-    const forward = index > shown && index - shown < 20;
+  // (A bubble goes away after a while, also when nothing else happens.)
+  const bubbles = index >= 0 ? film.bubbles(index, at) : new Map();
+  const said = JSON.stringify([...bubbles]);
+  if ((index !== shown || said !== bubbled) && index >= 0) {
+    bubbled = said;
+    const forward = index >= shown && index - shown < 20;
     // A throw is played when the film runs onto it, not when jumping around in the run.
     if (forward && playing) {
       for (let i = shown + 1; i <= index; i++) {
@@ -152,7 +159,7 @@ function drawMoment(): void {
       }
     }
     const view = film.at(index);
-    scene!.show(view, film.bubbles(index, at), !forward);
+    scene!.show(view, bubbles, !forward);
     drawFacts(view, woken[index]!);
     // The row of the newest thing that happened is marked, and kept in sight.
     let last = index;
@@ -187,16 +194,24 @@ function drawFacts(view: View, agents: number): void {
   });
 }
 
-// Playing: time goes on. At the end of a run that is going, the film waits for more.
+/** How long the run is, in seconds. A run that is going goes on between the times it is read,
+ *  also while nothing happens in it. */
+function whole(): number {
+  return about?.going ? Math.max(film.length, about.seconds + (performance.now() - heard) / 1000) : film.length;
+}
+
+// Playing: time goes on. Followed live, the film is at the run's own time. A run that is going
+// grows on screen even while it does not play.
 let before = performance.now();
 function tick(): void {
   requestAnimationFrame(tick);
   const now = performance.now(), passed = (now - before) / 1000;
   before = now;
-  if (!playing || !showing || !about || document.hidden) return;
-  if (at >= film.length && about.going) return;   // at the end of a run that is going: waiting for more
-  at = Math.min(at + passed * speed, film.length);
-  if (at >= film.length && !about.going) playing = false;
+  if (!showing || !about || document.hidden) return;
+  if (playing) {
+    at = live ? whole() : Math.min(at + passed * speed, whole());
+    if (at >= whole() && !about.going) playing = false;
+  } else if (!about.going) return;
   drawMoment();
 }
 requestAnimationFrame(tick);
@@ -209,8 +224,9 @@ setInterval(async () => {
   if (about?.id !== id) return;   // another run is on screen by now
   const ended = about.going && !answer.about.going;
   about = answer.about;
+  heard = performance.now();
   film.add(answer.events);
-  if (live) { at = film.length; playing = about.going; }
+  if (live) { at = whole(); playing = about.going; }
   if (answer.events.length || ended) draw();
   if (ended) void readRuns();
 }, POLL);
@@ -224,7 +240,7 @@ onRuns(runs => {
 
 $('play').onclick = () => {
   if (!about) return;
-  if (!playing && at >= film.length && !about.going) at = 0;   // play it again from the start
+  if (!playing && at >= whole() && !about.going) at = 0;   // play it again from the start
   playing = !playing;
   live = false;
   draw();
@@ -269,5 +285,5 @@ $('setupButton').onclick = async () => {
   ($('runSetup') as HTMLDialogElement).showModal();
 };
 $('speed').onchange = event => { speed = Number((event.target as HTMLSelectElement).value); };
-$('live').onclick = () => { live = playing = true; at = film.length; draw(); };
+$('live').onclick = () => { live = playing = true; at = whole(); draw(); };
 $('stop').onclick = () => about && api(`/api/runs/${about.id}/stop`, {});

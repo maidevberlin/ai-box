@@ -412,7 +412,7 @@ export class Run {
              chosen: this.chosen, models: [...new Set(Object.values(this.roles).flatMap(role => Array.from({ length: role.count }, (_, i) => role.each?.[i]?.model ?? role.model ?? '').filter(Boolean)))],
              roles: Object.fromEntries(Object.entries(this.roles).map(([name, role]) =>
                [name, { title: role.title, count: role.count, model: role.model, told: role.told, without: role.without ?? [], each: role.each ?? [] }])),
-             ended: this.ended, seconds: Math.round(this.lasted ?? this.time.now()) };
+             ended: this.ended, seconds: this.lasted ?? this.time.now() };
   }
 
   private writeAbout(): void {

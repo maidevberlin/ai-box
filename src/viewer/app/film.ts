@@ -83,19 +83,16 @@ export class Film {
     if (changes.signs) this.signs = changes.signs;
   }
 
-  /** The bubble over each agent: what it last thought or said, if that was a moment ago. */
+  /** The bubble over each agent: what it last said out loud in the world, if that was a moment
+   *  ago. (What it thought, or wrote and nobody read, is not shown in the world.) */
   bubbles(index: number, seconds: number): Map<number, Bubble> {
     const found = new Map<number, Bubble>(), over = new Set<number>();
     for (let i = index; i >= 0; i--) {
-      const event = this.events[i]!, place = event.place as number;
+      const event = this.events[i]!;
       if (event.t < seconds - BUBBLE_STAYS) break;
-      if (event.type === 'wake' || event.type === 'death') over.add(place);   // what was said before is another life's
-      // What it thought, and what it wrote as a message, is inside it: a thought bubble.
-      if ((event.type === 'think' || event.type === 'write') && !found.has(place) && !over.has(place))
-        found.set(place, { text: String(event.text), thought: true });
-      // What it said out loud in the world: a speech bubble.
+      if (event.type === 'wake' || event.type === 'death') over.add(event.place as number);   // what was said before is another life's
       const said = event.type === 'fact' && event.what === 'said' ? event.data as { place: number; text: string; loudness?: string } : null;
-      if (said && !found.has(said.place) && !over.has(said.place)) found.set(said.place, { text: said.text, thought: false, loudness: said.loudness });
+      if (said && !found.has(said.place) && !over.has(said.place)) found.set(said.place, { text: said.text, loudness: said.loudness });
     }
     return found;
   }
