@@ -48,8 +48,8 @@ const dugOut: Deed = (world, me, thing) => {
 };
 
 // The world's own verbs. What they do is written with the kinds they can be done to.
-const dig = verbTo({ about: 'Dig out the ground: under you, or next to you.' });
-const eat = verbTo({ about: 'Eat something: what you hold, or what lies where you point.' });
+const dig = verbTo({ about: 'Dig out the ground: under you, or next to you.', shown: { icon: 'shovel', folded: true } });
+const eat = verbTo({ about: 'Eat something: what you hold, or what lies where you point.', shown: { icon: 'apple', overHead: true } });
 
 export default blockWorld({
   name: 'orchard',
@@ -159,6 +159,8 @@ The agents are told nothing about it. The world says what happens, never why.
     },
   },
   verbs: { ...basic, dig, eat },
+  // (Its strength, while hunger takes it: without hunger it is always full.)
+  overHead: (world, me) => (world.chosen.hunger ? { icon: 'zap', text: `${me.has.strength}/${FULL}` } : null),
   make(world) {
     const half = SIZES[world.chosen.size as keyof typeof SIZES] / 2;
     world.own.trees = new Set<string>();

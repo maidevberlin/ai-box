@@ -13,7 +13,8 @@
 //   GET  /api/worlds            the worlds, with their settings, roles and tools
 //   GET  /api/worlds/<name>?chosen=<json>   one world's roles and tools with these settings
 //   GET  /api/runs              the runs, newest first
-//   GET  /api/runs/<id>?from=N  one run: what it is about, and its record from line N on
+//   GET  /api/runs/<id>?from=N  one run: what it is about, and its record from line N on (from 0:
+//                               also how what its agents do is shown)
 //   POST /api/runs              start a run: { world, chosen, minutes, roles }
 //   POST /api/runs/<id>/stop    end a run that is going
 //   GET  /api/settings          what Tinkerlings keeps, and where
@@ -29,6 +30,7 @@ import { HOME } from '../engine/programs.ts';
 import { Doors } from '../engine/doors.ts';
 import { review } from '../engine/review.ts';
 import { Run, runId, WAIT, type Event } from '../engine/run.ts';
+import { showing } from '../engine/shown.ts';
 import type { WorldDefinition } from '../engine/types.ts';
 import { usual } from '../engine/types.ts';
 import { WORLDS } from '../worlds/index.ts';
@@ -186,9 +188,12 @@ async function serve(request: IncomingMessage, response: ServerResponse): Promis
     if (path === '/api/settings') {
       return send(response, { runs: runIds().length, going: [...going.values()].filter(run => !run.ended).length, folder: RUNS, home: HOME });
     }
-    if (path.startsWith('/api/runs/') && RUN_ID.test(id ?? '') && about(id!))
-      return send(response, { about: about(id!), from: Number(url.searchParams.get('from')) || 0,
-                              events: record(id!, Number(url.searchParams.get('from')) || 0) });
+    if (path.startsWith('/api/runs/') && RUN_ID.test(id ?? '') && about(id!)) {
+      const known = about(id!)!, from = Number(url.searchParams.get('from')) || 0, world = all[String(known.world)];
+      // (How what the agents do is shown: with the beginning of the record.)
+      return send(response, { about: known, from, events: record(id!, from),
+                              shown: from || !world ? undefined : showing(world, (known.chosen ?? {}) as Record<string, unknown>) });
+    }
     return send(response, { error: 'not found' }, undefined, 404);
   }
   // Only this page may start or end runs, not some other website open in the browser.

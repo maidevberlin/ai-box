@@ -61,14 +61,21 @@
      button, and a panel that opens from it). */
   #facts { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; }
   #facts .chip { padding: 4px 10px; background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
-  #notesButton { cursor: pointer; }
-  #notes { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
+  #facts button.chip { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  #notes, #agentList { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
            overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
            padding: 6px 14px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
   #notes .note { padding: 8px 0; border-bottom: 1px solid var(--line); }
   #notes .note:last-child { border: 0; }
   #notes .where { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   #notes .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #agentList { padding: 6px; }
+  #agentList .who { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; text-align: left; }
+  #agentList .who:hover:not(:disabled) { background: var(--soft); }
+  #agentList .who:disabled { cursor: default; opacity: .55; }
+  #agentList .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--place); flex: none; }
+  #agentList .what { flex: 1; }
+  #agentList .has { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 700; }
   #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
   #scene, #scene canvas, .bubbles { position: absolute; inset: 0; }
   #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75;
@@ -83,6 +90,10 @@
                  color: var(--text); border: 1px solid var(--line); }
   .bubble.whisper { font-size: 10.5px; color: var(--muted); }
   .bubble.shout { font-size: 14px; font-weight: 700; border-width: 2.5px; }
+  .above { display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+  .above .tag { display: inline-flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 700;
+                background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text); border: 1px solid var(--line); }
+  .above .tag .has { display: inline-flex; align-items: center; gap: 3px; }
   #controls { display: flex; align-items: center; gap: 10px; }
   #play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 14px; flex: none; }
   #slider { flex: 1; accent-color: var(--accent); }
@@ -97,7 +108,7 @@
   #log { position: relative; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 0 4px 8px; }
   .step { padding: 6px 12px; border-radius: 4px 12px 12px 4px; cursor: pointer; border: 1px solid transparent; border-left: 3px solid var(--place, var(--line)); }
   .step.now { border-color: var(--accent); border-left-color: var(--place, var(--accent)); }
-  .step .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--place, var(--muted)); }
+  .step .label { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--place, var(--muted)); }
   .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .step.say { background: var(--soft); }
   .step.say .heard { color: var(--muted); font-size: 12.5px; white-space: pre-wrap; margin-top: 4px; }
@@ -113,6 +124,17 @@
   .step .turnline::before, .step .turnline::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
   .step.death { color: var(--stop); border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 6px; }
   .step.stop { text-align: center; color: var(--muted); border-left-color: transparent; }
+  .icon { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .step.stop .label { justify-content: center; }
+  .step.folded details summary { list-style: none; cursor: pointer; }
+  .step.folded details summary::-webkit-details-marker { display: none; }
+  .doings { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .doing { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+  .doing .icon { color: var(--place, var(--muted)); }
+  .calls { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .calls .one { padding-left: 8px; border-left: 1px solid var(--line); }
+  .calls .one .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .calls .one .text { color: var(--muted); font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; }
 
   /* ---- the screens that are pages: a head, and what scrolls below it ---- */
   .page { display: flex; flex-direction: column; overflow: hidden; }
@@ -382,7 +404,8 @@
       </header>
       <div id="view">
         <div id="scene"></div>
-        <div id="facts"><span id="agents" class="chip"></span><button id="notesButton" class="chip"></button><button id="setupButton" class="chip">⚙ How it was set up</button></div>
+        <div id="facts"><button id="agentsButton" class="chip"></button><button id="notesButton" class="chip"></button><button id="setupButton" class="chip">⚙ How it was set up</button></div>
+        <div id="agentList" hidden></div>
         <div id="notes" hidden></div>
         <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
       </div>

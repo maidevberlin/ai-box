@@ -6,7 +6,7 @@ import type { Agent, Chosen, Host, Settings, World, WorldDefinition } from '../e
 import { fromHere, onTheMap, type Places } from './places.ts';
 import { asTools, glimpse, pattern, seenNow, startles, surroundings } from './verbs.ts';
 import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockWorld, type BlockWorldDefinition, type Body, type Cell,
-         type Happened, type Item, type ItemKind, type Place, type Reaction } from './types.ts';
+         type Happened, type Item, type ItemKind, type OverHead, type Place, type Reaction } from './types.ts';
 
 /** What a person can set in every block world: how the agents are told about it. */
 const everywhere = (view: 'text' | 'map') => ({
@@ -51,7 +51,7 @@ export interface Picture {
   /** What is written at places for whoever watches (BlockWorld.sign). */
   signs: [x: number, y: number, z: number, text: string, where: 'on' | 'east' | 'west'][];
   /** `sees`: how far an agent sees from where it stands, in cells. `holds`: what is written on what it holds. */
-  bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; holds?: string; dead: boolean; sees?: number }[];
+  bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; holds?: string; dead: boolean; sees?: number; over?: OverHead }[];
 }
 export interface Changes {
   blocks?: [x: number, y: number, z: number, kind: string | null][];
@@ -701,7 +701,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     return this.living.map(body => ({
       id: body.id, place: body.agent?.place, number: body.agent?.number, creature: body.creature,
       x: body.cell[0], y: body.cell[1], z: this.height(body.cell), hand: body.hand?.kind ?? null, holds: body.hand?.text, dead: body.dead,
-      sees: body.agent ? this.sight(body) : undefined,
+      sees: body.agent ? this.sight(body) : undefined, over: (body.agent && this.definition.overHead?.(this, body)) || undefined,
     }));
   }
 
@@ -754,6 +754,7 @@ export function blockWorld<S extends Settings>(definition: BlockWorldDefinition<
     ends: definition.ends,
     roles: definition.roles,
     tools: chosen => tools(definition, chosen),
+    shown: definition.shown,
     create: (chosen, host) => new Blocks(definition, chosen, host),
   };
 }

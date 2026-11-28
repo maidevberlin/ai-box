@@ -1,5 +1,6 @@
 // Draws a block world in 3D: blocks in the colours of their kinds, items, the agents as
-// robots and creatures as small boxes, a bubble over whoever just said something.
+// robots and creatures as small boxes. Over an agent's head: what it just said, the icon of
+// what it does that is not seen, and whatever its world shows there.
 // It is given a whole picture every time and works out by itself what has to be drawn again.
 //
 // A block at (x, y, z) is drawn at x to the right, z up, y away from the viewer (north).
@@ -10,10 +11,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import type { Picture } from '../../blocks/world.ts';
+import { icon } from './icons.ts';
+import { el } from './page.ts';
 
 /** A picture, and a number that changes whenever its blocks do. */
 export interface View extends Picture { blocksVersion: number }
-export interface Bubble { text: string; loudness?: string }
+/** Over an agent's head, besides what the world puts there: what it said, and the icon of what it does. */
+export interface Above { said?: { text: string; loudness?: string }; doing?: string }
 
 export const PLACE_COLOURS = [0xe8553a, 0x8b5cf6, 0x14b8a6, 0xf59e0b, 0x3b82f6, 0xec4899, 0x84cc16, 0x64748b];
 const TALL = 1.45;          // how tall a figure is, in blocks
@@ -38,7 +42,8 @@ interface Figure {
   /** The area it sees, lying on the ground around it. */
   sight: THREE.Mesh;
   carried: THREE.Mesh;
-  bubble: CSS2DObject;
+  /** What is over its head (see Above). */
+  above: CSS2DObject;
   mixer: THREE.AnimationMixer | null;
   clips: Record<string, THREE.AnimationAction>;
   playing: string;
@@ -62,6 +67,7 @@ export class Scene {
   private flight: { path: THREE.Vector3[]; since: number } | null = null;
   private drawnBlocks = -1;
   private fitted = false;
+  private aim: THREE.Vector3 | null = null;   // where the camera is turning to look (see `centre`)
   private frames = 0;        // how many more frames are drawn: nothing is drawn while nothing moves
   private last = performance.now();
   private stopped = false;
@@ -83,12 +89,13 @@ export class Scene {
     this.controls = new OrbitControls(this.camera, this.labels.domElement);
     this.controls.maxPolarAngle = Math.PI / 2.05;
     this.controls.addEventListener('change', () => this.wake());
+    this.controls.addEventListener('start', () => { this.aim = null; });   // (a person who turns the view has the say)
     new ResizeObserver(() => this.resize()).observe(box);
     this.resize();
     robotLoaded.then(() => {   // the stand-ins become robots
       for (const figure of this.figures.values()) {
         this.scene.remove(figure.group, figure.sight);
-        figure.bubble.element.remove();
+        figure.above.element.remove();
       }
       this.figures.clear();
       this.wake();
@@ -113,7 +120,7 @@ export class Scene {
   }
 
   /** Shows a picture. `jump`: at once, without anyone gliding to where they are now. */
-  show(view: View, bubbles: Map<number, Bubble>, jump: boolean): void {
+  show(view: View, aboves: Map<number, Above>, jump: boolean): void {
     if (view.blocksVersion !== this.drawnBlocks) {
       this.drawnBlocks = view.blocksVersion;
       this.drawBlocks(view);
@@ -136,18 +143,24 @@ export class Scene {
         (figure.carried.material as THREE.MeshLambertMaterial).color.set(held.colour);
         figure.carried.scale.set(0.36, held.shape === 'sheet' ? 0.04 : 0.36, 0.36);
       }
-      const bubble = body.place === undefined ? undefined : bubbles.get(body.place);
-      const element = figure.bubble.element;
-      figure.bubble.visible = !!bubble && !body.dead;
-      if (bubble) {
-        element.textContent = bubble.text.length > BUBBLE_LETTERS ? `${bubble.text.slice(0, BUBBLE_LETTERS)}…` : bubble.text;
-        element.className = `bubble${bubble.loudness && bubble.loudness !== 'normal' ? ` ${bubble.loudness}` : ''}`;
+      // Over its head: what it said, and a line with what it does and what the world shows.
+      const above = body.place === undefined ? undefined : aboves.get(body.place);
+      const parts: HTMLElement[] = [];
+      if (above?.said) {
+        const { text, loudness } = above.said;
+        parts.push(el('div', `bubble${loudness && loudness !== 'normal' ? ` ${loudness}` : ''}`, text.length > BUBBLE_LETTERS ? `${text.slice(0, BUBBLE_LETTERS)}…` : text));
       }
+      if (above?.doing || body.over) {
+        parts.push(el('div', 'tag', above?.doing ? icon(above.doing) : null,
+                      ...(body.over ? [el('span', 'has', icon(body.over.icon), body.over.text)] : [])));
+      }
+      figure.above.element.replaceChildren(...parts);
+      figure.above.visible = parts.length > 0 && !body.dead;
     }
     for (const [id, figure] of this.figures) {
       if (seen.has(id)) continue;
       this.scene.remove(figure.group, figure.sight);
-      figure.bubble.element.remove();
+      figure.above.element.remove();
       this.figures.delete(id);
     }
     this.wake();
@@ -270,18 +283,25 @@ export class Scene {
     }
     const carried = new THREE.Mesh(this.cube, new THREE.MeshLambertMaterial());
     carried.position.y = TALL + 0.35;
-    const bubble = new CSS2DObject(document.createElement('div'));
-    bubble.position.y = TALL + 0.75;
-    bubble.center.set(0.5, 1);
-    group.add(carried, bubble);
+    const above = new CSS2DObject(el('div', 'above'));
+    above.position.y = TALL + 0.75;
+    above.center.set(0.5, 1);
+    group.add(carried, above);
     // What it sees: a square in its colour on the ground, as far as its sight reaches.
     const sight = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.16, depthWrite: false }));
     sight.rotation.x = -Math.PI / 2;
     sight.visible = false;
     this.scene.add(group, sight);
-    const figure: Figure = { group, to: new THREE.Vector3(), sight, carried, bubble, mixer, clips, playing: 'Idle', isRobot };
+    const figure: Figure = { group, to: new THREE.Vector3(), sight, carried, above, mixer, clips, playing: 'Idle', isRobot };
     this.figures.set(body.id, figure);
     return figure;
+  }
+
+  /** Moves the camera, smoothly, so that it looks at a place in the world: from where it
+   *  looks now, as far away as it is. */
+  centre(at: { x: number; y: number; z: number }): void {
+    this.aim = spot(at.x + 0.5, at.y + 0.5, at.z);
+    this.wake(60);
   }
 
   /** Puts the camera where it sees the whole land. */
@@ -333,6 +353,13 @@ export class Scene {
         this.flying.visible = true;
         this.wake(4);
       }
+    }
+    if (this.aim) {
+      const step = this.aim.clone().sub(this.controls.target).multiplyScalar(Math.min(1, passed * 6));
+      this.controls.target.add(step);
+      this.camera.position.add(step);
+      if (this.controls.target.distanceTo(this.aim) < 0.02) this.aim = null;
+      else this.wake(4);
     }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);

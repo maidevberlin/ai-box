@@ -134,7 +134,7 @@ message they wake up to. That message can be changed when starting a run.`,
   // (No jumping and no taking: the walls stay where they are, and the agents inside them.)
   verbs: chosen => ({
     look: basic.look, walk: basic.walk, ...(chosen.talk ? { say: basic.say } : {}),
-    press: verbTo({ about: 'Press something next to you.' }),
+    press: verbTo({ about: 'Press something next to you.', shown: { icon: 'pointer', overHead: true } }),
   }),
   make(world) {
     Object.assign(world.own, { round: 1, chose: new Map(), decided: false } satisfies Game);

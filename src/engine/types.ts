@@ -113,7 +113,20 @@ export interface Tool<W, B, A extends Args = Args> {
   args: A;
   /** The world does not work without it: it cannot be switched off. */
   needed?: true;
+  shown?: Shown;
   run(world: W, me: B, args: Given<A>): string | Promise<string>;
+}
+
+/** How something an agent does is shown to a person who watches the run. The agents never
+ *  see it. Left out: a dot for an icon, and a row of its own in the conversation. */
+export interface Shown {
+  /** Its icon: the name of one at lucide.dev, like "footprints". */
+  icon: string;
+  /** It says little in words: it moves the agent or a thing, which is seen in the world, or
+   *  it only looks. In the conversation, a row of such doings is one line: "walk (3), look (4)". */
+  folded?: boolean;
+  /** It is not seen in the world: for a moment, its icon is over the agent's head. */
+  overHead?: boolean;
 }
 
 // ---------------------------------------------------------------- what the engine gives a world
@@ -185,8 +198,11 @@ export interface WorldDefinition<S extends Settings = Settings> {
   ends: string;
   roles(chosen: Chosen<S>): Record<string, Role>;
   /** What agents can do in this world, for the start screen: there a person switches tools off. */
-  tools(chosen: Chosen<S>): Record<string, { about: string; needed?: true; on?: string[] }>;
+  tools(chosen: Chosen<S>): Record<string, { about: string; needed?: true; on?: string[]; shown?: Shown }>;
   // (`on`: if it can only be done to some kinds of thing, what they are called.)
+  /** How this world shows what agents do differently from how its tools, and the run's own
+   *  doings (`wait`, `think`, `write`), say they are shown: by their names. */
+  shown?: Record<string, Partial<Shown>>;
   create(chosen: Chosen<S>, host: Host): World;
 }
 

@@ -4,9 +4,11 @@
 
 import type { Changes, Picture } from '../../blocks/world.ts';
 import type { Event } from '../../engine/run.ts';
-import type { Bubble, View } from './scene.ts';
+import type { Shown } from '../../engine/types.ts';
+import type { Above, View } from './scene.ts';
 
 const BUBBLE_STAYS = 12;   // seconds a bubble stays over an agent
+const DOING_STAYS = 3;     // seconds the icon of what it did stays over it
 
 export class Film {
   events: Event[] = [];
@@ -83,16 +85,24 @@ export class Film {
     if (changes.signs) this.signs = changes.signs;
   }
 
-  /** The bubble over each agent: what it last said out loud in the world, if that was a moment
-   *  ago. (What it thought, or wrote and nobody read, is not shown in the world.) */
-  bubbles(index: number, seconds: number): Map<number, Bubble> {
-    const found = new Map<number, Bubble>(), over = new Set<number>();
+  /** What is over each agent's head besides what the world puts there (see Picture): what it
+   *  said out loud a moment ago, and the icon of what it does that is not seen in the world
+   *  (as its world says: `doings`), for a moment, or for as long as it waits. */
+  above(index: number, seconds: number, doings: Record<string, Shown>): Map<number, Above> {
+    const found = new Map<number, Above>(), over = new Set<number>(), last = new Set<number>();
+    const at = (place: number) => found.get(place) ?? found.set(place, {}).get(place)!;
     for (let i = index; i >= 0; i--) {
-      const event = this.events[i]!;
+      const event = this.events[i]!, place = event.place as number;
       if (event.t < seconds - BUBBLE_STAYS) break;
-      if (event.type === 'wake' || event.type === 'death') over.add(event.place as number);   // what was said before is another life's
+      if (event.type === 'wake' || event.type === 'death') over.add(place);   // what was before is another life's
       const said = event.type === 'fact' && event.what === 'said' ? event.data as { place: number; text: string; loudness?: string } : null;
-      if (said && !found.has(said.place) && !over.has(said.place)) found.set(said.place, { text: said.text, loudness: said.loudness });
+      if (said && !over.has(said.place) && !at(said.place).said) at(said.place).said = { text: said.text, loudness: said.loudness };
+      // Its last doing: a wait ends with the tool's answer, and anything else after a moment.
+      const doing = event.type === 'act' ? (event.tool === 'wait' ? null : String(event.tool))
+        : event.type === 'waits' ? 'wait' : event.type === 'think' || event.type === 'write' ? event.type : undefined;
+      if (doing === undefined || last.has(place) || over.has(place)) continue;
+      last.add(place);
+      if (doing && doings[doing]?.overHead && (doing === 'wait' || event.t >= seconds - DOING_STAYS)) at(place).doing = doings[doing]!.icon;
     }
     return found;
   }

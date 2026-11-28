@@ -26,7 +26,7 @@
 // North makes y bigger, east makes x bigger. A block at level z fills the space from z to
 // z + 1. The ground is blocks too, usually at level -1, so that things on it stand at 0.
 
-import type { Agent, Args, Chosen, Given, Role, Settings } from '../engine/types.ts';
+import type { Agent, Args, Chosen, Given, Role, Settings, Shown } from '../engine/types.ts';
 
 export type Cell = readonly [x: number, y: number];
 export type Place = readonly [x: number, y: number, z: number];
@@ -278,6 +278,7 @@ export type Verb<A extends Args = any> = {
   about: string;
   /** The world does not work without it: it cannot be switched off. */
   needed?: true;
+  shown?: Shown;
 } & ({
   to?: undefined;
   args: A;
@@ -336,7 +337,15 @@ export interface BlockWorldDefinition<S extends Settings> {
   afterAction?(world: BlockWorld<NoInfer<S>>, me: Body): string | void;
   /** More lines for an agent that looks around. */
   alsoSeen?(world: BlockWorld<NoInfer<S>>, me: Body): string[];
+  /** How this world shows what agents do differently from how the verbs say (see WorldDefinition). */
+  shown?: Record<string, Partial<Shown>>;
+  /** What is over an agent's head the whole time, for a person who watches (its strength,
+   *  its points). Nothing: nothing is. */
+  overHead?(world: BlockWorld<NoInfer<S>>, me: Body): OverHead | null;
 }
+
+/** Something shown over an agent's head: an icon (see Shown), and a few words. */
+export interface OverHead { icon: string; text: string }
 
 /** A verb an agent does itself, with typed arguments. */
 export function verb<A extends Args>(made: Extract<Verb<A>, { to?: undefined }>): Verb {

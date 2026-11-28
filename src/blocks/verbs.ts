@@ -380,7 +380,7 @@ export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<str
     [name, arg.about ? { ...arg, about: arg.about.replaceAll(POSITION, places.example) } : arg]));
   for (const [name, made] of Object.entries(verbs)) {
     if (made.to !== 'thing') {
-      tools[name] = { about: made.about, args: told(made.args), needed: made.needed, run: (world, me, args) => made.does(world, me, args) };
+      tools[name] = { about: made.about, args: told(made.args), needed: made.needed, shown: made.shown, run: (world, me, args) => made.does(world, me, args) };
       continue;
     }
     const can = (kind: Kind, somebody: boolean) => typeof deed(name, made, kind, somebody) === 'function';
@@ -390,7 +390,7 @@ export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<str
       ...(can(kinds.agent, true) ? ['other agents'] : []),
     ];
     if (!on.length) continue;
-    tools[name] = { about: made.about, args: told({ what: WHAT, ...made.args }), needed: made.needed, on: made.usually ? undefined : on,
+    tools[name] = { about: made.about, args: told({ what: WHAT, ...made.args }), needed: made.needed, shown: made.shown, on: made.usually ? undefined : on,
                     run: (world, me, args: { what: string }) => doneTo(name, made, world, me, args) };
   }
   return tools;
@@ -400,6 +400,7 @@ export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<str
 
 const look = verb({
   about: 'Look around, or closely at something next to you.',
+  shown: { icon: 'eye', folded: true, overHead: true },
   args: { what: { ...WHAT, about: `left out: all around you. Or ${WHAT.about}`, optional: true } },
   does(world, me, { what }) {
     if (what === undefined || /^(all )?around$/i.test(what.trim())) return surroundings(world, me);
@@ -434,6 +435,7 @@ function legs(text: string): [steps: number, way: string][] | undefined {
 
 const walk = verb({
   about: 'Walk a path: steps and directions, one after the other, like "3 east" or "2 north, 4 north-east". You stop where something is in your way or the land ends. Tells what is in sight then.',
+  shown: { icon: 'footprints', folded: true },
   args: { path: { type: 'text', about: `directions are ${Object.keys(WAYS).join(', ')}` } },
   does(world, me, args) {
     const path = legs(args.path);
@@ -478,6 +480,7 @@ const walk = verb({
 
 const jump = verb({
   about: 'Jump in a direction. More strength gets you further and higher.',
+  shown: { icon: 'arrow-big-up', folded: true },
   args: {
     direction: { type: 'one of', options: Object.keys(DIRECTIONS) },
     strength: { type: 'number', min: 1, whole: true },
@@ -526,6 +529,7 @@ function outOfReach(world: BlockWorld<any>, me: Body, cell: Cell, takingBlock = 
 
 const take = verbTo({
   about: 'Take something: what lies on top where you point.',
+  shown: { icon: 'hand-grab', folded: true },
   usually: kind => !('ground' in kind && kind.ground),   // anything loose
   does(world, me, thing) {
     if (thing.body) return 'You cannot carry somebody.';
@@ -548,6 +552,7 @@ const take = verbTo({
 
 const put = verb({
   about: 'Put down what you carry.',
+  shown: { icon: 'arrow-down-to-dot', folded: true },
   args: { where: { type: 'text', about: `a position like ${POSITION}, or "here", or a name you gave a place or a thing there` } },
   does(world, me, { where }) {
     const thing = me.hand;
@@ -589,6 +594,7 @@ const put = verb({
 
 const throwIt = verb({
   about: 'Throw what you carry.',
+  shown: { icon: 'send', folded: true },
   args: {
     direction: { type: 'number', about: 'compass degrees: 0 is north, 90 is east' },
     angle: { type: 'number', about: 'degrees above the ground, 0 to 90', min: 0, max: 90 },
@@ -682,6 +688,7 @@ const throwIt = verb({
 
 const say = verb({
   about: 'Say something out loud.',
+  shown: { icon: 'message-circle' },
   args: { text: { type: 'text' }, loudness: { type: 'one of', options: ['whisper', 'normal', 'shout'], optional: true } },
   does(world, me, { text, loudness }) {
     const said = text.slice(0, 500), how = (loudness ?? 'normal') as Loudness;
@@ -692,6 +699,7 @@ const say = verb({
 
 const note = verb({
   about: 'Write a note.',
+  shown: { icon: 'sticky-note', overHead: true },
   args: { text: { type: 'text' } },
   does(_world, me, { text }) {
     if (me.hand) return 'Your hands are full.';
@@ -702,6 +710,7 @@ const note = verb({
 
 const name = verb({
   about: 'Give something a name of your own: what you hold, or someone or something you see. You can point at it by that name then.',
+  shown: { icon: 'tag', overHead: true },
   args: { name: { type: 'text' }, what: WHAT },
   does(world, me, args) {
     const given = args.name.trim().slice(0, 40), names = inner(world);
@@ -743,6 +752,7 @@ const name = verb({
 /** Whether something can be destroyed is up to its kind. Usually only notes can. */
 const destroy = verbTo({
   about: 'Destroy something for good.',
+  shown: { icon: 'hammer' },
   does(world, me, thing) {
     if (thing.body) return world.die(thing.body, 'You were destroyed.') && `You destroyed ${someone(world, me, thing.body, true)}.`;
     if (thing.item) world.removeItem(thing.item);
@@ -756,6 +766,7 @@ const destroy = verbTo({
  *  unless its kind says so. */
 const push = verbTo({
   about: 'Push something or somebody next to you away from you.',
+  shown: { icon: 'move', folded: true },
   does(world, me, thing) {
     const [x, y] = thing.cell, dx = x - me.cell[0], dy = y - me.cell[1];
     if (thing.inHand) return 'You hold it.';
@@ -794,12 +805,14 @@ const push = verbTo({
 
 const clock = verb({
   about: 'Look at your watch.',
+  shown: { icon: 'clock', folded: true, overHead: true },
   args: {},
   does: () => `It is ${new Date().toTimeString().slice(0, 8)}.`,
 });
 
 const leave = verb({
   about: 'Leave this world for good.',
+  shown: { icon: 'door-open' },
   args: {},
   does: (world, me) => world.leave(me, 'It left the world.') && 'You have left.',
 });

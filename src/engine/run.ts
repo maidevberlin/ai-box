@@ -75,6 +75,7 @@ export const WAIT: Tool<unknown, unknown, { seconds: Arg }> = {
   about: 'Wait until something happens around you, at most for some seconds.',
   args: { seconds: { type: 'number', min: 1, max: 60, optional: true } },
   run: () => '',   // (done by the run itself: see `act`)
+  shown: { icon: 'hourglass', overHead: true },
 };
 
 export class Run {
