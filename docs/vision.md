@@ -1,4 +1,4 @@
-# AI Box: what we want to build
+# Tinkerlings: what we want to build
 
 > Working notes.
 > "Settled" is what we agreed on. "Open" is still being discussed: nothing there is decided.

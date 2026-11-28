@@ -7,11 +7,11 @@
 // where its world's tools are. pi's own tools are switched off. (pi tells the model which folder
 // it is in: the name of this one says nothing.)
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lines, type MindKind, type Provider } from '../mind.ts';
-import { HOME as BOX, program, run, version } from '../programs.ts';
+import { HOME as BOX, run, start, version } from '../programs.ts';
 
 const HOME = join(BOX, 'pi');
 /** Where pi keeps API keys and logins: only the person can read it. */
@@ -29,7 +29,7 @@ const BARE = ['--mode', 'rpc', '--no-session', '--offline', '--no-extensions', '
 /** A pi in RPC mode: is asked, and answers, and says what goes on by itself. */
 function rpc(args: string[], folder: string | undefined, heard: (record: any) => void, failed: (text: string) => void) {
   mkdirSync(HOME, { recursive: true });
-  const process: ChildProcess = spawn(program('pi'), [...BARE, ...args], { cwd: folder, stdio: ['pipe', 'pipe', 'pipe'],
+  const process: ChildProcess = start('pi', [...BARE, ...args], { cwd: folder, stdio: ['pipe', 'pipe', 'pipe'],
                                                                    env: { ...globalThis.process.env, PI_CODING_AGENT_DIR: HOME } });
   const asked = new Map<string, (data: any) => void>();
   let next = 0;

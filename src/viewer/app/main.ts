@@ -5,7 +5,7 @@
 //   #new               starting a new run
 //   #run/<id>[/<s>]    one run played back (at a moment of it, in seconds)
 //   #ais               the AIs on this computer, and connecting more
-//   #settings          what AI Box keeps, and starting over
+//   #settings          what Tinkerlings keeps, and starting over
 
 import { openConnections } from './connections.ts';
 import { openCreate } from './create.ts';

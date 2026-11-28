@@ -5,11 +5,11 @@
 // from any Codex the person uses themselves, so none of their settings, tools or skills come
 // along. Its own tools are switched off: the agent has nothing but its world's tools.
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { lines, type MindKind, type Provider } from '../mind.ts';
-import { HOME as BOX, program, version } from '../programs.ts';
+import { HOME as BOX, start, version } from '../programs.ts';
 
 const HOME = join(BOX, 'codex');
 
@@ -24,7 +24,7 @@ const SWITCHED_OFF = [
 /** A Codex app server: asks and is answered, and hears what it says by itself. */
 function appServer(folder: string | undefined, heard: (message: any) => void, failed: (text: string) => void) {
   mkdirSync(HOME, { recursive: true });
-  const process: ChildProcess = spawn(program('codex'), ['app-server', ...SWITCHED_OFF.flatMap(setting => ['-c', setting])],
+  const process: ChildProcess = start('codex', ['app-server', ...SWITCHED_OFF.flatMap(setting => ['-c', setting])],
                                       { cwd: folder, stdio: ['pipe', 'pipe', 'pipe'], env: { ...globalThis.process.env, CODEX_HOME: HOME } });
   const asked = new Map<number, (answer: any) => void>();
   let next = 0;
@@ -51,7 +51,7 @@ function appServer(folder: string | undefined, heard: (message: any) => void, fa
     asked.set(++next, answered);
     write({ id: next, method, params });
   });
-  const begun = ask('initialize', { clientInfo: { name: 'ai-box', title: 'AI Box', version: '1' } }).then(() => write({ method: 'initialized' }));
+  const begun = ask('initialize', { clientInfo: { name: 'tinkerlings', title: 'Tinkerlings', version: '1' } }).then(() => write({ method: 'initialized' }));
   return { process, ask: (method: string, params: object) => begun.then(() => ask(method, params)) };
 }
 

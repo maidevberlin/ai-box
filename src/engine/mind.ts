@@ -73,7 +73,7 @@ export interface MindKind {
   about: string;
   /** Where a person gets it themselves. */
   site: string;
-  /** The npm package AI Box can install it from itself. */
+  /** The npm package Tinkerlings can install it from itself. */
   package?: string;
   /** Its models run on this computer: no account, nothing leaves it. */
   local?: true;

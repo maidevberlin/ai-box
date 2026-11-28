@@ -1,9 +1,8 @@
 // Claude Code, with the person's own login: a Claude subscription or an Anthropic account.
 // It gets nothing but its world's tools: no built-in tools, no settings, no skills, no memory.
 
-import { spawn } from 'node:child_process';
 import { lines, type MindKind, type Provider } from '../mind.ts';
-import { program, run, version } from '../programs.ts';
+import { run, start, version } from '../programs.ts';
 
 const BARE = ['--tools', '', '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence', '--strict-mcp-config'];
 const TALKING = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
@@ -28,7 +27,7 @@ export const claude: MindKind = {
 
   /** Claude Code opens the browser itself. The address it prints is there in case it cannot. */
   async login() {
-    const child = spawn(program('claude'), ['auth', 'login', '--claudeai'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = start('claude', ['auth', 'login', '--claudeai'], { stdio: ['ignore', 'pipe', 'pipe'] });
     const done = new Promise<boolean>(resolve => {
       child.on('error', () => resolve(false));
       child.on('close', code => resolve(code === 0));
@@ -40,8 +39,8 @@ export const claude: MindKind = {
         const found = /https:\/\/\S+/.exec(said);
         if (found) resolve(found[0]);
       };
-      child.stdout.on('data', heard);
-      child.stderr.on('data', heard);
+      child.stdout!.on('data', heard);
+      child.stderr!.on('data', heard);
       setTimeout(() => resolve(null), 5000);
       void done.then(() => resolve(null));
     });
@@ -56,7 +55,7 @@ export const claude: MindKind = {
    *  (as an editor asks it). */
   providers() {
     return new Promise((resolve, reject) => {
-      const process = spawn(program('claude'), [...TALKING, ...BARE], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const process = start('claude', [...TALKING, ...BARE], { stdio: ['pipe', 'pipe', 'ignore'] });
       const done = (error: Error | null, providers?: Provider[]) => {
         clearTimeout(late);
         process.kill();
@@ -88,7 +87,7 @@ export const claude: MindKind = {
 
   wake(waking) {
     const config = { mcpServers: waking.tools ? { world: { type: 'http', url: waking.tools } } : {} };
-    const process = spawn(program('claude'), [
+    const process = start('claude', [
       ...TALKING, ...BARE,
       '--system-prompt', waking.knows,
       ...(waking.model ? ['--model', waking.model] : []),

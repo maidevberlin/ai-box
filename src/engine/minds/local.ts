@@ -56,7 +56,7 @@ function local(id: string, title: string, address: string, site: string): MindKi
       const ending = new AbortController();
       let busy = false;
       const tools: Promise<Tool[]> = waking.tools
-        ? mcp(waking.tools, 'initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'ai-box', version: '1' } })
+        ? mcp(waking.tools, 'initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'tinkerlings', version: '1' } })
           .then(() => mcp(waking.tools!, 'tools/list'))
           .then(({ tools: listed }) => listed.map((tool: any) => ({ type: 'function', function: { name: tool.name, description: tool.description ?? '', parameters: tool.inputSchema } })))
         : Promise.resolve([]);

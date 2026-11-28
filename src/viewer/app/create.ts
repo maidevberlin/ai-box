@@ -211,7 +211,7 @@ const usually = (world: WorldInfo): Filled => ({
 
 // What was set last is kept in the browser, for each world, and filled in again the next time.
 // (The browser may not let the page keep anything: then the form is just the usual one.)
-const key = (world: WorldInfo) => `ai-box:${world.name}`;
+const key = (world: WorldInfo) => `tinkerlings:${world.name}`;
 function kept(world: WorldInfo): Filled | null {
   try { return JSON.parse(localStorage.getItem(key(world)) ?? 'null'); } catch { return null; }
 }

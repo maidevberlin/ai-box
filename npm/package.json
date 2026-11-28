@@ -1,0 +1,18 @@
+{
+  "name": "tinkerlings",
+  "version": "0.1.0",
+  "description": "AI agents in small worlds of their own, played back in 3D. Starts Tinkerlings: npx tinkerlings",
+  "homepage": "https://github.com/maidevberlin/tinkerlings",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maidevberlin/tinkerlings.git"
+  },
+  "license": "Apache-2.0",
+  "bin": {
+    "tinkerlings": "start.js"
+  },
+  "files": [
+    "start.js"
+  ],
+  "type": "module"
+}

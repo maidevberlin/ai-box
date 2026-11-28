@@ -16,7 +16,7 @@
 //   GET  /api/runs/<id>?from=N  one run: what it is about, and its record from line N on
 //   POST /api/runs              start a run: { world, chosen, minutes, roles }
 //   POST /api/runs/<id>/stop    end a run that is going
-//   GET  /api/settings          what AI Box keeps, and where
+//   GET  /api/settings          what Tinkerlings keeps, and where
 //   POST /api/forget            { what: 'runs' | 'everything' }: delete all runs, or start over
 
 import { build } from 'esbuild';
@@ -138,7 +138,7 @@ async function setUp(kind: string, action: string, wish: Record<string, any>): P
 /** The runs kept in the runs folder, and the ones going in this process. */
 const runIds = () => [...new Set([...(existsSync(RUNS) ? readdirSync(RUNS) : []), ...going.keys()])].filter(found => RUN_ID.test(found));
 
-/** Deletes every run, and with `everything` AI Box's own folder too: its installs, its logins,
+/** Deletes every run, and with `everything` Tinkerlings' own folder too: its installs, its logins,
  *  the API keys. Not while a run is going: its agents think with what would be deleted. */
 function forget(everything: boolean): Record<string, unknown> {
   if ([...going.values()].some(run => !run.ended)) return { error: 'End the runs that are going first.' };

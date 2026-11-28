@@ -1,4 +1,4 @@
-// Settings: what AI Box keeps, where, and forgetting it again, down to starting over as if
+// Settings: what Tinkerlings keeps, where, and forgetting it again, down to starting over as if
 // it had just been installed.
 
 import { $, api, el } from './page.ts';
@@ -6,10 +6,10 @@ import { readRuns } from './runs.ts';
 
 interface Kept { runs: number; going: number; folder: string; home: string }
 
-/** What this browser keeps for AI Box: how the start form was filled in last, for each world. */
+/** What this browser keeps for Tinkerlings: how the start form was filled in last, for each world. */
 const browserKeys = (): string[] => {
   try {
-    return Object.keys(localStorage).filter(key => key.startsWith('ai-box:'));
+    return Object.keys(localStorage).filter(key => key.startsWith('tinkerlings:'));
   } catch {
     return [];
   }
@@ -41,10 +41,10 @@ export async function openSettings(): Promise<void> {
   const remembered = browserKeys().length;
   $('settingsBody').replaceChildren(
     el('section', '',
-      el('h2', '', 'What AI Box keeps'),
+      el('h2', '', 'What Tinkerlings keeps'),
       item('Runs', `${kept.runs} run${kept.runs === 1 ? '' : 's'}, each with its whole record. Kept in ${kept.folder}`,
         going ? el('span', 'hint', going) : button('Delete all runs', () => void forget('runs', `Delete all ${kept.runs} runs? They cannot be brought back.`), true)),
-      item('AIs connected by AI Box', `What AI Box installed itself, its logins to Codex, and the API keys given to pi. Kept in ${kept.home}, readable only by you.`,
+      item('AIs connected by Tinkerlings', `What Tinkerlings installed itself, its logins to Codex, and the API keys given to pi. Kept in ${kept.home}, readable only by you.`,
         Object.assign(el('a', 'button', 'AI connections'), { href: '#ais' })),
       item('This browser', remembered
         ? `It remembers how the start form was filled in last, for ${remembered} world${remembered === 1 ? '' : 's'}.`
@@ -52,8 +52,8 @@ export async function openSettings(): Promise<void> {
         remembered > 0 && button('Forget it', () => { forgetBrowser(); void openSettings(); }))),
     el('section', 'danger',
       el('h2', '', 'Start over'),
-      item('As if AI Box had just been installed',
-        'Deletes all runs, everything in AI Box’s own folder (the AIs it installed, its logins, the API keys) and what this browser remembers. ' +
+      item('As if Tinkerlings had just been installed',
+        'Deletes all runs, everything in Tinkerlings’ own folder (the AIs it installed, its logins, the API keys) and what this browser remembers. ' +
         'AIs you installed yourself stay. So does Claude Code’s login: it is the one this computer has for it (log out of it under AI connections).',
-        going ? el('span', 'hint', going) : button('Start over', () => void forget('everything', 'Start over? All runs, AI Box’s logins and API keys are deleted. This cannot be undone.'), true))));
+        going ? el('span', 'hint', going) : button('Start over', () => void forget('everything', 'Start over? All runs, Tinkerlings’ logins and API keys are deleted. This cannot be undone.'), true))));
 }

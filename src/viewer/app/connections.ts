@@ -1,5 +1,5 @@
 // The AIs on this computer: which are there, who is logged in, and connecting more. Each can
-// be installed with one button (into AI Box's own folder), logged in to in the browser, or
+// be installed with one button (into Tinkerlings' own folder), logged in to in the browser, or
 // given an API key, which is tried at once.
 
 import { brand, logo } from './brands.ts';
@@ -36,7 +36,7 @@ async function doing(kind: string, what: string, action: string, body: object = 
   busy.set(kind, what);
   troubles.delete(kind);
   await draw();
-  const done = await api<Record<string, any>>(`/api/setup/${kind}/${action}`, body).catch(() => ({ error: 'AI Box did not answer.' }));
+  const done = await api<Record<string, any>>(`/api/setup/${kind}/${action}`, body).catch(() => ({ error: 'Tinkerlings did not answer.' }));
   busy.delete(kind);
   if (done.error) troubles.set(kind, done.error);
   await draw();
@@ -141,6 +141,6 @@ function keys(setup: Setup): HTMLElement {
     void doing(setup.kind, `Trying the key with one short question to ${provider.value}…`, 'key', { provider: provider.value, key: key.value });
   }, true);
   box.append(el('div', 'add', provider, key, keep),
-    el('p', 'hint', `The key stays on this computer, in AI Box's own folder, readable only by you. AI Box hands it to ${setup.title} and nowhere else. A key that does not work is forgotten again.`));
+    el('p', 'hint', `The key stays on this computer, in Tinkerlings' own folder, readable only by you. Tinkerlings hands it to ${setup.title} and nowhere else. A key that does not work is forgotten again.`));
   return box;
 }
