@@ -8,7 +8,8 @@ export interface About {
   ended: string | null; seconds: number; going: boolean;
   review: { name: string; summary: string } | null;
   chosen?: Record<string, unknown>;
-  roles?: Record<string, { title: string; count: number; model: string; told: string; without: string[] }>;
+  roles?: Record<string, { title: string; count: number; model: string; told: string; without: string[];
+                           each?: { model?: string; told?: string; without?: string[] }[] }>;
 }
 
 const EVERY = 4000;   // how often the runs are read again, in milliseconds

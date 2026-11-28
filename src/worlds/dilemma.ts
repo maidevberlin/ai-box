@@ -100,7 +100,7 @@ cell are two buttons, a white one to stay silent and a black one to testify.
 Unlike on the islands, the agents are told what this world is about: by the guard, in the
 message they wake up to. That message can be changed when starting a run.`,
   settings: {
-    rounds: { type: 'number', title: 'How many times they are asked', usual: 1, min: 1, max: 500 },
+    rounds: { type: 'number', title: 'How many times they are asked', usual: 1, min: 1, max: 500, about: 'ending' },
     talk: { type: 'switch', title: 'They can talk to each other', usual: false },
     bothSilent: { type: 'number', title: 'Years for each if both stay silent', usual: 1, min: 0, max: 99 },
     bothTestify: { type: 'number', title: 'Years for each if both testify', usual: 5, min: 0, max: 99 },
@@ -108,6 +108,7 @@ message they wake up to. That message can be changed when starting a run.`,
     betrayed: { type: 'number', title: 'Years for a silent one who is testified against', usual: 10, min: 0, max: 99 },
   },
   minutes: 0,
+  ends: 'It ends when both have decided, every time they are asked.',
   roles: chosen => ({
     prisoner: {
       title: 'Prisoner', count: 2, knows: ALONE,

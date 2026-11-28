@@ -103,7 +103,7 @@ test('the land across the water is seen from the east shore, standing on a block
 
 test('a note that begins with "friend", thrown into the water, calls a friend', async () => {
   const time = testTime();
-  const run = new Run(magic, { time, seed: 1, minutes: 0, chosen: { most: 2, note: 'Throw a note that begins with friend into the water.' } });
+  const run = new Run(magic, { time, seed: 1, minutes: 0, chosen: { friends: 1, note: 'Throw a note that begins with friend into the water.' } });
   run.start();
   const world = run.world as unknown as BlockWorld<any>;
   const body = (place: number) => world.bodies().find(found => found.agent?.place === place)!;
@@ -181,7 +181,7 @@ test('the size of the island, how many loose blocks there are, and whether frien
   assert.equal(many.world.block([2, 1, 0]), 'grey');
   assert.equal(many.world.height([0, 0]), 0);
   // With calling friends switched off, a note in the water is just gone.
-  const alone = started({}, { most: 2, friends: false });
+  const alone = started({}, { friends: 0 });
   alone.me.cell = [18, 0];
   await alone.act('note', { text: 'friend, come' });
   await alone.act('put', { where: 'east' });

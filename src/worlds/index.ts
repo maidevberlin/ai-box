@@ -1,13 +1,7 @@
-// The worlds there are: every file in this folder is one world.
-import { readdirSync } from 'node:fs';
+// The worlds there are, in the order the start screen offers them.
 import type { WorldDefinition } from '../engine/types.ts';
+import dilemma from './dilemma.ts';
+import magic from './magic.ts';
+import orchard from './orchard.ts';
 
-export async function worlds(): Promise<Record<string, WorldDefinition<any>>> {
-  const found: Record<string, WorldDefinition<any>> = {};
-  for (const file of readdirSync(import.meta.dirname).sort()) {
-    if (!file.endsWith('.ts') || file === 'index.ts') continue;
-    const world: WorldDefinition<any> = (await import(`./${file}`)).default;
-    found[world.name] = world;
-  }
-  return found;
-}
+export const WORLDS: WorldDefinition<any>[] = [magic, orchard, dilemma];

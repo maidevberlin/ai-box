@@ -80,7 +80,8 @@ The agents are told nothing about it. The world says what happens, never why.
     ...people,
   },
   minutes: 15,
-  roles: agents,
+  ends: 'It ends when its time is up, or before that when no agent is left.',
+  roles: chosen => agents(chosen),
   climb: 1,
   view: 'map',
   blocks: {

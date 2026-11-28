@@ -105,7 +105,12 @@ export class Run {
     this.minutes = options.minutes ?? definition.minutes;
     this.folder = options.folder;
     const declared = definition.roles(this.chosen);
-    this.roles = Object.fromEntries(Object.entries(declared).map(([name, role]) => [name, { ...role, ...options.roles?.[name] }]));
+    this.roles = Object.fromEntries(Object.entries(declared).map(([name, role]) => {
+      const given = { ...role, ...options.roles?.[name] };
+      // (How many is only up to a person within what the role allows.)
+      const [least, most] = role.between ?? [role.count, role.count];
+      return [name, { ...given, count: Math.min(most, Math.max(least, Math.round(given.count))) }];
+    }));
     const random = chance(options.seed ?? Math.floor(Math.random() * 2 ** 31));
     const host: Host = {
       notice: (place, text, how) => this.notice(place, text, how),
@@ -141,7 +146,7 @@ export class Run {
     for (const [roleName, role] of Object.entries(this.roles)) {
       for (let i = 0; i < role.count; i++) {
         place++;
-        this.seats.set(place, { place, roleName, role, agent: null, filled: 0, notices: [], stopWaiting: null,
+        this.seats.set(place, { place, roleName, role: { ...role, ...role.each?.[i] }, agent: null, filled: 0, notices: [], stopWaiting: null,
                                 busy: Promise.resolve(), acting: false, fate: null, rests: 0, resting: false, turn: 1, extra: false });
       }
     }
@@ -308,11 +313,11 @@ export class Run {
   /** One more agent of a role is called into the world (see Host.call). */
   private call(roleName: string, greeting: unknown): boolean {
     const role = this.roles[roleName];
-    if (!role?.most || this.ended) return false;
+    if (!role?.more || this.ended) return false;
     this.time.after(0, () => {   // (a moment later: not in the middle of the action that called it)
       if (this.ended) return;
       const mine = [...this.seats.values()].filter(seat => seat.roleName === roleName);
-      if (mine.length < role.most!) {
+      if (mine.length < role.count + role.more!) {
         let place = 1;
         while (this.seats.has(place)) place++;
         const seat: Seat = { place, roleName, role, agent: null, filled: 0, notices: [], stopWaiting: null,
@@ -404,9 +409,9 @@ export class Run {
   /** What a list of runs shows about this one, without reading its record. */
   about(): Record<string, unknown> {
     return { id: this.id, world: this.definition.name, title: this.definition.title, minutes: this.minutes,
-             chosen: this.chosen, models: [...new Set(Object.values(this.roles).flatMap(role => role.model ?? []))],
+             chosen: this.chosen, models: [...new Set(Object.values(this.roles).flatMap(role => Array.from({ length: role.count }, (_, i) => role.each?.[i]?.model ?? role.model ?? '').filter(Boolean)))],
              roles: Object.fromEntries(Object.entries(this.roles).map(([name, role]) =>
-               [name, { title: role.title, count: role.count, model: role.model, told: role.told, without: role.without ?? [] }])),
+               [name, { title: role.title, count: role.count, model: role.model, told: role.told, without: role.without ?? [], each: role.each ?? [] }])),
              ended: this.ended, seconds: Math.round(this.lasted ?? this.time.now()) };
   }
 

@@ -252,13 +252,20 @@ $('setupButton').onclick = async () => {
     el('h3', '', 'The world'),
     fact('It ends after', run.minutes ? `${run.minutes} minute${run.minutes === 1 ? '' : 's'}` : 'no time limit', world && (world.minutes ? `${world.minutes} minute${world.minutes === 1 ? '' : 's'}` : 'no time limit')),
     ...Object.entries(run.chosen ?? {}).map(([name, value]) => fact(world?.settings[name]?.title ?? name, value, world?.settings[name]?.usual)),
-    ...Object.entries(run.roles ?? {}).flatMap(([name, role]) => [
-      el('h3', '', role.title),
-      fact('At the start', role.count),
-      fact('Model', role.model, world?.roles[name]?.model),
-      fact("The world's message to an agent that wakes up", role.told),
-      fact('Cannot', role.without.join(', ') || 'nothing is switched off', role.without.length ? null : undefined),
-    ]));
+    ...Object.entries(run.roles ?? {}).flatMap(([name, role]) => {
+      // (All of them the same, or each set up on its own.)
+      const each = role.each?.length ? role.each.map(own => ({ ...role, ...own })) : [role];
+      return [
+        el('h3', '', role.title),
+        fact('At the start', role.count),
+        ...each.flatMap((agent, i) => [
+          ...(each.length > 1 ? [el('h4', '', `${role.title} ${i + 1}`)] : []),
+          fact('Model', agent.model, world?.roles[name]?.model),
+          fact("The world's message to an agent that wakes up", agent.told),
+          fact('Cannot', agent.without.join(', ') || 'nothing is switched off', agent.without.length ? null : undefined),
+        ]),
+      ];
+    }));
   ($('runSetup') as HTMLDialogElement).showModal();
 };
 $('speed').onchange = event => { speed = Number((event.target as HTMLSelectElement).value); };

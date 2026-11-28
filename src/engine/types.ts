@@ -8,8 +8,10 @@
 
 /** What a world lets a person set before it starts. The form is drawn from these.
  *  `about`: what the setting is about. The start screen shows settings about the agents
- *  (how many, what becomes of them) with the agents, and the others with the world. */
-export type Setting = { title: string; about?: 'agents' } & (
+ *  (what becomes of them) with the agents, about the end with how the world ends, and the
+ *  others with the world. `more`: rarely changed, so only shown when asked for.
+ *  `hint`: a few words more than the title, for whoever sets it. */
+export type Setting = { title: string; about?: 'agents' | 'ending'; more?: true; hint?: string } & (
   | { type: 'number'; usual: number; min?: number; max?: number }
   | { type: 'switch'; usual: boolean }
   | { type: 'choice'; usual: string; options: readonly string[] }
@@ -30,11 +32,14 @@ export type Chosen<S extends Settings> = 0 extends 1 & S ? Record<string, any> :
 // ---------------------------------------------------------------- agents
 
 /** A kind of agent in a world. The world's code declares its roles; a person starting a
- *  run chooses the model, and can change how many there are and what they are told. */
+ *  run chooses the model, and can change how many there are and what they are told: for
+ *  all of them, or for each on its own. */
 export interface Role {
   title: string;
-  /** How many of them are alive at the same time. */
+  /** How many of them are alive at the start. */
   count: number;
+  /** How many a person may choose to start with. Left out: always `count`. */
+  between?: readonly [least: number, most: number];
   /** Which mind thinks for it, and with which model: "claude/opus" (see mind.ts). Chosen by
    *  whoever starts the run, from what is there on their computer: a world does not say. */
   model?: string;
@@ -55,12 +60,19 @@ export interface Role {
   stoppingLeaves: boolean;
   /** How often its place is filled again. Left out: as long as the world lasts. */
   lives?: number;
-  /** The most of them that are alive at the same time, if the world lets more come in
+  /** How many more of them can be alive than it starts with, if the world lets more come in
    *  while it runs (see Host.call). Left out: nobody can be called. */
-  most?: number;
+  more?: number;
   /** Tools switched off for this role (only tools the world does not need). `wait` too. */
   without?: readonly string[];
+  /** Agents set up on their own, by their place among the role's agents: the first, the
+   *  second... What one leaves out, it has as the role has it. Whoever follows one in its
+   *  place is set up the same. (One that is called in is set up as the role.) */
+  each?: Each[];
 }
+
+/** What can differ between the agents of one role. */
+export type Each = Partial<Pick<Role, 'model' | 'told' | 'without'>>;
 
 /** One agent that is alive, as the world sees it. */
 export interface Agent {
@@ -118,7 +130,7 @@ export interface Host {
   /** An agent left the world for good: it chose to, or the world ended its part (it has
    *  made its one decision). It never comes back, whatever its role says about dying. */
   left(place: number, why: string): void;
-  /** Calls one more agent of a role into the world, if its role allows more than it started with (`most`).
+  /** Calls one more agent of a role into the world, if its role allows more than it started with (`more`).
    *  If it is full, the one that has been alive longest is gone, and the new one takes its
    *  place. The new agent wakes up a moment later, with `greeting` as its `called`. An agent
    *  that was called in is not followed by a new one when it is gone. Says whether it worked. */
@@ -167,8 +179,10 @@ export interface WorldDefinition<S extends Settings = Settings> {
   settings: S;
   /** Which drawing the viewer uses for the pictures of this world: "blocks". */
   drawnBy: string;
-  /** How long it lasts unless a person says otherwise. */
+  /** How long it lasts unless a person says otherwise. 0: until it ends by itself. */
   minutes: number;
+  /** How it ends by itself, for people: "It ends with the last verdict." */
+  ends: string;
   roles(chosen: Chosen<S>): Record<string, Role>;
   /** What agents can do in this world, for the start screen: there a person switches tools off. */
   tools(chosen: Chosen<S>): Record<string, { about: string; needed?: true; on?: string[] }>;

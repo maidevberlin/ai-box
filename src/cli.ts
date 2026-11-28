@@ -1,7 +1,7 @@
 // Runs a world from the command line and prints what happens:
 //
 //   node src/cli.ts magic                        with the world's usual settings
-//   node src/cli.ts magic --minutes 2 --model claude/haiku --set size=small --set agents=2
+//   node src/cli.ts magic --minutes 2 --model claude/haiku --agents 2 --set size=small
 //
 // Without --model, the usual model of the first AI on this computer (see engine/agents.ts).
 //
@@ -9,12 +9,13 @@
 
 import { join } from 'node:path';
 import { populate, usualModel } from './engine/agents.ts';
+import { keepAwake } from './engine/awake.ts';
 import { Doors } from './engine/doors.ts';
 import { Run, runId, type Event } from './engine/run.ts';
-import { worlds } from './worlds/index.ts';
+import { WORLDS } from './worlds/index.ts';
 
 const [name, ...rest] = process.argv.slice(2);
-const all = await worlds();
+const all = Object.fromEntries(WORLDS.map(world => [world.name, world]));
 const definition = all[name ?? ''];
 if (!definition) {
   console.error(`Which world? One of: ${Object.keys(all).join(', ')}`);
@@ -36,7 +37,7 @@ if (!model) {
   process.exit(1);
 }
 const roles = Object.fromEntries(Object.keys(definition.roles({ ...chosen } as never) ?? {}).map(role => [role, {
-  model, ...(options.told ? { told: options.told } : {}),
+  model, ...(options.told ? { told: options.told } : {}), ...(options.agents ? { count: Number(options.agents) } : {}),
 }]));
 const id = runId();
 const run = new Run(definition, {
@@ -75,3 +76,4 @@ run.listeners.push({
 });
 process.on('SIGINT', () => run.end('Ended by hand.'));
 run.start();
+keepAwake(run);

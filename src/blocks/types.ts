@@ -303,6 +303,8 @@ export interface BlockWorldDefinition<S extends Settings> {
   /** What a person can set. Everything else here that mentions the settings is typed from this. */
   settings: S;
   minutes: number;
+  /** How it ends by itself, for people (see WorldDefinition). */
+  ends: string;
   roles(chosen: Chosen<NoInfer<S>>): Record<string, Role>;
   blocks: Record<string, BlockKind>;
   /** A kind "note" is always there, for the verb `note`, unless a world brings its own. */

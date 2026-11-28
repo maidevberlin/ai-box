@@ -10,8 +10,9 @@ import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockWo
 
 /** What a person can set in every block world: how the agents are told about it. */
 const everywhere = (view: 'text' | 'map') => ({
-  located: { type: 'switch', title: 'Agents know where they are: places are said by their position, not by the steps to them', usual: true, about: 'agents' },
-  view: { type: 'choice', title: 'What is around them, agents are told as', usual: view, options: ['text', 'map'], about: 'agents' },
+  located: { type: 'switch', title: 'Agents know where they are', usual: true, about: 'agents', more: true,
+             hint: 'Places are said by their position, not by the steps to them.' },
+  view: { type: 'choice', title: 'What is around them, agents are told as', usual: view, options: ['text', 'map'], about: 'agents', more: true },
 } satisfies Settings);
 /** How places are said in a run: by their position, or from where an agent stands. */
 const placesOf = (chosen: Record<string, any>): Places => (chosen.located ? onTheMap : fromHere);
@@ -750,6 +751,7 @@ export function blockWorld<S extends Settings>(definition: BlockWorldDefinition<
     settings: { ...definition.settings, ...everywhere(definition.view ?? 'text') },
     drawnBy: 'blocks',
     minutes: definition.minutes,
+    ends: definition.ends,
     roles: definition.roles,
     tools: chosen => tools(definition, chosen),
     create: (chosen, host) => new Blocks(definition, chosen, host),

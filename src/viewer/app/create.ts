@@ -1,5 +1,7 @@
-// The screen for starting a world. Its form is drawn from what the world declares: its
-// settings, its roles (what kinds of agent live in it) and its tools.
+// The screen for starting a world, in three steps: the world, who lives in it, and how it
+// ends. Its form is drawn from what the world declares: its settings, its roles (what kinds
+// of agent live in it) and its tools. Agents of a role are set up all the same, or each on
+// its own: its own AI, its own message, its own tools.
 
 import type { Model, Provider } from '../../engine/mind.ts';
 import type { Role, Setting } from '../../engine/types.ts';
@@ -7,7 +9,7 @@ import { brand, logo } from './brands.ts';
 import { $, api, el } from './page.ts';
 
 export interface WorldInfo {
-  name: string; title: string; about: string; minutes: number;
+  name: string; title: string; about: string; minutes: number; ends: string;
   settings: Record<string, Setting>;
   roles: Record<string, Role>;
   tools: { name: string; about: string; needed?: true; on?: string[] }[];
@@ -16,69 +18,88 @@ export interface WorldInfo {
 /** An AI on this computer, as the server found it: Claude Code, Codex, pi, Ollama … */
 interface MindInfo { kind: string; title: string; local: boolean; providers: Provider[] }
 
+/** One agent as the form sets it up. `told`: nothing if it is told what the world says. */
+interface Agent { model: string; told: string | null; without: string[] }
+
+/** The agents of a role: all set up the same (`all`, `count` of them), or each on its own. */
+interface Agents { same: boolean; count: number; all: Agent; each: Agent[] }
+
+/** How the form is filled in. */
+interface Filled {
+  chosen: Record<string, unknown>;
+  /** 0: no time limit. */
+  minutes: number;
+  roles: Record<string, Agents>;
+}
+
 let worlds: WorldInfo[] = [];
 let minds: MindInfo[] = [];
 let picked = '';
+let form: Filled;
+
+const world = () => worlds.find(found => found.name === picked)!;
+
+// ---------------------------------------------------------------- fields
 
 /** A switch: a checkbox that looks like what it is. */
-function toggle(id: string, on: boolean, locked = false): HTMLInputElement {
+function toggle(on: boolean, locked = false): HTMLInputElement {
   const box = el('input', 'switch');
-  box.type = 'checkbox'; box.id = id; box.checked = on; box.disabled = locked;
+  box.type = 'checkbox'; box.checked = on; box.disabled = locked;
   box.setAttribute('role', 'switch');
   return box;
 }
 
-function field(setting: Setting, id: string): HTMLElement {
-  if (setting.type === 'switch') return toggle(id, setting.usual);
+/** The field of a setting, showing what is chosen. Changing it sets it. */
+function field(name: string, setting: Setting): HTMLElement {
+  const now = form.chosen[name];
+  const set = (value: unknown) => void settingsChanged(name, value);
+  if (setting.type === 'switch') {
+    const box = toggle(now === true);
+    box.onchange = () => set(box.checked);
+    return box;
+  }
   if (setting.type === 'choice' || setting.type === 'choices') {
     const select = el('select', '', ...setting.options.map(option => el('option', '', option)));
-    select.id = id; select.multiple = setting.type === 'choices';
-    for (const option of select.options) option.selected = setting.type === 'choices' ? setting.usual.includes(option.value) : option.value === setting.usual;
+    select.multiple = setting.type === 'choices';
+    for (const option of select.options) option.selected = Array.isArray(now) ? now.includes(option.value) : option.value === now;
+    select.onchange = () => set(setting.type === 'choices' ? [...select.selectedOptions].map(option => option.value) : select.value);
     return select;
   }
   const input = el('input');
-  input.id = id; input.value = String(setting.usual);
+  input.value = String(now);
   if (setting.type === 'number') {
     input.type = 'number';
     if (setting.min !== undefined) input.min = String(setting.min);
     if (setting.max !== undefined) input.max = String(setting.max);
   }
+  input.onchange = () => set(setting.type === 'number' ? Number(input.value) : input.value);
   return input;
 }
 
-function value(setting: Setting, id: string): unknown {
-  const node = $(id) as HTMLInputElement & HTMLSelectElement;
-  if (setting.type === 'switch') return node.checked;
-  if (setting.type === 'number') return Number(node.value);
-  if (setting.type === 'choices') return [...node.selectedOptions].map(option => option.value);
-  return node.value;
+/** A line of the form: what it is (and a few words more), and its field. */
+const row = (title: string, control: HTMLElement, hint?: string, tall = false) =>
+  el('label', `row${tall ? ' tall' : ''}`, el('span', 'what', el('b', '', title), hint && el('small', '', hint)), control);
+
+/** The world's settings that are about something: as lines of the form. */
+const settings = (about: Setting['about'], more = false) => Object.entries(world().settings)
+  .filter(([, setting]) => setting.about === about && !!setting.more === more)
+  .map(([name, setting]) => row(setting.title, field(name, setting), setting.hint));
+const moreSettings = () => Object.entries(world().settings).filter(([, setting]) => setting.more)
+  .map(([name, setting]) => row(setting.title, field(name, setting), setting.hint));
+
+/** A setting was changed. What a role is told can depend on the settings: what the world
+ *  says is asked again. */
+async function settingsChanged(name: string, value: unknown): Promise<void> {
+  form.chosen[name] = value;
+  keep();
+  const was = world();
+  const now = await api<WorldInfo>(`/api/worlds/${was.name}?chosen=${encodeURIComponent(JSON.stringify(form.chosen))}`);
+  if (picked !== was.name || !now.roles) return;
+  was.roles = now.roles;
+  drawAgents();
 }
 
-/** Sets a field to a value, if it can have it. */
-function fill(setting: Setting, id: string, given: unknown): void {
-  const node = $(id) as HTMLInputElement & HTMLSelectElement;
-  if (setting.type === 'switch') node.checked = given === true;
-  else if (setting.type === 'choices') for (const option of node.options) option.selected = Array.isArray(given) && given.includes(option.value);
-  else if (setting.type !== 'choice' || setting.options.includes(String(given))) node.value = String(given);
-}
-
-const chosen = (world: WorldInfo) => Object.fromEntries(Object.entries(world.settings).map(([name, setting]) => [name, value(setting, `set-${name}`)]));
-
-/** A setting was changed. What a role is told can depend on the settings: a text that
- *  nobody has written in is set to what the world says now. */
-async function settingsChanged(world: WorldInfo): Promise<void> {
-  const now = await api<WorldInfo>(`/api/worlds/${world.name}?chosen=${encodeURIComponent(JSON.stringify(chosen(world)))}`);
-  if (picked !== world.name || !now.roles) return;
-  for (const [name, role] of Object.entries(now.roles)) {
-    for (const part of ['told'] as const) {
-      const text = document.getElementById(`role-${name}-${part}`) as HTMLTextAreaElement | null;
-      if (text && text.value === world.roles[name]?.[part]) text.value = role[part];
-    }
-  }
-  world.roles = now.roles;
-}
-
-// ---------------------------------------------------------------- who thinks for a role
+// ---------------------------------------------------------------- who thinks for an agent
 
 /** One provider of models, as one AI offers it: Claude through Claude Code, Z.ai through pi. */
 interface Source { mind: MindInfo; provider: Provider }
@@ -87,7 +108,7 @@ const valueOf = (source: Source, model: Model) => `${source.mind.kind}/${model.i
 const named = (source: Source) => brand(source.provider.id, source.provider.title).title;
 const via = (mind: MindInfo) => (mind.local ? 'on this computer' : `via ${mind.title}`);
 
-/** Where a role's model ("pi/zai/glm-5") comes from, if it is there on this computer. */
+/** Where a model ("pi/zai/glm-5") comes from, if it is there on this computer. */
 function found(model: string): { source: Source; model: Model } | null {
   for (const source of sources()) {
     const match = source.provider.models.find(candidate => valueOf(source, candidate) === model);
@@ -96,36 +117,38 @@ function found(model: string): { source: Source; model: Model } | null {
   return null;
 }
 
-/** The field of a role's model: a button that shows it, and opens the picker. */
-function picker(name: string, role: Role): HTMLElement {
-  const input = el('input');
-  input.type = 'hidden'; input.id = `role-${name}-model`;
-  const button = el('button', 'pick');
-  button.type = 'button'; button.id = `role-${name}-pick`;
-  button.onclick = () => pick(name, role.title);
-  return el('span', 'picker', input, button);
+/** The model an agent gets when nobody chose one: the usual one of the first AI there is. */
+function usualModel(): string {
+  const [first] = minds;
+  const models = first?.providers.flatMap(provider => provider.models) ?? [];
+  const model = models.find(candidate => candidate.usual) ?? models[0];
+  return first && model ? `${first.kind}/${model.id}` : '';
 }
 
-/** Sets a role's model, and shows it. `byHand`: a person chose it (the form keeps it). */
-function choose(name: string, model: string, byHand = false): void {
-  const input = $(`role-${name}-model`) as HTMLInputElement;
-  input.value = model;
-  const there = found(model);
-  $(`role-${name}-pick`).replaceChildren(
-    ...(there ? [logo(there.source.provider.id, there.source.provider.title, 30),
+/** A big button that shows an agent's AI, and opens the picker. */
+function aiButton(agent: Agent, whose: string): HTMLButtonElement {
+  const there = found(agent.model);
+  const button = el('button', 'pick',
+    ...(there ? [logo(there.source.provider.id, there.source.provider.title, 36),
                  el('span', 'what', el('b', '', there.model.title), el('small', '', `${named(there.source)} · ${via(there.source.mind)}`))]
-      : [el('span', 'what', el('b', '', minds.length ? 'Choose a model' : 'No AI is connected yet'),
-            el('small', '', model ? `${model} is not there on this computer` : minds.length ? '' : 'Connect one under AI connections'))]),
-    el('span', 'chevron', '›'));
-  if (byHand) input.dispatchEvent(new Event('input', { bubbles: true }));
+      : [el('span', 'what', el('b', '', minds.length ? 'Choose an AI' : 'No AI is connected yet'),
+            el('small', '', agent.model ? `${agent.model} is not there on this computer` : minds.length ? '' : 'Connect one under AI connections'))]),
+    el('span', 'change', 'Change'));
+  button.type = 'button';
+  button.onclick = () => pick(agent.model, whose, model => {
+    agent.model = model;
+    keep();
+    drawAgents();
+  });
+  return button;
 }
 
 /** The picker: first who provides the model, then the model. */
-function pick(name: string, roleTitle: string): void {
-  const dialog = $('pickModel') as HTMLDialogElement, now = ($(`role-${name}-model`) as HTMLInputElement).value;
+function pick(now: string, whose: string, chosen: (model: string) => void): void {
+  const dialog = $('pickModel') as HTMLDialogElement;
   const providers = () => {
     $('pickBack').hidden = true;
-    $('pickTitle').textContent = `Who thinks for the ${roleTitle.toLowerCase()}?`;
+    $('pickTitle').textContent = `Who thinks for ${whose}?`;
     $('pickHint').textContent = 'The AIs on this computer, and who provides their models.';
     const tiles = sources().map(source => {
       const tile = el('button', `tile${found(now)?.source === source ? ' on' : ''}`,
@@ -149,15 +172,15 @@ function pick(name: string, roleTitle: string): void {
     const shown = (filter: string) => list.replaceChildren(...source.provider.models
       .filter(model => !filter || `${model.title} ${model.id} ${model.about}`.toLowerCase().includes(filter.toLowerCase()))
       .map(model => {
-        const row = el('button', `model${valueOf(source, model) === now ? ' on' : ''}`,
+        const line = el('button', `model${valueOf(source, model) === now ? ' on' : ''}`,
           el('span', 'what', el('b', '', model.title), model.about && el('small', '', model.about)),
           model.usual && el('span', 'chip', 'usual'));
-        row.type = 'button';
-        row.onclick = () => {
-          choose(name, valueOf(source, model), true);
+        line.type = 'button';
+        line.onclick = () => {
           dialog.close();
+          chosen(valueOf(source, model));
         };
-        return row;
+        return line;
       }));
     const search = el('input', 'search');
     search.type = 'search'; search.placeholder = 'Find a model';
@@ -172,174 +195,265 @@ function pick(name: string, roleTitle: string): void {
   dialog.showModal();
 }
 
+// ---------------------------------------------------------------- the agents
+
+/** What an agent is told when it wakes up: the world's message, unless a person wrote another. */
+function message(agent: Agent, role: Role): HTMLElement {
+  const text = el('textarea');
+  text.rows = 3; text.value = agent.told ?? role.told;
+  text.oninput = () => {
+    agent.told = text.value === role.told ? null : text.value;
+    keep();
+  };
+  return el('label', 'field', el('span', '', "The world's message when it wakes up"), text);
+}
+
+/** What an agent can do: its tools, a line each with its switch, folded away. One the world
+ *  does not work without stays on. */
+function tools(agent: Agent): HTMLElement {
+  const all = world().tools;
+  const count = el('span', 'chip');
+  const counted = () => { count.textContent = `${all.length - agent.without.length} of ${all.length} on`; };
+  const list = el('div', 'tools', ...all.map(tool => {
+    const box = toggle(tool.needed || !agent.without.includes(tool.name), tool.needed);
+    box.onchange = () => {
+      agent.without = box.checked ? agent.without.filter(name => name !== tool.name) : [...agent.without, tool.name];
+      counted();
+      keep();
+    };
+    return el('label', `tool${tool.needed ? ' needed' : ''}`,
+      el('code', '', tool.name), el('small', '', tool.about, tool.on && el('i', '', ` Only: ${tool.on.join(', ')}.`)), box);
+  }));
+  counted();
+  return el('details', 'can', el('summary', '', 'What it can do', count), list);
+}
+
+/** One agent's card: its AI first, then what it is told and what it can do. */
+function agentCard(agent: Agent, role: Role, title: string, remove?: () => void): HTMLElement {
+  const head = el('div', 'head', el('b', '', title));
+  if (remove) {
+    const button = el('button', 'link quiet', 'Remove');
+    button.type = 'button';
+    button.onclick = remove;
+    head.append(button);
+  }
+  return el('div', 'agent', head, aiButton(agent, title.toLowerCase()), message(agent, role), tools(agent));
+}
+
+/** A number with − and + beside it. */
+function stepper(value: number, least: number, most: number, changed: (value: number) => void): HTMLElement {
+  const button = (text: string, by: number) => {
+    const node = el('button', '', text);
+    node.type = 'button';
+    node.disabled = value + by < least || value + by > most;
+    node.onclick = () => changed(value + by);
+    return node;
+  };
+  return el('span', 'stepper', button('−', -1), el('b', '', String(value)), button('+', 1));
+}
+
+const copy = (agent: Agent): Agent => ({ ...agent, without: [...agent.without] });
+
+/** Who lives in the world: for each role, how many, and who they are. */
+function drawAgents(): void {
+  const several = Object.keys(world().roles).length > 1;
+  $('agentsBody').replaceChildren(...Object.entries(world().roles).flatMap(([name, role]) => {
+    const agents = form.roles[name]!;
+    const [least, most] = role.between ?? [role.count, role.count];
+    const plural = role.title.toLowerCase() + 's';
+    const how = el('div', 'segments',
+      ...([[true, 'All the same'], [false, 'Each their own']] as const).map(([same, title]) => {
+        const button = el('button', agents.same === same ? 'on' : '', title);
+        button.type = 'button';
+        button.onclick = () => {
+          if (agents.same === same) return;
+          if (same) [agents.all, agents.count] = [copy(agents.each[0] ?? agents.all), agents.each.length];
+          else agents.each = Array.from({ length: agents.count }, () => copy(agents.all));
+          agents.same = same;
+          keep();
+          drawAgents();
+        };
+        return button;
+      }));
+    const count = agents.same ? agents.count : agents.each.length;
+    const top = el('div', 'top', how, least === most || !agents.same
+      ? el('span', 'muted', `${count} ${count === 1 ? role.title.toLowerCase() : plural}${least === most ? '' : ' at the start'}`)
+      : el('span', 'count', 'How many', stepper(agents.count, least, most, value => {
+        agents.count = value;
+        keep();
+        drawAgents();
+      })));
+    const body = agents.same
+      ? [agentCard(agents.all, role, count === 1 ? `The ${role.title.toLowerCase()}` : `All ${count} ${plural}`)]
+      : [el('div', 'agents', ...agents.each.map((agent, i) => agentCard(agent, role, `${role.title} ${i + 1}`,
+          agents.each.length > least ? () => {
+            agents.each.splice(i, 1);
+            keep();
+            drawAgents();
+          } : undefined)),
+        ...(agents.each.length < most ? [(() => {
+          const add = el('button', 'another', `+ Add ${role.title.toLowerCase()}`);
+          add.type = 'button';
+          add.onclick = () => {
+            agents.each.push(copy(agents.each.at(-1) ?? agents.all));
+            keep();
+            drawAgents();
+          };
+          return add;
+        })()] : []))];
+    return [...(several ? [el('h3', '', role.title)] : []), top, ...body];
+  }), ...(settings('agents').length ? [el('div', 'rows rules', ...settings('agents'))] : []));
+  summarize();
+}
+
+// ---------------------------------------------------------------- how it ends
+
+function drawEnd(): void {
+  const limit = toggle(form.minutes > 0);
+  const minutes = el('input');
+  minutes.type = 'number'; minutes.min = '1'; minutes.value = String(form.minutes || world().minutes || 10);
+  minutes.disabled = !form.minutes;
+  limit.onchange = () => {
+    form.minutes = limit.checked ? Number(minutes.value) || 10 : 0;
+    minutes.disabled = !limit.checked;
+    keep();
+  };
+  minutes.oninput = () => {
+    form.minutes = Math.max(1, Number(minutes.value) || 1);
+    keep();
+  };
+  $('endBody').replaceChildren(el('p', 'ends', world().ends), ...settings('ending'),
+    row('Time limit', el('span', 'limit', limit, minutes, el('span', 'muted', 'minutes')),
+        world().minutes ? undefined : 'If it has not ended by itself before.'));
+}
+
+// ---------------------------------------------------------------- what is set, in one line
+
+function summarize(): void {
+  const all = Object.values(form.roles).flatMap(agents => (agents.same ? Array(agents.count).fill(agents.all) : agents.each) as Agent[]);
+  const models = [...new Set(all.map(agent => found(agent.model)?.model.title ?? 'no AI chosen'))];
+  $('createSummary').textContent = `${world().title} · ${all.length} agent${all.length === 1 ? '' : 's'} · ${models.join(', ')}`;
+}
+
 // ---------------------------------------------------------------- what was set last
 
-/** How the form is filled in. What a role is told is only kept if a person wrote it: else
- *  it is what the world says, which can depend on the settings. */
-interface Filled {
-  chosen: Record<string, unknown>;
-  minutes: number;
-  roles: Record<string, { model: string; told: string | null; without: string[] }>;
-}
-
-const text = (id: string) => ($(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
-const switchedOff = (world: WorldInfo, role: string) => world.tools.filter(tool => !($(`role-${role}-tool-${tool.name}`) as HTMLInputElement).checked).map(tool => tool.name);
-
-/** How the form is filled in now. */
-const filled = (world: WorldInfo): Filled => ({
-  chosen: chosen(world), minutes: Number(text('minutes')),
-  roles: Object.fromEntries(Object.entries(world.roles).map(([name, role]) => [name, {
-    model: text(`role-${name}-model`), told: text(`role-${name}-told`) === role.told ? null : text(`role-${name}-told`), without: switchedOff(world, name) }])),
-});
-
-/** The model a role gets when nobody chose one: the usual one of the first AI there is. */
-function usualModel(): string {
-  const [first] = minds;
-  const models = first?.providers.flatMap(provider => provider.models) ?? [];
-  const model = models.find(found => found.usual) ?? models[0];
-  return first && model ? `${first.kind}/${model.id}` : '';
-}
-const offered = (model: string) => !!found(model);
-
 /** How the form is filled in when nobody has touched it. */
-const usually = (world: WorldInfo): Filled => ({
-  chosen: Object.fromEntries(Object.entries(world.settings).map(([name, setting]) => [name, setting.type === 'choices' ? [...setting.usual] : setting.usual])),
-  minutes: world.minutes,
-  roles: Object.fromEntries(Object.entries(world.roles).map(([name, role]) => [name, {
-    model: role.model ?? usualModel(), told: null, without: world.tools.filter(tool => !tool.needed && role.without?.includes(tool.name)).map(tool => tool.name) }])),
-});
+function usually(of: WorldInfo): Filled {
+  return {
+    chosen: Object.fromEntries(Object.entries(of.settings).map(([name, setting]) => [name, setting.type === 'choices' ? [...setting.usual] : setting.usual])),
+    minutes: of.minutes,
+    roles: Object.fromEntries(Object.entries(of.roles).map(([name, role]) => {
+      const agent: Agent = { model: role.model ?? usualModel(), told: null,
+                             without: of.tools.filter(tool => !tool.needed && role.without?.includes(tool.name)).map(tool => tool.name) };
+      return [name, { same: true, count: role.count, all: agent, each: [] }];
+    })),
+  };
+}
 
 // What was set last is kept in the browser, for each world, and filled in again the next time.
 // (The browser may not let the page keep anything: then the form is just the usual one.)
-const key = (world: WorldInfo) => `tinkerlings:${world.name}`;
-function kept(world: WorldInfo): Filled | null {
-  try { return JSON.parse(localStorage.getItem(key(world)) ?? 'null'); } catch { return null; }
+const key = (of: WorldInfo) => `tinkerlings:${of.name}`;
+
+/** How the form was left the last time, as far as it still fits the world and this computer. */
+function kept(of: WorldInfo): Filled {
+  const usual = usually(of);
+  let last: Partial<Filled> | null = null;
+  try { last = JSON.parse(localStorage.getItem(key(of)) ?? 'null'); } catch { /* nothing was kept */ }
+  if (!last?.roles) return usual;
+  const fits = (agent: Agent | undefined, fallback: Agent): Agent => ({
+    model: agent?.model && found(agent.model) ? agent.model : fallback.model,
+    told: typeof agent?.told === 'string' ? agent.told : null,
+    without: Array.isArray(agent?.without) ? agent.without.filter(name => of.tools.some(tool => tool.name === name && !tool.needed)) : fallback.without,
+  });
+  return {
+    chosen: Object.fromEntries(Object.entries(usual.chosen).map(([name, value]) => [name, last.chosen && name in last.chosen ? last.chosen[name] : value])),
+    minutes: typeof last.minutes === 'number' ? last.minutes : usual.minutes,
+    roles: Object.fromEntries(Object.entries(usual.roles).map(([name, agents]) => {
+      const was = last.roles?.[name];
+      if (!was) return [name, agents];
+      return [name, { same: was.same !== false, count: Number(was.count) || agents.count, all: fits(was.all, agents.all),
+                      each: (was.each ?? []).map(agent => fits(agent, agents.all)) }];
+    })),
+  };
 }
+
 /** Keeps how the form is filled in, and shows the way back if it is not the usual. */
-function keep(world: WorldInfo): void {
-  const now = filled(world), usual = JSON.stringify(now) === JSON.stringify(usually(world));
+function keep(): void {
+  const usual = JSON.stringify(form) === JSON.stringify(usually(world()));
   try {
-    if (usual) localStorage.removeItem(key(world));
-    else localStorage.setItem(key(world), JSON.stringify(now));
+    if (usual) localStorage.removeItem(key(world()));
+    else localStorage.setItem(key(world()), JSON.stringify(form));
   } catch { /* nothing is kept */ }
   $('reset').hidden = usual;
+  summarize();
 }
 
-/** Fills the form in the way it was left the last time. */
-async function fillAgain(world: WorldInfo): Promise<void> {
-  const last = kept(world);
-  if (last) {
-    for (const [name, setting] of Object.entries(world.settings)) if (name in (last.chosen ?? {})) fill(setting, `set-${name}`, last.chosen[name]);
-    ($('minutes') as HTMLInputElement).value = String(last.minutes ?? world.minutes);
-    await settingsChanged(world);   // (what the roles are told with these settings)
-    if (picked !== world.name) return;
-    for (const [name, role] of Object.entries(last.roles ?? {})) {
-      if (!world.roles[name]) continue;
-      if (offered(role.model)) choose(name, role.model);
-      if (role.told !== null) ($(`role-${name}-told`) as HTMLTextAreaElement).value = role.told;
-      for (const tool of world.tools) if (!tool.needed) ($(`role-${name}-tool-${tool.name}`) as HTMLInputElement).checked = !role.without.includes(tool.name);
-      $(`role-${name}-tool-${world.tools[0]?.name}`)?.dispatchEvent(new Event('change', { bubbles: true }));   // (the count of tools that are on)
-    }
-  }
-  keep(world);
-}
+// ---------------------------------------------------------------- the screen
 
-const ICONS: Record<string, string> = {
-  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
-  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
-  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
-  mind: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-  hand: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
-};
-
-/** The small picture in front of a card's heading. */
-function icon(name: string): HTMLElement {
-  const box = el('span', 'icon');
-  box.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
-  return box;
-}
-
-/** The tools of a role, a line each with its switch. One the world does not work without stays on. */
-function tools(world: WorldInfo, roleName: string, role: Role): HTMLElement {
-  const count = el('span', 'chip');
-  const list = el('div', 'tools', ...world.tools.map(tool => el('label', `tool${tool.needed ? ' needed' : ''}`,
-    el('code', '', tool.name), el('small', '', tool.about, tool.on && el('i', '', ` Only: ${tool.on.join(', ')}.`)),
-    toggle(`role-${roleName}-tool-${tool.name}`, tool.needed || !role.without?.includes(tool.name), tool.needed))));
-  const counted = () => { count.textContent = `${list.querySelectorAll('.switch:checked').length} of ${world.tools.length} on`; };
-  list.onchange = counted;
-  counted();
-  const title = Object.keys(world.roles).length > 1 ? `What ${role.title.toLowerCase()}s can do` : 'What they can do';
-  return el('section', '', el('h2', '', icon('hand'), title, count), list);
+/** The world chosen so far: as it is with the settings chosen (what its roles are told). */
+async function choose(name: string): Promise<void> {
+  picked = name;
+  const of = world();
+  form = kept(of);
+  const now = await api<WorldInfo>(`/api/worlds/${of.name}?chosen=${encodeURIComponent(JSON.stringify(form.chosen))}`);
+  if (picked !== name) return;
+  of.roles = now.roles;
+  draw();
 }
 
 function draw(): void {
-  const world = worlds.find(found => found.name === picked) ?? worlds[0];
-  if (!world) return;
-  picked = world.name;
-  $('worldPick').replaceChildren(...worlds.map(found => {
-    const button = el('button', found.name === picked ? 'on' : '', found.title);
-    button.type = 'button';
-    button.onclick = () => { picked = found.name; draw(); };
-    return button;
+  const of = world();
+  $('worldPick').replaceChildren(...worlds.map(candidate => {
+    const card = el('button', `world${candidate.name === picked ? ' on' : ''}`,
+      el('span', 'picture', el('img')),
+      el('span', 'what', el('b', '', candidate.title), el('small', '', short(candidate))));
+    const picture = card.querySelector('img')!;
+    picture.src = `/assets/worlds/${candidate.name}.jpg`; picture.alt = '';
+    picture.onerror = () => picture.remove();
+    card.type = 'button';
+    card.onclick = () => { if (candidate.name !== picked) void choose(candidate.name); };
+    return card;
   }));
-  // (The first paragraph says what the world is. The rest is behind "More about this world".)
-  const flowing = world.about.replace(/(?<!\n)\n(?!\n)/g, ' ');   // its lines are broken for the code, not for the page
-  $('worldShort').textContent = flowing.split('\n\n')[0]!;
+  // (Its card says the first sentence, and below it the rest of the first paragraph. The rest
+  //  is behind "More about this world".)
+  const flowing = of.about.replace(/(?<!\n)\n(?!\n)/g, ' ');   // its lines are broken for the code, not for the page
+  $('worldShort').textContent = flowing.split('\n\n')[0]!.replace(/\s+/g, ' ').slice(short(of).length).trim();
+  $('worldShort').hidden = !$('worldShort').textContent;
   $('worldMore').hidden = !flowing.includes('\n\n');
   $('worldMore').onclick = () => {
-    $('aboutTitle').textContent = world.title;
+    $('aboutTitle').textContent = of.title;
     $('aboutText').textContent = flowing;
     ($('aboutWorld') as HTMLDialogElement).showModal();
   };
-  const row = (title: string, control: HTMLElement, more = '') => el('label', `row ${more}`, el('span', '', title), control);
-  const settings = (about: 'agents' | undefined) => Object.entries(world.settings).filter(([, setting]) => setting.about === about)
-    .map(([name, setting]) => row(setting.title, field(setting, `set-${name}`)));
   $('worldSettings').replaceChildren(...settings(undefined));
-  $('worldSettings').parentElement!.hidden = !$('worldSettings').children.length;
-  // Who lives in the world. With one kind of agent, who they are is on the same card.
-  const living = el('div', 'rows', ...settings('agents'));
-  const several = Object.keys(world.roles).length > 1;
-  const lives = el('section', '', el('h2', '', icon('users'), 'Who lives in it'), living);
-  $('worldRoles').replaceChildren(...(several ? [lives] : []), ...Object.entries(world.roles).flatMap(([name, role]) => {
-    const model = picker(name, role);
-    const told = el('textarea'); told.id = `role-${name}-told`; told.value = role.told; told.rows = 2;
-    const who = [row('Model', model), row("The world's message to an agent that wakes up", told, 'tall')];
-    if (!several) lives.append(...who);
-    return [several ? el('section', '', el('h2', '', icon('mind'), `${role.title}: who it is`), ...who) : lives, tools(world, name, role)];
-  }));
-  for (const [name, role] of Object.entries(world.roles)) choose(name, role.model ?? usualModel());
-  ($('minutes') as HTMLInputElement).value = String(world.minutes);
-  void fillAgain(world);
+  $('worldSettings').hidden = !$('worldSettings').children.length;
+  drawAgents();
+  drawEnd();
+  $('moreBody').replaceChildren(...moreSettings());
+  $('more').hidden = !$('moreBody').children.length;
+  keep();
 }
+
+/** What a world is, in a few words: the first sentence of what is said about it. */
+const short = (of: WorldInfo) => of.about.replace(/\s+/g, ' ').split(/(?<=\.) /)[0]!;
 
 /** Opens the screen. `onStarted` is told the id of the run that was started. */
 export async function openCreate(onStarted: (id: string) => void): Promise<void> {
   [worlds, minds] = await Promise.all([api<WorldInfo[]>('/api/worlds'), api<MindInfo[]>('/api/minds')]);
-  for (const head of document.querySelectorAll<HTMLElement>('#create h2[data-icon]')) {
-    if (!head.querySelector('.icon')) head.prepend(icon(head.dataset.icon!));
-  }
-  draw();
-  const form = $('create') as HTMLFormElement, now = () => worlds.find(found => found.name === picked)!;
-  // Whatever is set is kept at once. (After the settings have changed what the roles are told.)
-  form.oninput = () => keep(now());
-  form.onchange = async () => {
-    const world = now();
-    await settingsChanged(world);
-    if (picked === world.name) keep(world);
+  await choose(worlds.some(candidate => candidate.name === picked) ? picked : worlds[0]!.name);
+  $('reset').onclick = () => {
+    try { localStorage.removeItem(key(world())); } catch { /* nothing was kept */ }
+    void choose(picked);
   };
-  $('reset').onclick = async () => {
-    try { localStorage.removeItem(key(now())); } catch { /* nothing was kept */ }
-    worlds = await api<WorldInfo[]>('/api/worlds');
-    draw();
-  };
-  form.onsubmit = async event => {
+  ($('create') as HTMLFormElement).onsubmit = async event => {
     event.preventDefault();
-    const world = now();
-    const roles = Object.fromEntries(Object.keys(world.roles).map(name => [name, {
-      model: text(`role-${name}-model`), told: text(`role-${name}-told`), without: switchedOff(world, name) }]));
-    const answer = await api<{ id?: string; error?: string }>('/api/runs', {
-      world: world.name, chosen: chosen(world), roles, minutes: Number(text('minutes')) });
+    const roles = Object.fromEntries(Object.entries(world().roles).map(([name, role]) => {
+      const agents = form.roles[name]!;
+      const set = (agent: Agent) => ({ model: agent.model, told: agent.told ?? role.told, without: agent.without });
+      return [name, agents.same ? { count: agents.count, ...set(agents.all) }
+        : { count: agents.each.length, ...set(agents.each[0] ?? agents.all), each: agents.each.map(set) }];
+    }));
+    const answer = await api<{ id?: string; error?: string }>('/api/runs', { world: picked, chosen: form.chosen, roles, minutes: form.minutes });
     if (answer.id) onStarted(answer.id);
     else alert(answer.error ?? 'That did not start.');
   };

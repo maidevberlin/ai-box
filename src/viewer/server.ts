@@ -24,13 +24,14 @@ import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { ask, MINDS, minds, populate, usualModel } from '../engine/agents.ts';
+import { keepAwake } from '../engine/awake.ts';
 import { HOME } from '../engine/programs.ts';
 import { Doors } from '../engine/doors.ts';
 import { review } from '../engine/review.ts';
 import { Run, runId, WAIT, type Event } from '../engine/run.ts';
 import type { WorldDefinition } from '../engine/types.ts';
 import { usual } from '../engine/types.ts';
-import { worlds } from '../worlds/index.ts';
+import { WORLDS } from '../worlds/index.ts';
 
 const HERE = import.meta.dirname;
 const RUNS = join(HERE, '..', '..', 'runs');
@@ -38,7 +39,7 @@ const PORT = Number(process.env.PORT) || 8765;
 const HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);   // the only names this page is served under
 const RUN_ID = /^\d{8}-\d{6}$/;
 
-const all = await worlds();
+const all = Object.fromEntries(WORLDS.map(world => [world.name, world]));
 const going = new Map<string, Run>();
 const doors = new Doors();
 await doors.open();
@@ -84,9 +85,10 @@ async function start(wish: Record<string, any>): Promise<string | null> {
                                     minutes: wish.minutes === undefined ? undefined : Number(wish.minutes) });
   going.set(id, run);
   populate(run, doors.let(run));
-  const reviewer = Object.values(run.roles).find(role => role.model)?.model;
+  const [reviewer] = run.about().models as string[];
   if (reviewer) run.listeners.push({ ended: () => void review(run.events, folder, reviewer) });
   run.start();
+  keepAwake(run);
   return id;
 }
 
@@ -152,7 +154,7 @@ function forget(everything: boolean): Record<string, unknown> {
 function shown(world: WorldDefinition<any>, chosen: Record<string, unknown> = {}): Record<string, unknown> {
   const all = { ...usual(world.settings), ...chosen };
   const tools = Object.entries({ ...world.tools(all), wait: WAIT }).map(([name, tool]) => ({ name, about: tool.about, needed: tool.needed, on: 'on' in tool ? tool.on : undefined }));
-  return { name: world.name, title: world.title, about: world.about, settings: world.settings, minutes: world.minutes,
+  return { name: world.name, title: world.title, about: world.about, settings: world.settings, minutes: world.minutes, ends: world.ends,
            roles: world.roles(all), tools };
 }
 
@@ -173,6 +175,7 @@ async function serve(request: IncomingMessage, response: ServerResponse): Promis
       return send(response, code, 'text/javascript; charset=utf-8');
     }
     if (path === '/assets/robot.glb') return send(response, readFileSync(join(HERE, 'assets', 'robot.glb')), 'model/gltf-binary');
+    if (/^\/assets\/worlds\/[a-z]+\.jpg$/.test(path) && existsSync(join(HERE, path))) return send(response, readFileSync(join(HERE, path)), 'image/jpeg');
     if (path === '/api/minds') return send(response, await minds());
     if (path === '/api/setup') return send(response, await setups());
     if (path.startsWith('/api/setup/') && action === 'providers') return send(response, await MINDS[id ?? '']?.keys?.providers() ?? []);

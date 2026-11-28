@@ -11,7 +11,7 @@ const agent = (more: Partial<Role> = {}): Role => ({ title: 'Agent', count: 1, m
 
 /** A strip of land from x = -5 to 5 (y = -1 to 1), water all around, and blocks to try things with. */
 const strip = (role: Partial<Role> = {}, make: (world: BlockWorld<any>) => void = () => {}) => blockWorld({
-  name: 'strip', title: 'Strip', about: '', settings: {}, minutes: 0,
+  name: 'strip', title: 'Strip', about: '', settings: {}, minutes: 0, ends: '',
   roles: () => ({ agent: agent(role) }),
   blocks: {
     ground: { colour: '#0a0', ground: true },
@@ -109,7 +109,7 @@ test('what a verb can be done to is up to the kind: only a note can be destroyed
   assert.equal(await act('destroy', { what: 'here' }), 'You cannot destroy a berry.');
   // A verb that no kind of the world allows is not offered to its agents at all.
   const bare = started(blockWorld({
-    name: 'bare', title: 'Bare', about: '', settings: {}, minutes: 0, roles: () => ({ agent: agent() }),
+    name: 'bare', title: 'Bare', about: '', settings: {}, minutes: 0, ends: '', roles: () => ({ agent: agent() }),
     blocks: { ground: { colour: '#0a0', ground: true } }, items: { note: { colour: '#ff0', called: 'note', shape: 'sheet' } },
     verbs: basic, make: w => w.setBlock([0, 0, -1], 'ground'),
   }) as ReturnType<typeof strip>);
@@ -121,7 +121,7 @@ test('a verb can be done to somebody, if their kind says what happens then', asy
   const pet = verbTo({ about: 'Pet somebody.' });
   const push = verbTo({ about: 'Push somebody.' });
   const { act, world, run } = started(blockWorld({
-    name: 'meadow', title: 'Meadow', about: '', settings: {}, minutes: 0, roles: () => ({ agent: agent({ count: 2 }) }),
+    name: 'meadow', title: 'Meadow', about: '', settings: {}, minutes: 0, ends: '', roles: () => ({ agent: agent({ count: 2 }) }),
     blocks: { ground: { colour: '#0a0', ground: true } },
     creatures: {
       sheep: { colour: '#fff', called: 'sheep', every: 1000, does: () => {}, can: { pet: () => 'The sheep leans against you.', push: 'The sheep does not move.' } },
@@ -222,7 +222,7 @@ test('a throw flies a real curve, lands, and is caught by someone with an empty 
 
 test('what is said is heard in full nearby, in pieces further away, and not at all far off', async () => {
   const far = blockWorld({
-    name: 'long', title: '', about: '', settings: {}, minutes: 0, earshot: 5,
+    name: 'long', title: '', about: '', settings: {}, minutes: 0, ends: '', earshot: 5,
     roles: () => ({ agent: agent({ count: 4 }) }),
     blocks: { ground: { colour: '#0a0', ground: true } },
     verbs: basic,
@@ -465,7 +465,7 @@ test('an agent can give things names of its own, and is then told about them by 
 
 test('an agent chooses how loud it speaks: a whisper stays close, a shout carries far', async () => {
   const long = blockWorld({
-    name: 'long', title: '', about: '', settings: {}, minutes: 0, earshot: 5,
+    name: 'long', title: '', about: '', settings: {}, minutes: 0, ends: '', earshot: 5,
     roles: () => ({ agent: agent({ count: 3 }) }),
     blocks: { ground: { colour: '#0a0', ground: true } },
     verbs: basic,
@@ -569,4 +569,15 @@ test('an agent knows again who it has met, and hears steps it does not see', asy
   assert.equal(heard(), 'You hear steps to the west, coming closer.');
   await act('walk', { path: 'north' }, 3);
   assert.equal(heard(), 'You hear steps to the east, going away.');
+});
+
+test('agents of one role can each be set up on their own, within how many the role allows', () => {
+  const woke: [number, string | undefined, string][] = [];
+  const definition = strip({ between: [1, 3] });
+  const run = new Run(definition, { time: testTime(), seed: 1, roles: { agent: {
+    count: 5, model: 'all/same', each: [{ model: 'one/own', told: 'Hello, first.' }, {}] } } });
+  run.listeners.push({ woke: (agent, role) => void woke.push([agent.place, role.model, role.told]) });
+  run.start();
+  assert.deepEqual(woke, [[1, 'one/own', 'Hello, first.'], [2, 'all/same', 'Live!'], [3, 'all/same', 'Live!']]);
+  assert.deepEqual(run.about().models, ['one/own', 'all/same']);
 });

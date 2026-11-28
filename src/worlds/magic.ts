@@ -47,8 +47,7 @@ const tricks = { on: { jumpedOn: turns, landed: breaks } };
 
 /** This island's kind of note can call a friend: when it begins with "friend" and is thrown or
  *  put into the water, one more agent wakes up next to whoever sent it, with that note in
- *  its hand. (Only if that is switched on, and the max population is more than the island
- *  started with.) */
+ *  its hand. (Only if friends can be called.) */
 const note: ItemKind = {
   colour: '#f2d34f', called: 'note', shape: 'sheet', can: { destroy: true },
   on: {
@@ -128,19 +127,20 @@ the east shore as soon as an agent stands on one block there. Nothing tells it t
 
 Several agents can live here at the same time. They see and hear each other, are in each
 other's way, can push each other (into the water too), and catch what is thrown to them (a
-caught block does not break). They can call friends, if that is switched on and the max
-population is more than the island starts with: a note that begins with "friend", thrown or
-put into the water, calls one more agent, who wakes up next to the caller with that note in
-its hand. If the world is full, the agent
-that has been alive longest is gone.`,
+caught block does not break). They can call friends, if a person starting the run says how
+many: a note that begins with "friend", thrown or put into the water, calls one more agent,
+who wakes up next to the caller with that note in its hand. If that many have come already,
+the agent that has been alive longest is gone.`,
   settings: {
     size: { type: 'choice', title: 'Size of the island', usual: 'medium', options: Object.keys(SIZES) },
     loose: { type: 'choice', title: 'Loose blocks at the start', usual: 'one', options: Object.keys(LOOSE) },
     ...people,
-    friends: { type: 'switch', title: 'A note that begins with "friend", sent into the water, calls one more agent', usual: true, about: 'agents' },
+    friends: { type: 'number', title: 'Friends they can call', usual: 0, min: 0, max: 8, about: 'agents',
+               hint: 'A note that begins with "friend", sent into the water, calls one more agent. 0: nobody can be called.' },
   },
   minutes: 10,
-  roles: agents,
+  ends: 'It ends when its time is up, or before that when no agent is left.',
+  roles: chosen => agents(chosen, chosen.friends),
   blocks: {
     ground: { colour: '#4f8f34', ground: true },
     grey: { colour: '#8a919c', can: { push: true }, ...tricks },
