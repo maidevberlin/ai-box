@@ -688,7 +688,7 @@ const throwIt = verb({
 
 const say = verb({
   about: 'Say something out loud.',
-  shown: { icon: 'message-circle', standsOut: true },
+  shown: { icon: 'message-circle', standsOut: true, overHead: true },
   args: { text: { type: 'text' }, loudness: { type: 'one of', options: ['whisper', 'normal', 'shout'], optional: true } },
   does(world, me, { text, loudness }) {
     const said = text.slice(0, 500), how = (loudness ?? 'normal') as Loudness;

@@ -1,6 +1,6 @@
 // Draws a block world in 3D: blocks in the colours of their kinds, items, the agents as
-// robots and creatures as small boxes. Over an agent's head: what it just said, the icon of
-// what it does that is not seen, and whatever its world shows there.
+// robots and creatures as small boxes. Over an agent's head: the icon of what it does that is
+// not seen (talking too: what it says is in the conversation), and whatever its world shows there.
 // It is given a whole picture every time and works out by itself what has to be drawn again.
 //
 // A block at (x, y, z) is drawn at x to the right, z up, y away from the viewer (north).
@@ -16,13 +16,13 @@ import { el } from './page.ts';
 
 /** A picture, and a number that changes whenever its blocks do. */
 export interface View extends Picture { blocksVersion: number }
-/** Over an agent's head, besides what the world puts there: what it said, and the icon of what it does. */
-export interface Above { said?: { text: string; loudness?: string }; doing?: string }
+/** Over an agent's head, besides what the world puts there: the icon of what it does. `talks`:
+ *  it is talking (see Film.above). */
+export interface Above { doing?: string; talks?: boolean }
 
 export const PLACE_COLOURS = [0xe8553a, 0x8b5cf6, 0x14b8a6, 0xf59e0b, 0x3b82f6, 0xec4899, 0x84cc16, 0x64748b];
 const TALL = 1.45;          // how tall a figure is, in blocks
 const FLIGHT = 700;         // milliseconds a thrown thing is in the air
-const BUBBLE_LETTERS = 180;
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
 const COLOURS = dark ? { sky: 0x10161b, water: 0x1d4257 } : { sky: 0xdbe9f0, water: 0x7fb4cc };
 
@@ -86,7 +86,7 @@ export class Scene {
     water.position.y = -0.3;
     this.flying.visible = false;
     this.scene.add(sun, water, this.blocks, this.items, this.signs, this.flying);
-    this.labels.domElement.className = 'bubbles';
+    this.labels.domElement.className = 'labels';
     box.append(this.renderer.domElement, this.labels.domElement);
     this.controls = new OrbitControls(this.camera, this.labels.domElement);
     this.controls.maxPolarAngle = Math.PI / 2.05;
@@ -146,13 +146,9 @@ export class Scene {
         (figure.carried.material as THREE.MeshLambertMaterial).color.set(held.colour);
         figure.carried.scale.set(0.36, held.shape === 'sheet' ? 0.04 : 0.36, 0.36);
       }
-      // Over its head: what it said, and a line with what it does and what the world shows.
+      // Over its head: a line with what it does and what the world shows.
       const above = body.place === undefined ? undefined : aboves.get(body.place);
       const parts: HTMLElement[] = [];
-      if (above?.said) {
-        const { text, loudness } = above.said;
-        parts.push(el('div', `bubble${loudness && loudness !== 'normal' ? ` ${loudness}` : ''}`, text.length > BUBBLE_LETTERS ? `${text.slice(0, BUBBLE_LETTERS)}…` : text));
-      }
       if (above?.doing || body.over) {
         parts.push(el('div', 'tag', above?.doing ? icon(above.doing) : null,
                       ...(body.over ? [el('span', 'has', icon(body.over.icon), body.over.text)] : [])));

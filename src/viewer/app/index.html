@@ -54,30 +54,58 @@
 
   /* ---- one run: the world, and what the agents think, say and do ---- */
   #viewer { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
-  #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+  #stage { position: relative; display: flex; flex-direction: column; padding: 16px; gap: 12px; }
   #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  #title .cog { border: 0; background: none; padding: 2px; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
-  #title .cog:hover { color: var(--text); }
-  #title .cog .icon { width: 18px; height: 18px; }
-  #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
+  #title .named { cursor: pointer; }
+  #title .info { border: 0; background: none; padding: 2px; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+  #title .info:hover, #title .info.on { color: var(--text); }
+  #title .info .icon { width: 18px; height: 18px; }
+  /* About the run: what the reviewer wrote, and how it was set up. It lies over the right of
+     the screen, and opens from the (i) next to the run's name, or from its name. */
+  #info { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 5; width: min(420px, calc(100% - 16px)); overflow-y: auto;
+          background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px;
+          box-shadow: 0 12px 40px rgba(0, 0, 0, .35); }
+  #info .close { position: absolute; top: 12px; right: 12px; border: 0; background: none; color: var(--muted); cursor: pointer; display: grid; padding: 4px; }
+  #info .close:hover { color: var(--text); }
+  #info h2 { margin: 0 28px 8px 0; font-size: 18px; }
+  #info .summary { color: var(--muted); margin: 0 0 14px; white-space: pre-line; }
+  #info h3 { margin: 18px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #info h4 { margin: 10px 0 2px; font-size: 13px; }
+  #info .fact { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  #info .fact span { color: var(--muted); }
+  #info .fact b { flex: none; max-width: 60%; font-weight: 600; text-align: right; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #info .fact.changed b { color: var(--accent); }
+  #info .actions { margin-top: 18px; }
   /* On the drawing: how many agents there have been, and the notes lying in the world (a
      button, and a panel that opens from it). */
-  #facts { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; }
-  #facts .chip { padding: 4px 10px; background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
-  #facts button.chip { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-  #notes { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
-           overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-           padding: 6px 14px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
-  #notes .note { padding: 8px 0; border-bottom: 1px solid var(--line); }
-  #notes .note:last-child { border: 0; }
-  #notes .where { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  #notes .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Top right on the drawing: the notes in the world, and the conversation (buttons). */
+  #corner { position: absolute; right: 10px; top: 10px; display: flex; gap: 6px; }
+  #corner .chip { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+                  background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
+  #corner .chip.on { background: var(--panel); box-shadow: 0 0 0 1.5px var(--accent); }
+  /* The notes, as slips of paper over the upper right (the conversation has the lower half):
+     what is written, who wrote it and when, and where it is now. The newest first. */
+  #notes { position: absolute; right: 10px; top: 44px; width: min(340px, calc(100% - 20px)); max-height: calc(50% - 54px);
+           overflow-y: auto; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+  #notes .note { flex: none; position: relative; padding: 10px 14px 9px; border-radius: 3px 3px 10px 3px;
+                 background: color-mix(in srgb, #f6e7b4 88%, var(--panel)); color: #2e2a20;
+                 border-top: 4px solid var(--place, #b9a66b); box-shadow: 0 3px 12px rgba(0, 0, 0, .28); }
+  #notes .note .text { font: 15px/1.4 "Bradley Hand", "Segoe Print", "Comic Neue", cursive; white-space: pre-wrap; overflow-wrap: anywhere;
+                       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; cursor: pointer; }
+  #notes .note.whole .text { display: block; }   /* (a long one is read whole when clicked) */
+  #notes .note .by { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 8px; font-size: 11.5px; color: #6b6251; }
+  #notes .note .by b { color: color-mix(in srgb, var(--place, #6b6251) 75%, #000); }
+  #notes .note .by .when { border: 0; background: none; padding: 0; color: inherit; text-decoration: underline dotted; cursor: pointer; }
+  #notes .empty { padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--panel) 90%, transparent); color: var(--muted); }
   /* The legend of the agents alive: a row each, always in the same order, the icon of what each
      did last always in the same spot. */
-  #legend { position: absolute; left: 10px; top: 42px; display: flex; flex-direction: column; gap: 2px; max-height: calc(100% - 96px); overflow-y: auto; }
+  #legend { position: absolute; left: 10px; top: 10px; display: flex; flex-direction: column; gap: 2px; max-height: calc(100% - 96px); overflow-y: auto; }
   #legend .who { display: flex; align-items: center; gap: 7px; padding: 3px 8px 3px 6px; border: 0; border-radius: 99px; cursor: pointer;
                  background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); font-size: 12px; text-align: left; }
   #legend .who:hover { background: var(--panel); }
+  /* (One that is talking lights up, in its own colour, while its words are in the conversation.) */
+  #legend .who { transition: background-color .5s; }
+  #legend .who.talks { background: color-mix(in srgb, var(--place) 38%, var(--panel)); }
   #legend .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--place); flex: none; }
   #legend .logo { border: 0; background: none; }
   #legend .logo svg { width: 100%; height: 100%; }
@@ -87,19 +115,14 @@
   #legend .has { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; }
   #legend .has .icon { width: 12px; height: 12px; }
   #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
-  #scene, #scene canvas, .bubbles { position: absolute; inset: 0; }
+  #scene, #scene canvas, .labels { position: absolute; inset: 0; }
   #hint { position: absolute; left: 10px; bottom: 10px; pointer-events: none; opacity: .75;
           background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
-  .bubble { max-width: 230px; padding: 6px 10px; border-radius: 12px; font-size: 12px; line-height: 1.35;
-            background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text);
-            border: 1.5px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); pointer-events: none; }
   /* What a world writes at a place: on the thing there (plain, readable on any colour), or beside it. */
   .sign { font-size: 11.5px; line-height: 1.2; font-weight: 700; white-space: pre; pointer-events: none; }
   .sign.on { color: #fff; mix-blend-mode: difference; }
   .sign.beside { padding: 3px 9px; border-radius: 8px; background: color-mix(in srgb, var(--panel) 92%, transparent);
                  color: var(--text); border: 1px solid var(--line); }
-  .bubble.whisper { font-size: 10.5px; color: var(--muted); }
-  .bubble.shout { font-size: 14px; font-weight: 700; border-width: 2.5px; }
   .above { display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
   .above .tag { display: inline-flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 700;
                 background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text); border: 1px solid var(--line); }
@@ -125,8 +148,6 @@
           display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; overflow: hidden;
           mask-image: linear-gradient(to bottom, transparent, #000 25%); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 25%); }
   #side.closed { display: none; }
-  #sideToggle { position: absolute; top: 10px; right: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
-                background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
   #side .step { flex: none; background: color-mix(in srgb, var(--panel) 86%, transparent); transition: opacity .4s; }
   #side .step:not(.on) { display: none; }
   .step { padding: 6px 12px; border-radius: 4px 12px 12px 4px; border-left: 3px solid var(--place, var(--line)); }
@@ -232,14 +253,6 @@
   dialog h2 { margin: 0 0 10px; font-size: 18px; }
   dialog p { white-space: pre-line; color: var(--muted); margin: 0 0 16px; }
   dialog form { text-align: right; }
-  #runSetup { width: min(560px, calc(100% - 40px)); }
-  #setupBody { margin: 0 0 16px; }
-  #setupBody h3 { margin: 14px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  #setupBody h4 { margin: 10px 0 2px; font-size: 13px; }
-  #setupBody .fact { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border-bottom: 1px solid var(--line); }
-  #setupBody .fact span { color: var(--muted); }
-  #setupBody .fact b { flex: none; max-width: 60%; font-weight: 600; text-align: right; white-space: pre-wrap; overflow-wrap: anywhere; }
-  #setupBody .fact.changed b { color: var(--accent); }
   dialog button { border: 1px solid var(--line); border-radius: 10px; background: var(--soft); padding: 7px 16px; font-weight: 600; }
   .segments { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
   .segments button { border: 0; background: none; padding: 7px 13px; font-weight: 600; color: var(--muted); }
@@ -407,16 +420,15 @@
     <main class="panel" id="stage">
       <header>
         <h1 id="title"></h1>
-        <p id="summary"></p>
       </header>
+      <aside id="info" hidden aria-label="About this run"></aside>
       <div id="view">
         <div id="scene"></div>
-        <div id="facts"><button id="notesButton" class="chip"></button></div>
         <div id="legend"></div>
         <div id="notes" hidden></div>
         <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
         <section id="side" aria-label="What the tinkerlings think and say, as it happens"></section>
-        <button id="sideToggle" class="chip"></button>
+        <div id="corner"><button id="notesButton" class="chip"></button><button id="sideToggle" class="chip"></button></div>
       </div>
       <div id="controls">
         <button id="play" aria-label="Play">▶</button>
@@ -493,12 +505,6 @@
     <p id="pickHint"></p>
     <div id="pickBody"></div>
     <form method="dialog"><button>Close</button></form>
-  </dialog>
-
-  <dialog id="runSetup">
-    <h2 id="setupTitle"></h2>
-    <div id="setupBody"></div>
-    <form method="dialog"><button type="button" id="startLike" class="button main">Start a run like this</button> <button>Close</button></form>
   </dialog>
 
   <dialog id="goOnDialog">

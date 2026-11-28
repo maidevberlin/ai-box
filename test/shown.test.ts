@@ -16,7 +16,7 @@ const exists = (name: string) => drawing(name) !== undefined;
 test('every doing is shown as its tool says, and the run\'s own doings too', () => {
   const shown = showing(orchard, {});
   assert.deepEqual(shown.walk, { icon: 'footprints' });
-  assert.deepEqual(shown.say, { icon: 'message-circle', standsOut: true });
+  assert.deepEqual(shown.say, { icon: 'message-circle', standsOut: true, overHead: true });
   assert.equal(shown.look!.overHead, true);
   assert.deepEqual(shown.wait, { icon: 'hourglass', overHead: true });
   assert.equal(shown.think!.icon, 'brain');

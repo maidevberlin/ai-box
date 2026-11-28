@@ -11,7 +11,7 @@ import { Film } from './film.ts';
 import { EVENTS, icon } from './icons.ts';
 import { $, api, clock, el, started } from './page.ts';
 import { named, onRuns, readRuns, type About } from './runs.ts';
-import { PLACE_COLOURS, Scene, type View } from './scene.ts';
+import { PLACE_COLOURS, Scene, type Above, type View } from './scene.ts';
 
 const POLL = 1000;   // how often a run that is going is read again, in milliseconds
 
@@ -30,6 +30,7 @@ let showing = false;              // the screen is open
 let speed = 1;
 let rows: { t: number; node: HTMLElement }[] = [];   // the conversation: a row for every event that has one
 let read = 0;                     // the events there are rows for already
+let written = new Map<string, { who: string; place: number; t: number }>();   // who wrote a note first, by its words
 let open: 'notes' | null = null;   // the panel on the drawing that is open
 
 /** Opens a run. At `moment` (seconds) if given; else a run that is going is followed live. */
@@ -47,7 +48,7 @@ export async function openRun(id: string, moment?: number): Promise<void> {
   heard = performance.now();
   film = new Film();
   film.add(answer.events);
-  rows = []; read = 0; names.clear();
+  rows = []; read = 0; names.clear(); written = new Map();
   kept.clear();
   $('side').replaceChildren();
   scene ??= new Scene($('scene'));
@@ -124,14 +125,14 @@ function once(key: string, value: string, set: () => void): void {
 function draw(): void {
   if (!showing || !about) return;
   const run = about;
-  // The head: the run's name, and what the reviewer wrote about it.
-  once('head', JSON.stringify([run.id, run.review, run.going, run.ended, whyNot]), () => {
-    const setup = el('button', 'cog', icon('settings'));
-    setup.title = 'How it was set up';
-    setup.onclick = () => void showSetup();
-    $('title').replaceChildren(named(run),
-      el('span', 'chip', run.title), ...run.models.map(model => el('span', 'chip', model)), el('span', 'chip', started(run.id)), setup);
-    $('summary').textContent = run.review?.summary ?? (run.going ? 'This run gets a name and a summary when it ends.' : run.ended ?? '');
+  // The head: the run's name, and an (i) for what there is to know about it (see showInfo).
+  once('head', JSON.stringify([run.id, run.review, run.going, run.ended, whyNot, infoOpen]), () => {
+    const name = el('span', 'named', named(run)), info = el('button', `info${infoOpen ? ' on' : ''}`, icon('info'));
+    info.title = 'About this run';
+    name.onclick = info.onclick = () => { infoOpen = !infoOpen; draw(); };
+    $('title').replaceChildren(name,
+      el('span', 'chip', run.title), ...run.models.map(model => el('span', 'chip', model)), el('span', 'chip', started(run.id)), info);
+    void showInfo(run);
     $('stop').hidden = !run.going;
     $('live').hidden = !run.going;
     const goOn = $('goOn') as HTMLButtonElement;
@@ -143,6 +144,8 @@ function draw(): void {
   const added: HTMLElement[] = [];
   for (; read < film.events.length; read++) {
     const event = film.events[read]!, node = row(event);
+    const words = event.type === 'act' && event.tool === 'note' ? String((event.args as { text?: string }).text ?? '').slice(0, 1000) : null;
+    if (words !== null && !written.has(words)) written.set(words, { who: nameOf(event), place: event.place as number, t: event.t });
     if (!node) continue;
     rows.push({ t: event.t, node });
     added.push(node);
@@ -178,7 +181,7 @@ function drawMoment(): void {
     }
     const view = film.at(index);
     scene!.show(view, aboves, !forward);
-    drawFacts(view, index);
+    drawFacts(view, index, aboves);
     shown = index;
   }
   drawConversation();
@@ -204,18 +207,19 @@ function drawConversation(): void {
 }
 
 /** What is written on the drawing: a legend of the agents that are alive at this moment
- *  (their colour, whose model, their name, what they did last, and what their world puts over
+ *  (their colour, whose model, their name, what they did last, whether they are talking, and what their world puts over
  *  them), and a button for the notes that are in the world now, lying somewhere or held by an
  *  agent, that opens a list of them. Clicking an agent of the legend centres the view on it. */
-function drawFacts(view: View, index: number): void {
+function drawFacts(view: View, index: number, aboves: Map<number, Above>): void {
   const agents = new Map(agentsUntil(index).map(agent => [agent.number, agent]));
   const last = film.lastDoing(index);
   const alive = view.bodies.filter(body => body.number !== undefined && !body.dead && agents.has(body.number));
   const legend = alive.map(body => ({ body, agent: agents.get(body.number!)!, doing: last.get(agents.get(body.number!)!.place) }));
-  once('legend', JSON.stringify(legend.map(({ agent, doing, body }) => [agent, doing, body.over])), () => {
+  const talks = (place: number) => !!aboves.get(place)?.talks;
+  once('legend', JSON.stringify(legend.map(({ agent, doing, body }) => [agent, doing, body.over, talks(agent.place)])), () => {
     $('legend').replaceChildren(...legend.map(({ body, agent, doing }) => {
-      const who = el('button', 'who', el('span', 'swatch'), logo(makerOf(agent.model), '', 18), el('b', '', body.itself ?? agent.name),
-        el('span', 'doing', doing ? icon(iconOf(doing)) : ''),
+      const who = el('button', `who${talks(agent.place) ? ' talks' : ''}`, el('span', 'swatch'), logo(makerOf(agent.model), '', 18), el('b', '', body.itself ?? agent.name),
+        el('span', 'doing', talks(agent.place) ? icon(iconOf('say')) : doing ? icon(iconOf(doing)) : ''),
         body.over ? el('span', 'has', icon(body.over.icon), body.over.text) : null);
       who.style.setProperty('--place', colour(agent.place));
       who.title = [body.itself && `calls itself ${body.itself}`, agent.model, doing && `last: ${doing}`].filter(Boolean).join(' · ');
@@ -223,16 +227,29 @@ function drawFacts(view: View, index: number): void {
       return who;
     }));
   });
+  // The notes: who wrote one and when is in the record (they never sign them), as the first
+  // note written with its words. One nobody wrote, the world put there.
   const notes = [
-    ...view.items.filter(item => item[4] !== undefined).map(([x, y, , , text]) => ({ where: `at (${x}, ${y})`, text: text! })),
-    ...view.bodies.filter(body => body.holds !== undefined).map(body => ({ where: `in the hand of ${names.get(body.number!) ?? `tinkerling ${body.number}`}`, text: body.holds! })),
-  ];
+    ...view.items.filter(item => item[4] !== undefined).map(([x, y, , , text]) => ({ where: `lies at (${x}, ${y})`, text: text! })),
+    ...view.bodies.filter(body => body.holds !== undefined).map(body => ({ where: `${names.get(body.number!) ?? `Tinkerling ${body.number}`} holds it`, text: body.holds! })),
+  ].map(note => ({ ...note, by: written.get(note.text) }))
+    .sort((a, b) => (b.by?.t ?? -1) - (a.by?.t ?? -1));
   once('notes', JSON.stringify([notes, open]), () => {
-    $('notesButton').replaceChildren(icon(open === 'notes' ? 'x' : 'sticky-note'), `${notes.length} note${notes.length === 1 ? '' : 's'}`);
+    $('notesButton').replaceChildren(icon('sticky-note'), `${notes.length} note${notes.length === 1 ? '' : 's'}`);
+    $('notesButton').classList.toggle('on', open === 'notes');
     $('notes').hidden = open !== 'notes';
-    $('notes').replaceChildren(...(notes.length ? notes.map(note =>
-      el('div', 'note', el('div', 'where', note.where), el('div', 'text', note.text)))
-      : [el('div', 'note', 'There are no notes in the world at this moment.')]));
+    $('notes').replaceChildren(...(notes.length ? notes.map(({ text, where, by }) => {
+      const when = by ? el('button', 'when', clock(by.t)) : null;
+      if (when) {
+        when.title = 'Go to the moment it was written';
+        when.onclick = () => { at = by!.t; playing = live = false; draw(); };
+      }
+      const note = el('div', 'note', el('div', 'text', text),
+        el('div', 'by', ...(by ? [el('b', '', by.who), 'wrote it at', when] : ['Left by the world']), '·', where));
+      if (by) note.style.setProperty('--place', colour(by.place));
+      note.firstElementChild!.addEventListener('click', () => note.classList.toggle('whole'));
+      return note;
+    }) : [el('div', 'empty', 'There are no notes in the world at this moment.')]));
   });
 }
 
@@ -318,20 +335,32 @@ $('sideToggle').onclick = () => {
 drawToggle();
 $('notesButton').onclick = () => {
   open = open ? null : 'notes';
-  shown = -2;   // (drawn again, with the panel)
+  shown = -2;   // (drawn again, with the notes)
   draw();
 };
-// How the run on screen was set up: its settings, and who lived in it. (What differs from
-// what is usual for the world now is marked.)
-async function showSetup(): Promise<void> {
-  if (!about) return;
-  const run = about, world = (await api<WorldInfo[]>('/api/worlds')).find(found => found.name === run.world);
+// About the run on screen, in a panel over the right of the screen: what the reviewer wrote,
+// how it was set up (its settings, and who lived in it; what differs from what is usual for the
+// world now is marked), and a button to start a run like it.
+let infoOpen = false;
+async function showInfo(run: About): Promise<void> {
+  $('info').hidden = !infoOpen;
+  if (!infoOpen) return;
+  const world = (await api<WorldInfo[]>('/api/worlds')).find(found => found.name === run.world);
+  if (about?.id !== run.id) return;   // (another run is on screen by now)
   const said = (value: unknown) => (value === true ? 'on' : value === false ? 'off' : value === '' ? '–' : Array.isArray(value) ? value.join(', ') || '–' : String(value));
   const fact = (title: string, value: unknown, usual?: unknown) =>
     el('div', `fact${usual !== undefined && JSON.stringify(usual) !== JSON.stringify(value) ? ' changed' : ''}`, el('span', '', title), el('b', '', said(value)));
-  $('setupTitle').textContent = `${run.title} · ${started(run.id)}`;
-  $('setupBody').replaceChildren(
+  const close = el('button', 'close', icon('x'));
+  close.title = 'Close';
+  close.onclick = () => { infoOpen = false; draw(); };
+  const again = el('button', 'button main', 'Start a run like this');
+  again.onclick = () => startLike(run);
+  $('info').replaceChildren(close,
+    el('h2', '', named(run)),
+    el('p', 'summary', run.review?.summary ?? (run.going ? 'This run gets a name and a summary when it ends.' : run.ended ?? '')),
     el('h3', '', 'The world'),
+    fact('World', run.title),
+    fact('Started', started(run.id)),
     fact('It ends after', run.minutes ? `${run.minutes} minute${run.minutes === 1 ? '' : 's'}` : 'no time limit', world && (world.minutes ? `${world.minutes} minute${world.minutes === 1 ? '' : 's'}` : 'no time limit')),
     ...Object.entries(run.chosen ?? {}).map(([name, value]) => fact(world?.settings[name]?.title ?? name, value, world?.settings[name]?.usual)),
     ...Object.entries(run.roles ?? {}).flatMap(([name, role]) => {
@@ -347,13 +376,12 @@ async function showSetup(): Promise<void> {
           fact('Cannot', agent.without.join(', ') || 'nothing is switched off', agent.without.length ? null : undefined),
         ]),
       ];
-    }));
-  $('startLike').onclick = () => {
-    ($('runSetup') as HTMLDialogElement).close();
-    startLike(run);
-  };
-  ($('runSetup') as HTMLDialogElement).showModal();
+    }),
+    el('div', 'actions', again));
 }
+document.addEventListener('keydown', key => {
+  if (key.key === 'Escape' && infoOpen && showing) { infoOpen = false; draw(); }
+});
 $('speed').onchange = event => { speed = Number((event.target as HTMLSelectElement).value); };
 $('live').onclick = () => { live = playing = true; at = whole(); draw(); };
 $('stop').onclick = () => about && api(`/api/runs/${about.id}/stop`, {});
