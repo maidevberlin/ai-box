@@ -24,7 +24,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { ask, MINDS, minds, populate, usualModel } from '../engine/agents.ts';
-import { HOME, install } from '../engine/programs.ts';
+import { HOME } from '../engine/programs.ts';
 import { Doors } from '../engine/doors.ts';
 import { review } from '../engine/review.ts';
 import { Run, runId, WAIT, type Event } from '../engine/run.ts';
@@ -94,7 +94,7 @@ async function start(wish: Record<string, any>): Promise<string | null> {
 function setups(): Promise<Record<string, unknown>[]> {
   return Promise.all(Object.entries(MINDS).map(async ([kind, mind]) => ({
     kind, title: mind.title, about: mind.about, site: mind.site, local: !!mind.local,
-    installs: !!mind.package, logs: !!mind.login, keys: mind.keys ? await mind.keys.kept() : null,
+    installs: !!mind.install, logs: !!mind.login, keys: mind.keys ? await mind.keys.kept() : null,
     ...await mind.setup().catch(() => ({ there: false })),
   })));
 }
@@ -103,8 +103,8 @@ function setups(): Promise<Record<string, unknown>[]> {
 async function setUp(kind: string, action: string, wish: Record<string, any>): Promise<Record<string, unknown>> {
   const mind = MINDS[kind];
   if (!mind) return { error: 'There is no such AI.' };
-  if (action === 'install' && mind.package) {
-    await install(mind.package);
+  if (action === 'install' && mind.install) {
+    await mind.install();
     return { ok: true };
   }
   if (action === 'login' && mind.login) {

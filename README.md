@@ -37,6 +37,7 @@ connections":
 
 - [Claude Code](https://claude.com/claude-code), with a Claude subscription or an Anthropic account.
 - [Codex](https://developers.openai.com/codex), with a ChatGPT account.
+- [Gemini](https://antigravity.google/docs/cli/reference), through Antigravity, with a Google account. It also offers some Claude models and OpenAI's open one.
 - [pi](https://pi.dev), with API keys for Z.ai (GLM), DeepSeek, OpenRouter, Mistral and many more.
 - Models on this computer: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai) or
   llama.cpp's server.

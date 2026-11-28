@@ -9,7 +9,7 @@ import type { ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { lines, type MindKind, type Provider } from '../mind.ts';
-import { HOME as BOX, start, version } from '../programs.ts';
+import { HOME as BOX, install, start, version } from '../programs.ts';
 
 const HOME = join(BOX, 'codex');
 
@@ -80,7 +80,7 @@ export const codex: MindKind = {
   title: 'Codex',
   about: 'Your ChatGPT account.',
   site: 'https://developers.openai.com/codex',
-  package: '@openai/codex',
+  install: () => install('@openai/codex'),
 
   async setup() {
     const installed = await version('codex');

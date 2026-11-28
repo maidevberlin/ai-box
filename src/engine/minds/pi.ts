@@ -11,7 +11,7 @@ import type { ChildProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lines, type MindKind, type Provider } from '../mind.ts';
-import { HOME as BOX, run, start, version } from '../programs.ts';
+import { HOME as BOX, install, run, start, version } from '../programs.ts';
 
 const HOME = join(BOX, 'pi');
 /** Where pi keeps API keys and logins: only the person can read it. */
@@ -65,7 +65,7 @@ export const pi: MindKind = {
   title: 'pi',
   about: 'API keys of many providers: Z.ai (GLM), DeepSeek, OpenRouter, Mistral and more.',
   site: 'https://pi.dev',
-  package: '@earendil-works/pi-coding-agent',
+  install: () => install('@earendil-works/pi-coding-agent'),
 
   async setup() {
     const installed = await version('pi');

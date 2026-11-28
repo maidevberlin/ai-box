@@ -2,7 +2,7 @@
 // It gets nothing but its world's tools: no built-in tools, no settings, no skills, no memory.
 
 import { lines, type MindKind, type Provider } from '../mind.ts';
-import { run, start, version } from '../programs.ts';
+import { install, run, start, version } from '../programs.ts';
 
 const BARE = ['--tools', '', '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence', '--strict-mcp-config'];
 const TALKING = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
@@ -11,7 +11,7 @@ export const claude: MindKind = {
   title: 'Claude Code',
   about: 'Your Claude subscription, or an Anthropic account.',
   site: 'https://claude.com/claude-code',
-  package: '@anthropic-ai/claude-code',
+  install: () => install('@anthropic-ai/claude-code'),
 
   async setup() {
     const installed = await version('claude');

@@ -73,8 +73,8 @@ export interface MindKind {
   about: string;
   /** Where a person gets it themselves. */
   site: string;
-  /** The npm package Tinkerlings can install it from itself. */
-  package?: string;
+  /** Installs it, into Tinkerlings' own folder: if Tinkerlings can. */
+  install?(): Promise<void>;
   /** Its models run on this computer: no account, nothing leaves it. */
   local?: true;
   setup(): Promise<Setup>;
