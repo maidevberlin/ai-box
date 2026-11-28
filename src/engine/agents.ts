@@ -10,13 +10,14 @@ import { parted, type Mind, type MindKind, type Provider } from './mind.ts';
 import { claude } from './minds/claude.ts';
 import { codex } from './minds/codex.ts';
 import { gemini } from './minds/gemini.ts';
+import { grok } from './minds/grok.ts';
 import { llamacpp, lmstudio, ollama } from './minds/local.ts';
 import { pi } from './minds/pi.ts';
 import type { Run } from './run.ts';
 import type { Agent, Role } from './types.ts';
 
 /** Every kind of mind there is, by the name a role's model starts with. */
-export const MINDS: Record<string, MindKind> = { claude, codex, gemini, pi, ollama, lmstudio, llamacpp };
+export const MINDS: Record<string, MindKind> = { claude, codex, gemini, grok, pi, ollama, lmstudio, llamacpp };
 
 const NEUTRAL = join(tmpdir(), 'w');   // where agents run: the path tells them nothing
 

@@ -27,12 +27,20 @@ function own(name: string): string | null {
   return null;
 }
 
+/** Whether a file is a script for Node, not a program of its own (some packages put their
+ *  program where their script was, once installed). */
+function scripted(path: string): boolean {
+  const start = readFileSync(path).subarray(0, 64).toString('latin1');
+  return /\.[cm]?js$/.test(path) || (start.startsWith('#!') && start.split('\n')[0]!.includes('node'));
+}
+
 /** Starts a program: Tinkerlings' own copy if it installed one (a script run by this Node, the
  *  same way on every system, or a program of its own), else the one the person has. */
 export function start(name: string, args: string[], options: SpawnOptions): ChildProcess {
   if (existsSync(placed(name))) return spawn(placed(name), args, options);
   const script = own(name);
-  return script ? spawn(process.execPath, [script, ...args], options) : spawn(name, args, options);
+  if (!script) return spawn(name, args, options);
+  return scripted(script) ? spawn(process.execPath, [script, ...args], options) : spawn(script, args, options);
 }
 
 /** Runs a program to its end: what it printed, and how it ended. Not there: `code` is null. */
@@ -55,15 +63,16 @@ export async function version(name: string): Promise<string | null> {
   return code === 0 ? out.trim().split('\n').at(-1)!.trim() : null;
 }
 
-/** Installs an npm package into Tinkerlings' own folder, with the npm that came with this Node. */
-export async function install(pack: string): Promise<void> {
+/** Installs an npm package into Tinkerlings' own folder, with the npm that came with this Node.
+ *  `env`: what its own install script is to know (where its program's home is). */
+export async function install(pack: string, env: Record<string, string> = {}): Promise<void> {
   mkdirSync(TOOLS, { recursive: true });
   // (Beside node on Windows, in lib/ next to bin/ elsewhere.)
   const npm = [join(dirname(process.execPath), 'node_modules'), join(dirname(process.execPath), '..', 'lib', 'node_modules')]
     .map(modules => join(modules, 'npm', 'bin', 'npm-cli.js')).find(existsSync);
   const [command, args] = npm ? [process.execPath, [npm]] : ['npm', []];
   const done = await new Promise<{ code: number | null; out: string }>(resolve => {
-    const child = spawn(command, [...args, 'install', '--prefix', TOOLS, '--no-fund', '--no-audit', `${pack}@latest`], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, [...args, 'install', '--prefix', TOOLS, '--no-fund', '--no-audit', `${pack}@latest`], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
     let out = '';
     child.stdout.on('data', chunk => out += chunk);
     child.stderr.on('data', chunk => out += chunk);

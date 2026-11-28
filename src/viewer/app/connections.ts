@@ -11,8 +11,8 @@ interface Setup {
   there: boolean; version?: string; account?: string;
 }
 
-/** The logo an AI is shown with: Codex is OpenAI's, Claude Code is Claude's, Antigravity Google's. */
-const LOGOS: Record<string, string> = { claude: 'claude', codex: 'openai', gemini: 'google' };
+/** The logo an AI is shown with: Codex is OpenAI's, Claude Code is Claude's, Antigravity Google's, Grok Build xAI's. */
+const LOGOS: Record<string, string> = { claude: 'claude', codex: 'openai', gemini: 'google', grok: 'xai' };
 
 let waiting: ReturnType<typeof setInterval> | null = null;
 /** What is being done right now, for each AI: shown on its card instead of its buttons. */
