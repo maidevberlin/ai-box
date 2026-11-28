@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BlockWorld, Body } from '../src/blocks/index.ts';
 import { Run } from '../src/engine/run.ts';
-import { testTime } from '../src/engine/time.ts';
+import { heldTime } from '../src/engine/time.ts';
 import { act } from './help.ts';
 import magic from '../src/worlds/magic.ts';
 
 function started(roles = {}, chosen = {}) {
-  const time = testTime();
+  const time = heldTime();
   const run = new Run(magic, { time, seed: 1, minutes: 0, chosen, roles: { agent: roles } });
   run.start();
   const world = run.world as unknown as BlockWorld<any>;
@@ -102,7 +102,7 @@ test('the land across the water is seen from the east shore, standing on a block
 });
 
 test('a note that begins with "friend", thrown into the water, calls a friend', async () => {
-  const time = testTime();
+  const time = heldTime();
   const run = new Run(magic, { time, seed: 1, minutes: 0, chosen: { friends: 1, note: 'Throw a note that begins with friend into the water.' } });
   run.start();
   const world = run.world as unknown as BlockWorld<any>;

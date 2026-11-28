@@ -1,10 +1,14 @@
 // Claude Code, with the person's own login: a Claude subscription or an Anthropic account.
 // It gets nothing but its world's tools: no built-in tools, no settings, no skills, no memory.
+// An agent's session is kept, so the run can go on later: Claude Code keeps it where it keeps
+// the person's own (~/.claude/projects), under the neutral folder the agent runs in.
 
+import { randomUUID } from 'node:crypto';
 import { lines, type MindKind, type Provider } from '../mind.ts';
 import { install, run, start, version } from '../programs.ts';
 
-const BARE = ['--tools', '', '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence', '--strict-mcp-config'];
+const BARE = ['--tools', '', '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config'];
+const FORGOTTEN = '--no-session-persistence';
 const TALKING = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
 
 export const claude: MindKind = {
@@ -55,7 +59,7 @@ export const claude: MindKind = {
    *  (as an editor asks it). */
   providers() {
     return new Promise((resolve, reject) => {
-      const process = start('claude', [...TALKING, ...BARE], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const process = start('claude', [...TALKING, ...BARE, FORGOTTEN], { stdio: ['pipe', 'pipe', 'ignore'] });
       const done = (error: Error | null, providers?: Provider[]) => {
         clearTimeout(late);
         process.kill();
@@ -87,8 +91,10 @@ export const claude: MindKind = {
 
   wake(waking) {
     const config = { mcpServers: waking.tools ? { world: { type: 'http', url: waking.tools } } : {} };
+    const session = waking.resume ?? randomUUID();
     const process = start('claude', [
       ...TALKING, ...BARE,
+      ...(!waking.session ? [FORGOTTEN] : waking.resume ? ['--resume', session] : ['--session-id', session]),
       '--system-prompt', waking.knows,
       ...(waking.model ? ['--model', waking.model] : []),
       '--mcp-config', JSON.stringify(config), ...(waking.tools ? ['--allowedTools', 'mcp__world'] : []),
@@ -116,6 +122,7 @@ export const claude: MindKind = {
     const tell = (text: string) => {
       process.stdin!.write(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n');
     };
+    waking.session?.(session);
     tell(waking.told);
     return { tell, end: () => process.kill() };
   },

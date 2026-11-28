@@ -85,6 +85,21 @@ export class Film {
     if (changes.signs) this.signs = changes.signs;
   }
 
+  /** What each agent did last until an event, since it woke up: a tool's name, `wait`, `think`
+   *  or `write`. By place. */
+  lastDoing(index: number): Map<number, string> {
+    const found = new Map<number, string>(), before = new Set<number>();
+    for (let i = index; i >= 0; i--) {
+      const event = this.events[i]!, place = event.place as number;
+      if (typeof place !== 'number' || found.has(place) || before.has(place)) continue;
+      const doing = event.type === 'act' ? String(event.tool) : event.type === 'waits' ? 'wait'
+        : event.type === 'think' || event.type === 'write' ? event.type : undefined;
+      if (doing) found.set(place, doing);
+      else if (event.type === 'wake') before.add(place);   // (what was before is another life's)
+    }
+    return found;
+  }
+
   /** What is over each agent's head besides what the world puts there (see Picture): what it
    *  said out loud a moment ago, and the icon of what it does that is not seen in the world
    *  (as its world says: `doings`), for a moment, or for as long as it waits. */

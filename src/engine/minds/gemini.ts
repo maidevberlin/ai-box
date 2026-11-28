@@ -30,6 +30,7 @@ export const gemini = acp({
   program: 'agy',
   args: ['acp'],
   account: 'Google',
+  resumes: true,   // (tried: it tells the whole session again, then goes on)
 
   maker(model) {
     const word = model.split('-')[0]!;

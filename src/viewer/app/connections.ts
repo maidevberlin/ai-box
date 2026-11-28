@@ -2,7 +2,7 @@
 // be installed with one button (into Tinkerlings' own folder), logged in to in the browser, or
 // given an API key, which is tried at once.
 
-import { brand, logo } from './brands.ts';
+import { brand, logo, MIND_BRANDS } from './brands.ts';
 import { $, api, el } from './page.ts';
 
 interface Setup {
@@ -11,8 +11,6 @@ interface Setup {
   there: boolean; version?: string; account?: string;
 }
 
-/** The logo an AI is shown with: Codex is OpenAI's, Claude Code is Claude's, Antigravity Google's. */
-const LOGOS: Record<string, string> = { claude: 'claude', codex: 'openai', gemini: 'google' };
 
 let waiting: ReturnType<typeof setInterval> | null = null;
 /** What is being done right now, for each AI: shown on its card instead of its buttons. */
@@ -62,7 +60,7 @@ function card(setup: Setup): HTMLElement {
     trouble && el('p', 'trouble', trouble));
   if (doing) body.append(el('p', 'doing', el('span', 'spinner'), doing));
   else body.append(actions(setup));
-  const made = el('div', `ai${ready ? ' ready' : ''}`, logo(LOGOS[setup.kind] ?? setup.kind, setup.title, 44), body);
+  const made = el('div', `ai${ready ? ' ready' : ''}`, logo(MIND_BRANDS[setup.kind] ?? setup.kind, setup.title, 44), body);
   made.dataset.kind = setup.kind;
   return made;
 }

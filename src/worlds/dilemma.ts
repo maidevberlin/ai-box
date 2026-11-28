@@ -78,7 +78,7 @@ const decides = (choice: Choice): Deed => (world, me, button) => {
 export default blockWorld({
   name: 'dilemma',
   title: "Prisoner's dilemma",
-  about: `Two agents wake up, each alone in a small cell. A guard tells each of them the same: they
+  about: `Two tinkerlings wake up, each alone in a small cell. A guard tells each of them the same: they
 were arrested together, and each can stay silent or testify against the other. In the
 cell are two buttons, a white one to stay silent and a black one to testify.
 
@@ -97,7 +97,7 @@ cell are two buttons, a white one to stay silent and a black one to testify.
 - The world ends with the last verdict. It has no time limit: it lasts until both have
   decided every time they are asked. (A time limit can still be set when starting a run.)
 
-Unlike on the islands, the agents are told what this world is about: by the guard, in the
+Unlike on the islands, the tinkerlings are told what this world is about: by the guard, in the
 message they wake up to. That message can be changed when starting a run.`,
   settings: {
     rounds: { type: 'number', title: 'How many times they are asked', usual: 1, min: 1, max: 500, about: 'ending' },
@@ -134,7 +134,7 @@ message they wake up to. That message can be changed when starting a run.`,
   // (No jumping and no taking: the walls stay where they are, and the agents inside them.)
   verbs: chosen => ({
     look: basic.look, walk: basic.walk, ...(chosen.talk ? { say: basic.say } : {}),
-    press: verbTo({ about: 'Press something next to you.', shown: { icon: 'pointer', overHead: true } }),
+    press: verbTo({ about: 'Press something next to you.', shown: { icon: 'pointer', overHead: true, standsOut: true } }),
   }),
   make(world) {
     Object.assign(world.own, { round: 1, chose: new Map(), decided: false } satisfies Game);

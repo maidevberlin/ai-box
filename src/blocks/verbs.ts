@@ -400,7 +400,7 @@ export function asTools(verbs: Record<string, Verb>, kinds: { things: Record<str
 
 const look = verb({
   about: 'Look around, or closely at something next to you.',
-  shown: { icon: 'eye', folded: true, overHead: true },
+  shown: { icon: 'eye', overHead: true },
   args: { what: { ...WHAT, about: `left out: all around you. Or ${WHAT.about}`, optional: true } },
   does(world, me, { what }) {
     if (what === undefined || /^(all )?around$/i.test(what.trim())) return surroundings(world, me);
@@ -435,7 +435,7 @@ function legs(text: string): [steps: number, way: string][] | undefined {
 
 const walk = verb({
   about: 'Walk a path: steps and directions, one after the other, like "3 east" or "2 north, 4 north-east". You stop where something is in your way or the land ends. Tells what is in sight then.',
-  shown: { icon: 'footprints', folded: true },
+  shown: { icon: 'footprints' },
   args: { path: { type: 'text', about: `directions are ${Object.keys(WAYS).join(', ')}` } },
   does(world, me, args) {
     const path = legs(args.path);
@@ -480,7 +480,7 @@ const walk = verb({
 
 const jump = verb({
   about: 'Jump in a direction. More strength gets you further and higher.',
-  shown: { icon: 'arrow-big-up', folded: true },
+  shown: { icon: 'arrow-big-up' },
   args: {
     direction: { type: 'one of', options: Object.keys(DIRECTIONS) },
     strength: { type: 'number', min: 1, whole: true },
@@ -529,7 +529,7 @@ function outOfReach(world: BlockWorld<any>, me: Body, cell: Cell, takingBlock = 
 
 const take = verbTo({
   about: 'Take something: what lies on top where you point.',
-  shown: { icon: 'hand-grab', folded: true },
+  shown: { icon: 'hand-grab' },
   usually: kind => !('ground' in kind && kind.ground),   // anything loose
   does(world, me, thing) {
     if (thing.body) return 'You cannot carry somebody.';
@@ -552,7 +552,7 @@ const take = verbTo({
 
 const put = verb({
   about: 'Put down what you carry.',
-  shown: { icon: 'arrow-down-to-dot', folded: true },
+  shown: { icon: 'arrow-down-to-dot' },
   args: { where: { type: 'text', about: `a position like ${POSITION}, or "here", or a name you gave a place or a thing there` } },
   does(world, me, { where }) {
     const thing = me.hand;
@@ -594,7 +594,7 @@ const put = verb({
 
 const throwIt = verb({
   about: 'Throw what you carry.',
-  shown: { icon: 'send', folded: true },
+  shown: { icon: 'send' },
   args: {
     direction: { type: 'number', about: 'compass degrees: 0 is north, 90 is east' },
     angle: { type: 'number', about: 'degrees above the ground, 0 to 90', min: 0, max: 90 },
@@ -688,7 +688,7 @@ const throwIt = verb({
 
 const say = verb({
   about: 'Say something out loud.',
-  shown: { icon: 'message-circle' },
+  shown: { icon: 'message-circle', standsOut: true },
   args: { text: { type: 'text' }, loudness: { type: 'one of', options: ['whisper', 'normal', 'shout'], optional: true } },
   does(world, me, { text, loudness }) {
     const said = text.slice(0, 500), how = (loudness ?? 'normal') as Loudness;
@@ -699,7 +699,7 @@ const say = verb({
 
 const note = verb({
   about: 'Write a note.',
-  shown: { icon: 'sticky-note', overHead: true },
+  shown: { icon: 'sticky-note', standsOut: true, overHead: true },
   args: { text: { type: 'text' } },
   does(_world, me, { text }) {
     if (me.hand) return 'Your hands are full.';
@@ -709,13 +709,17 @@ const note = verb({
 });
 
 const name = verb({
-  about: 'Give something a name of your own: what you hold, or someone or something you see. You can point at it by that name then.',
-  shown: { icon: 'tag', overHead: true },
-  args: { name: { type: 'text' }, what: WHAT },
+  about: 'Give something a name of your own: what you hold, someone or something you see, or yourself. You can point at it by that name then.',
+  shown: { icon: 'tag', standsOut: true, overHead: true },
+  args: { name: { type: 'text' }, what: { ...WHAT, about: `${WHAT.about}, or "yourself"` } },
   does(world, me, args) {
     const given = args.name.trim().slice(0, 40), names = inner(world);
     if (!given) return 'Name is missing.';
-    if (/^(here|hand|around)$/i.test(given) || names.places.meant(me.cell, given)) return 'That cannot be a name: it already means something.';
+    if (/^(here|hand|around|yourself)$/i.test(given) || names.places.meant(me.cell, given)) return 'That cannot be a name: it already means something.';
+    if (/^yourself$/i.test(args.what.trim())) {
+      names.callIt(me, me, given);
+      return `You call yourself "${given}" now.`;
+    }
     const target = aim(world, me, args.what, 'sight');
     if (typeof target === 'string') return target;
     if (target.hand) {
@@ -752,7 +756,7 @@ const name = verb({
 /** Whether something can be destroyed is up to its kind. Usually only notes can. */
 const destroy = verbTo({
   about: 'Destroy something for good.',
-  shown: { icon: 'hammer' },
+  shown: { icon: 'hammer', standsOut: true },
   does(world, me, thing) {
     if (thing.body) return world.die(thing.body, 'You were destroyed.') && `You destroyed ${someone(world, me, thing.body, true)}.`;
     if (thing.item) world.removeItem(thing.item);
@@ -766,7 +770,7 @@ const destroy = verbTo({
  *  unless its kind says so. */
 const push = verbTo({
   about: 'Push something or somebody next to you away from you.',
-  shown: { icon: 'move', folded: true },
+  shown: { icon: 'move', standsOut: true },
   does(world, me, thing) {
     const [x, y] = thing.cell, dx = x - me.cell[0], dy = y - me.cell[1];
     if (thing.inHand) return 'You hold it.';
@@ -805,14 +809,14 @@ const push = verbTo({
 
 const clock = verb({
   about: 'Look at your watch.',
-  shown: { icon: 'clock', folded: true, overHead: true },
+  shown: { icon: 'clock', overHead: true },
   args: {},
-  does: () => `It is ${new Date().toTimeString().slice(0, 8)}.`,
+  does: world => `It is ${world.clock().toTimeString().slice(0, 8)}.`,
 });
 
 const leave = verb({
   about: 'Leave this world for good.',
-  shown: { icon: 'door-open' },
+  shown: { icon: 'door-open', standsOut: true },
   args: {},
   does: (world, me) => world.leave(me, 'It left the world.') && 'You have left.',
 });

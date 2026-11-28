@@ -47,6 +47,16 @@ const BRANDS: [RegExp, Brand][] = [
   [/^llamacpp/, { title: 'llama.cpp' }],
 ];
 
+/** The provider an AI that is not one is shown as: Codex is OpenAI's, Claude Code Claude's, Antigravity Google's. */
+export const MIND_BRANDS: Record<string, string> = { claude: 'claude', codex: 'openai', gemini: 'google' };
+
+/** Whose a model of a run is ("gemini/claude-sonnet-5", "pi/zai/glm-5", "ollama/qwen3"): by
+ *  the model's own name if that says it, else by the AI that runs it. */
+export function makerOf(model: string): string {
+  const at = model.indexOf('/'), kind = at < 0 ? model : model.slice(0, at), own = at < 0 ? '' : model.slice(at + 1);
+  return BRANDS.some(([pattern]) => pattern.test(own)) ? own : MIND_BRANDS[kind] ?? kind;
+}
+
 /** The brand of a provider. `title` is what its mind calls it: used when it says more than the id. */
 export function brand(id: string, title: string): Brand {
   const known = BRANDS.find(([pattern]) => pattern.test(id))?.[1];

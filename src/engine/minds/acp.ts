@@ -35,6 +35,8 @@ export interface Speaker {
    *  off, and how it is told what it knows (ACP has no place for that: `meta` goes with the
    *  new session, as the agent's own addition to the protocol). */
   bare(waking: Pick<Waking, 'knows' | 'folder'>): { args?: string[]; env?: Record<string, string>; meta?: object };
+  /** It can open a session it was in before again (ACP's session/load). */
+  resumes?: true;
   /** Which of the ways it offers to log in is logging in in the browser. */
   signIn?(methods: { id: string; name: string }[]): string | undefined;
 }
@@ -187,10 +189,10 @@ export function acp(speaker: Speaker): MindKind {
         if (text) (pending!.kind === 'thought' ? waking.thinks : waking.writes)(text);
         pending = null;
       };
-      let names: string[] = [];
+      let names: string[] = [], loading = false;
       const bare = speaker.bare(waking);
       const agent = speaking(speaker, waking.folder, bare, message => {
-        if (message.method !== 'session/update') return;
+        if (message.method !== 'session/update' || loading) return;   // (an old session told again: heard already)
         waking.heard(JSON.stringify(message));
         const update = message.params?.update ?? {};
         const kind = update.sessionUpdate === 'agent_thought_chunk' ? 'thought' : update.sessionUpdate === 'agent_message_chunk' ? 'text' : null;
@@ -221,11 +223,17 @@ export function acp(speaker: Speaker): MindKind {
 
       (async () => {
         names = waking.tools ? await toolNames(waking.tools) : [];
-        const opened: Session = await agent.ask('session/new', {
+        const opening = {
           cwd: waking.folder, mcpServers: waking.tools ? [{ type: 'http', name: 'world', url: waking.tools, headers: [] }] : [],
-          ...bare.meta && { _meta: bare.meta } });
+          ...bare.meta && { _meta: bare.meta } };
+        loading = !!waking.resume;
+        const opened: Session = waking.resume
+          ? { sessionId: waking.resume, ...await agent.ask('session/load', { ...opening, sessionId: waking.resume }) }
+          : await agent.ask('session/new', opening);
+        loading = false;
         if (waking.model) await choose(agent.ask, opened, waking.model);
         sessionId = opened.sessionId;
+        if (speaker.resumes) waking.session?.(sessionId);
         turn(waiting.shift()!);
       })().catch((error: Error) => {
         waking.failed(`${error.message}\n`);

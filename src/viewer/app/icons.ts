@@ -6,7 +6,7 @@ import { createElement, icons, type IconNode } from 'lucide';
 
 /** The icons of what happens in a run besides what agents do with their tools. */
 export const EVENTS: Record<string, string> = {
-  wake: 'sunrise', senses: 'bell-ring', death: 'skull', end: 'flag', error: 'circle-exclamation-point',
+  wake: 'sunrise', senses: 'bell-ring', death: 'skull', end: 'flag', resume: 'play', error: 'circle-exclamation-point',
 };
 
 const DOT: IconNode = [['circle', { cx: '12', cy: '12', r: '2' }]];

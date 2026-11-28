@@ -10,46 +10,98 @@ export interface Time {
   stop(): void;
 }
 
-export function realTime(): Time {
-  const start = performance.now();
-  const pending = new Set<ReturnType<typeof setTimeout>>();
+export function realTime(from = 0): Time {
+  // (It begins when whatever made it is done: all of that happens at `from` exactly, as it
+  //  would played again.)
+  let start: number | null = null;
+  setImmediate(() => { start ??= performance.now() - from * 1000; });
+  const clock = () => (start === null ? from : (performance.now() - start) / 1000);
+  // What was asked for happens in order (by when, then by who asked first), one at a time, so
+  // that what each sets going happens before the next. While it happens, it is the moment it
+  // was asked for, not the moment the computer got to it. And the world's time does not pass
+  // that moment before it happened: whatever comes from outside meanwhile comes at that moment.
+  // So the world's time does not drift, and played again (heldTime) it goes the same way.
+  let waiting: { at: number; order: number; what: () => void }[] = [];
+  let at: number | null = null, count = 0, timer: ReturnType<typeof setTimeout> | null = null;
+  const now = () => at ?? Math.min(clock(), waiting[0]?.at ?? Infinity);
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = waiting.length ? setTimeout(next, Math.max(0, waiting[0]!.at - clock()) * 1000) : null;
+  };
+  const next = () => {
+    timer = null;
+    const entry = waiting.shift();
+    if (entry) {
+      at = entry.at;
+      try { entry.what(); } finally { at = null; }
+    }
+    schedule();
+  };
   return {
-    now: () => (performance.now() - start) / 1000,
+    now,
     after(seconds, what) {
-      const timer = setTimeout(() => { pending.delete(timer); what(); }, Math.max(0, seconds) * 1000);
-      pending.add(timer);
-      return () => { clearTimeout(timer); pending.delete(timer); };
+      const entry = { at: now() + Math.max(0, seconds), order: count++, what };
+      waiting.push(entry);
+      waiting.sort((a, b) => a.at - b.at || a.order - b.order);
+      schedule();
+      return () => {
+        waiting = waiting.filter(other => other !== entry);
+        schedule();
+      };
     },
     stop() {
-      for (const timer of pending) clearTimeout(timer);
-      pending.clear();
+      waiting = [];
+      schedule();
     },
   };
 }
 
-/** Time for tests: `pass(seconds)` lets that much time go by at once, and everything that
- *  was asked for in it happens, in order. */
-export function testTime(): Time & { pass(seconds: number): void } {
-  let now = 0, count = 0;
-  let waiting: { at: number; order: number; what: () => void }[] = [];
+/** Time that only passes when it is told to. In a test `pass(seconds)` lets that much time
+ *  go by at once, and everything that was asked for in it happens, in order. A run that goes
+ *  on after it ended is played again this way, up to where it was (`catchUp`), and then goes
+ *  on in real time (`live`). */
+export function heldTime(): Time & { pass(seconds: number): void; catchUp(until: number): Promise<void>; live(): void } {
+  let now = 0, count = 0, real: Time | null = null;
+  let waiting: { at: number; order: number; what: () => void; cancel?: () => void }[] = [];
+  const next = (until: number, inclusive: boolean) =>
+    waiting.filter(entry => (inclusive ? entry.at <= until : entry.at < until)).sort((a, b) => a.at - b.at || a.order - b.order)[0];
+  const take = (entry: { at: number; what: () => void }) => {
+    waiting = waiting.filter(other => other !== entry);
+    now = entry.at;
+    entry.what();
+  };
   return {
-    now: () => now,
+    now: () => real?.now() ?? now,
     after(seconds, what) {
-      const entry = { at: now + Math.max(0, seconds), order: count++, what };
+      if (real) return real.after(seconds, what);
+      const entry: (typeof waiting)[number] = { at: now + Math.max(0, seconds), order: count++, what };
       waiting.push(entry);
-      return () => { waiting = waiting.filter(other => other !== entry); };
+      return () => { entry.cancel ? entry.cancel() : waiting = waiting.filter(other => other !== entry); };
     },
-    stop() { waiting = []; },
+    stop() {
+      waiting = [];
+      real?.stop();
+    },
     pass(seconds) {
       const until = now + seconds;
-      for (;;) {
-        const next = waiting.filter(entry => entry.at <= until).sort((a, b) => a.at - b.at || a.order - b.order)[0];
-        if (!next) break;
-        waiting = waiting.filter(entry => entry !== next);
-        now = next.at;
-        next.what();
-      }
+      for (let entry; (entry = next(until, true));) take(entry);
       now = until;
+    },
+    /** Up to a moment, not including it. Between two things that happen, whatever they set
+     *  going happens first, as it would in real time. */
+    async catchUp(until) {
+      await new Promise(resolve => setImmediate(resolve));   // (what was set going just now first)
+      for (let entry; (entry = next(until, false));) {
+        take(entry);
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      now = Math.max(now, until);
+      await new Promise(resolve => setImmediate(resolve));
+    },
+    live() {
+      real = realTime(now);
+      for (const entry of waiting) entry.cancel = real.after(entry.at - now, entry.what);
+      waiting = [];
     },
   };
 }

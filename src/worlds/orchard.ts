@@ -48,35 +48,35 @@ const dugOut: Deed = (world, me, thing) => {
 };
 
 // The world's own verbs. What they do is written with the kinds they can be done to.
-const dig = verbTo({ about: 'Dig out the ground: under you, or next to you.', shown: { icon: 'shovel', folded: true } });
+const dig = verbTo({ about: 'Dig out the ground: under you, or next to you.', shown: { icon: 'shovel' } });
 const eat = verbTo({ about: 'Eat something: what you hold, or what lies where you point.', shown: { icon: 'apple', overHead: true } });
 
 export default blockWorld({
   name: 'orchard',
   title: 'Orchard',
   about: `A hilly island with a lake. Trees stand on it and drop fruit, rabbits can live on it, and the
-agents can reshape it: they can dig out the ground and put it down somewhere else.
+tinkerlings can reshape it: they can dig out the ground and put it down somewhere else.
 
-The agents are told nothing about it. The world says what happens, never why.
+The tinkerlings are told nothing about it. The world says what happens, never why.
 
 - The ground is grass over soil over stone. Grass and soil can be dug out, one block at a
-  time, and carried and put down like any block. Stone is too hard. So agents can dig holes
+  time, and carried and put down like any block. Stone is too hard. So tinkerlings can dig holes
   and trenches, pile up hills and walls, and build stairs.
 - Walking goes up one level per step. Anything steeper has to be jumped, or dug.
 - Bare soil grows over with grass after a while.
 - Trees drop a fruit now and then. A fruit that lies on grass or soil long enough grows
   into a young tree, and that into a tree. Rabbits, if there are any, go for fruit that lies near them, and eat it.
-- If hunger is on: agents lose strength with time, whether they act or not, and by
-  digging. Eating a fruit gives strength back. The world tells an agent when it is hungry.
+- If hunger is on: tinkerlings lose strength with time, whether they act or not, and by
+  digging. Eating a fruit gives strength back. The world tells a tinkerling when it is hungry.
   Without strength it dies.
-- What is around them, agents are usually shown as a small map: words would say nothing of
+- What is around them, tinkerlings are usually shown as a small map: words would say nothing of
   the shape of the ground.
 - Soil put into the water sinks: the lake cannot be filled.`,
   settings: {
     size: { type: 'choice', title: 'Size of the island', usual: 'medium', options: Object.keys(SIZES) },
     trees: { type: 'choice', title: 'Trees at the start', usual: 'few', options: Object.keys(TREES) },
     rabbits: { type: 'switch', title: 'Rabbits live here', usual: true },
-    hunger: { type: 'switch', title: 'Agents get hungry, and die if they do not eat', usual: true },
+    hunger: { type: 'switch', title: 'Tinkerlings get hungry, and die if they do not eat', usual: true },
     ...people,
   },
   minutes: 15,

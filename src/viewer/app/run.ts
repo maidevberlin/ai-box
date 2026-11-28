@@ -5,7 +5,8 @@
 
 import type { Event } from '../../engine/run.ts';
 import type { Shown } from '../../engine/types.ts';
-import type { WorldInfo } from './create.ts';
+import { logo, makerOf } from './brands.ts';
+import { startLike, type WorldInfo } from './create.ts';
 import { Film } from './film.ts';
 import { EVENTS, icon } from './icons.ts';
 import { $, api, clock, el, started } from './page.ts';
@@ -15,6 +16,7 @@ import { PLACE_COLOURS, Scene, type View } from './scene.ts';
 const POLL = 1000;   // how often a run that is going is read again, in milliseconds
 
 let about: About | null = null;   // the run on screen
+let whyNot: string | null = null;  // why it cannot go on, once it is over (null: it can)
 let drawnAbove = '';              // what is over the agents' heads, as it was last drawn
 let heard = 0;                    // when it was last read (performance.now())
 let film = new Film();
@@ -26,10 +28,9 @@ let playing = false;
 let live = false;                 // following a run that is going, at its newest moment
 let showing = false;              // the screen is open
 let speed = 1;
-let rows: HTMLElement[] = [];     // the conversation: one row per event that has one
-let rowOf: number[] = [];         // ... and for every event, which row shows it (-1: none)
-let marked: HTMLElement | undefined;   // the row of the moment on screen
-let open: 'agents' | 'notes' | null = null;   // the panel on the drawing that is open
+let rows: { t: number; node: HTMLElement }[] = [];   // the conversation: a row for every event that has one
+let read = 0;                     // the events there are rows for already
+let open: 'notes' | null = null;   // the panel on the drawing that is open
 
 /** Opens a run. At `moment` (seconds) if given; else a run that is going is followed live. */
 export async function openRun(id: string, moment?: number): Promise<void> {
@@ -38,16 +39,17 @@ export async function openRun(id: string, moment?: number): Promise<void> {
     if (about.going) { live = playing = true; at = whole(); }
     return draw();
   }
-  const answer = await api<{ about: About; events: Event[]; shown?: Record<string, Shown> }>(`/api/runs/${id}`);
+  const answer = await api<{ about: About; events: Event[]; shown?: Record<string, Shown>; whyNot: string | null }>(`/api/runs/${id}`);
   if (!answer.about) return void (location.hash = '');
   about = answer.about;
+  whyNot = answer.whyNot;
   doings = answer.shown ?? {};
   heard = performance.now();
   film = new Film();
   film.add(answer.events);
-  rows = []; rowOf = []; folded = new Map(); marked = undefined;
+  rows = []; read = 0; names.clear();
   kept.clear();
-  $('log').replaceChildren();
+  $('side').replaceChildren();
   scene ??= new Scene($('scene'));
   scene.reset();
   live = moment === undefined && about.going;
@@ -69,72 +71,43 @@ const colour = (place: number) => `#${PLACE_COLOURS[(place - 1) % PLACE_COLOURS.
 /** The icon of a tool, or of something else that happened (an `Event` type). */
 const iconOf = (name: string) => doings[name]?.icon ?? EVENTS[name] ?? 'dot';
 
-/** Where a row stands for an agent's folded doings (see Shown): more of them are added to it
- *  until the agent does something else (says, thinks, waits …), and while it is still one of
- *  the last rows. Further up a new row begins: the conversation never jumps back to an old one. */
-interface Folded { row: number; counts: Map<string, number>; line: HTMLElement; calls: HTMLElement }
-let folded = new Map<number, Folded>();
-const RECENT = 4;   // ... one of this many last rows
-
-/** A row of the conversation, with an icon, its colour the agent's. Clicked, the film goes there. */
-function made(event: Event, index: number, kind: string, iconName: string, label: string, ...content: (Node | string | null)[]): HTMLElement {
-  const node = el('div', `step ${kind}`, el('div', 'label', iconName ? icon(iconName) : null, label), ...content);
+/** A row of the conversation, with an icon, its colour the agent's. */
+function made(event: Event, kind: string, iconName: string, label: string, ...content: (Node | string | null)[]): HTMLElement {
+  const node = el('div', `step ${kind}`, el('div', 'label', icon(iconName), label), ...content);
   if (typeof event.place === 'number') node.style.setProperty('--place', colour(event.place));
-  node.onclick = () => seek(event.t);
-  node.dataset.index = String(index);
   return node;
 }
 
-const seek = (t: number) => { at = t; playing = live = false; draw(); };
-const call = (event: Event) => `${event.tool}(${Object.entries(event.args as object).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})`;
+/** What the viewer calls an agent: its name, if it has one; else its number. */
+const names = new Map<number, string>();
+function nameOf(event: Event): string {
+  if (event.type === 'wake' && event.name) names.set(event.number as number, String(event.name));
+  return names.get(event.number as number) ?? `Tinkerling ${event.number}`;
+}
 
-/** A row of the conversation for an event, if it gets one. */
-function row(event: Event, index: number): HTMLElement | null {
-  const who = `Agent ${event.number}`;
+/** A row of the conversation for an event, if it gets one: what is thought and said, and what
+ *  stands out (see Shown). Whatever else is done is seen in the world. */
+function row(event: Event): HTMLElement | null {
+  const who = nameOf(event);
   switch (event.type) {
-    case 'wake': return made(event, index, 'wake', iconOf('wake'), `${who} ${event.called ? 'is called in, and wakes up' : `wakes up${event.again ? ' again, remembering' : ''}`} · ${event.model}`);
-    case 'think': return made(event, index, 'think', iconOf('think'), `${who} thinks`, el('div', 'text', String(event.text)));
-    case 'write': return made(event, index, 'think', iconOf('write'), `${who} writes · nobody reads it`, el('div', 'text', String(event.text)));
-    case 'waits': return made(event, index, 'act', iconOf('wait'), `${who} waits`, el('div', 'call', `for up to ${event.seconds} s`));
+    case 'wake': return made(event, 'wake', iconOf('wake'), `${who} ${event.called ? 'is called in, and wakes up' : `wakes up${event.again ? ' again, remembering' : ''}`}`);
+    case 'think': return made(event, 'think', iconOf('think'), `${who} thinks`, el('div', 'text', String(event.text)));
+    case 'write': return made(event, 'think', iconOf('write'), `${who} writes · nobody reads it`, el('div', 'text', String(event.text)));
     case 'act': {
-      const tool = String(event.tool);
+      const tool = String(event.tool), args = event.args as Record<string, unknown>;
+      if (!doings[tool]?.standsOut) return null;
       if (tool === 'say') {
-        // Said out loud in the world. What it heard meanwhile comes after its own words.
-        const [, ...heard] = String(event.answer).split('\n');
-        const loud = (event.args as { loudness?: string }).loudness;
-        return made(event, index, 'say', iconOf('say'), `${who} ${loud === 'whisper' ? 'whispers' : loud === 'shout' ? 'shouts' : 'says out loud'}`, el('div', 'text', String((event.args as { text?: string }).text ?? '')),
-                    heard.length ? el('div', 'heard', heard.join('\n')) : null);
+        const loud = args.loudness;
+        return made(event, 'say', iconOf('say'), `${who} ${loud === 'whisper' ? 'whispers' : loud === 'shout' ? 'shouts' : 'says'}`, el('div', 'text', String(args.text ?? '')));
       }
-      if (doings[tool]?.folded) return foldedRow(event, index, tool, who);
-      return made(event, index, 'act', iconOf(tool), tool === 'wait' ? `${who} stops waiting` : `${who} does`, el('div', 'call', call(event)), el('div', 'text', String(event.answer)));
+      // (What it did, in the world's own words: the first line of its answer.)
+      return made(event, 'act', iconOf(tool), `${who} · ${tool}`, el('div', 'text', String(event.answer).split('\n')[0]!));
     }
-    // An agent that had stopped talking is told what is around it: its next turn begins.
-    case 'senses': return made(event, index, 'act turn', iconOf('senses'), `${who} looks up`,
-      el('div', 'turnline', `Turn ${event.turn} · after ${event.after} s of silence`),
-      el('div', 'text', String(event.text)));
-    case 'death': return made(event, index, 'death', iconOf('death'), event.left ? `${who} has left` : `${who} died`, el('div', 'text', String(event.why)));
-    case 'error': return made(event, index, 'death', iconOf('error'), 'A mistake in the world', el('div', 'text', String(event.error)));
-    case 'end': return made(event, index, 'stop', iconOf('end'), 'The world ends', el('div', 'text', String(event.why)));
+    case 'death': return made(event, 'death', iconOf('death'), event.left ? `${who} has left` : `${who} died`, el('div', 'text', String(event.why)));
+    case 'end': return made(event, 'stop', iconOf('end'), 'The world ends', el('div', 'text', String(event.why)));
+    case 'resume': return made(event, 'stop', iconOf('resume'), 'The world goes on');
     default: return null;
   }
-}
-
-/** A folded doing: "Agent 1 does  walk (3) · look (4)". What each was, and what the world
- *  answered, is folded away in it. */
-function foldedRow(event: Event, index: number, tool: string, who: string): HTMLElement {
-  const calls = el('div', 'calls'), line = el('span', 'doings');
-  const node = made(event, index, 'act folded', '', `${who} does`, el('details', '', el('summary', '', line), calls));
-  folded.set(event.place as number, { row: rows.length, counts: new Map(), line, calls });
-  addFolded(folded.get(event.place as number)!, event, tool);
-  return node;
-}
-
-function addFolded(open: Folded, event: Event, tool: string): void {
-  open.counts.set(tool, (open.counts.get(tool) ?? 0) + 1);
-  open.line.replaceChildren(...[...open.counts].map(([name, count]) => el('span', 'doing', icon(iconOf(name)), `${name}${count > 1 ? ` (${count})` : ''}`)));
-  const one = el('div', 'one', el('div', 'call', call(event)), el('div', 'text', String(event.answer)));
-  one.onclick = click => { click.stopPropagation(); seek(event.t); };
-  open.calls.append(one);
 }
 
 /** Sets a text or a property of the page only if it is different: the page is drawn up to
@@ -152,36 +125,33 @@ function draw(): void {
   if (!showing || !about) return;
   const run = about;
   // The head: the run's name, and what the reviewer wrote about it.
-  once('head', JSON.stringify([run.id, run.review, run.going, run.ended]), () => {
+  once('head', JSON.stringify([run.id, run.review, run.going, run.ended, whyNot]), () => {
+    const setup = el('button', 'cog', icon('settings'));
+    setup.title = 'How it was set up';
+    setup.onclick = () => void showSetup();
     $('title').replaceChildren(named(run),
-      el('span', 'chip', run.title), ...run.models.map(model => el('span', 'chip', model)), el('span', 'chip', started(run.id)));
+      el('span', 'chip', run.title), ...run.models.map(model => el('span', 'chip', model)), el('span', 'chip', started(run.id)), setup);
     $('summary').textContent = run.review?.summary ?? (run.going ? 'This run gets a name and a summary when it ends.' : run.ended ?? '');
     $('stop').hidden = !run.going;
     $('live').hidden = !run.going;
+    const goOn = $('goOn') as HTMLButtonElement;
+    goOn.hidden = run.going;
+    goOn.disabled = !!whyNot;
+    goOn.title = whyNot ?? 'Let the world go on from where it ended';
   });
   // The conversation: rows are only added, never built again.
   const added: HTMLElement[] = [];
-  for (let i = rowOf.length; i < film.events.length; i++) {
-    const event = film.events[i]!, place = event.place as number;
-    // A folded doing of an agent whose last row is one of folded doings: counted in there.
-    const open = folded.get(place);
-    if (event.type === 'act' && doings[String(event.tool)]?.folded && open && rows.length - open.row <= RECENT) {
-      addFolded(open, event, String(event.tool));
-      rowOf.push(open.row);
-      continue;
-    }
-    const made = row(event, i);
-    rowOf.push(made ? rows.length : -1);
-    if (!made) continue;
-    if (!made.classList.contains('folded') && typeof event.place === 'number') folded.delete(place);
-    rows.push(made);
-    added.push(made);
+  for (; read < film.events.length; read++) {
+    const event = film.events[read]!, node = row(event);
+    if (!node) continue;
+    rows.push({ t: event.t, node });
+    added.push(node);
   }
-  if (added.length) $('log').append(...added);
+  if (added.length) $('side').append(...added);
   drawMoment();
 }
 
-/** Draws the moment on screen: the clock, and the world and the marked row if the film has
+/** Draws the moment on screen: the clock, the conversation, and the world if the film has
  *  moved on to another event. Called for every frame while a run plays. */
 function drawMoment(): void {
   if (!showing || !about) return;
@@ -209,45 +179,53 @@ function drawMoment(): void {
     const view = film.at(index);
     scene!.show(view, aboves, !forward);
     drawFacts(view, index);
-    // The row of the newest thing that happened is marked, and kept in sight.
-    let last = index;
-    while (last >= 0 && rowOf[last] === -1) last--;
-    const now = last >= 0 ? rows[rowOf[last]!] : undefined;
-    if (now !== marked) marked?.classList.remove('now');
-    marked = now;
-    if (now) {
-      now.classList.add('now');
-      const box = $('log');
-      if (now.offsetTop < box.scrollTop || now.offsetTop + now.offsetHeight > box.scrollTop + box.clientHeight)
-        box.scrollTop = now.offsetTop + now.offsetHeight - box.clientHeight + 12;
-    }
     shown = index;
+  }
+  drawConversation();
+}
+
+/** The conversation at the moment on screen: what happened in the last while, the newest at
+ *  the bottom, each fading out as it gets older. The while is longer when the film runs faster,
+ *  so there is time to read. Earlier things are found by going back on the time line. */
+const LINGER = 12;   // seconds (at 1×)
+const FADING = 3;    // ... the last of which it fades out
+const MOST = 6;      // rows at most
+function drawConversation(): void {
+  const linger = LINGER * (live ? 1 : speed), fading = FADING * (live ? 1 : speed);
+  let shownRows = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const { t, node } = rows[i]!, age = at - t;
+    const on = age >= 0 && age < linger && shownRows < MOST;
+    if (on) shownRows++;
+    const opacity = on ? String(Math.round(Math.min(1, (linger - age) / fading) * 20) / 20) : '';
+    if (node.classList.contains('on') !== on) node.classList.toggle('on', on);
+    if (node.style.opacity !== opacity) node.style.opacity = opacity;
   }
 }
 
-/** What is written on the drawing: the agents there have been up to this moment, and the
- *  notes that are in the world now, lying somewhere or held by an agent. Each is a button
- *  that opens a list of them. */
+/** What is written on the drawing: a legend of the agents that are alive at this moment
+ *  (their colour, whose model, their name, what they did last, and what their world puts over
+ *  them), and a button for the notes that are in the world now, lying somewhere or held by an
+ *  agent, that opens a list of them. Clicking an agent of the legend centres the view on it. */
 function drawFacts(view: View, index: number): void {
-  const agents = agentsUntil(index);
-  once('agents', JSON.stringify([agents, view.bodies, open]), () => {
-    $('agentsButton').replaceChildren(icon(open === 'agents' ? 'x' : 'users'), `${agents.length} agent${agents.length === 1 ? '' : 's'} so far`);
-    $('agentList').hidden = open !== 'agents';
-    $('agentList').replaceChildren(...agents.map(agent => {
-      const body = view.bodies.find(found => found.number === agent.number && !found.dead);
-      const who = el('button', 'who', el('span', 'dot'),
-        el('span', 'what', el('b', '', `Agent ${agent.number}`), el('small', '', [agent.model, agent.gone].filter(Boolean).join(' · '))),
-        body?.over ? el('span', 'has', icon(body.over.icon), body.over.text) : null);
+  const agents = new Map(agentsUntil(index).map(agent => [agent.number, agent]));
+  const last = film.lastDoing(index);
+  const alive = view.bodies.filter(body => body.number !== undefined && !body.dead && agents.has(body.number));
+  const legend = alive.map(body => ({ body, agent: agents.get(body.number!)!, doing: last.get(agents.get(body.number!)!.place) }));
+  once('legend', JSON.stringify(legend.map(({ agent, doing, body }) => [agent, doing, body.over])), () => {
+    $('legend').replaceChildren(...legend.map(({ body, agent, doing }) => {
+      const who = el('button', 'who', el('span', 'swatch'), logo(makerOf(agent.model), '', 18), el('b', '', body.itself ?? agent.name),
+        el('span', 'doing', doing ? icon(iconOf(doing)) : ''),
+        body.over ? el('span', 'has', icon(body.over.icon), body.over.text) : null);
       who.style.setProperty('--place', colour(agent.place));
-      who.disabled = !body;
-      who.title = body ? 'Look at it' : '';
-      who.onclick = () => body && scene!.centre(body);
+      who.title = [body.itself && `calls itself ${body.itself}`, agent.model, doing && `last: ${doing}`].filter(Boolean).join(' · ');
+      who.onclick = () => scene!.centre(body);
       return who;
     }));
   });
   const notes = [
     ...view.items.filter(item => item[4] !== undefined).map(([x, y, , , text]) => ({ where: `at (${x}, ${y})`, text: text! })),
-    ...view.bodies.filter(body => body.holds !== undefined).map(body => ({ where: `in the hand of agent ${body.number}`, text: body.holds! })),
+    ...view.bodies.filter(body => body.holds !== undefined).map(body => ({ where: `in the hand of ${names.get(body.number!) ?? `tinkerling ${body.number}`}`, text: body.holds! })),
   ];
   once('notes', JSON.stringify([notes, open]), () => {
     $('notesButton').replaceChildren(icon(open === 'notes' ? 'x' : 'sticky-note'), `${notes.length} note${notes.length === 1 ? '' : 's'}`);
@@ -260,11 +238,11 @@ function drawFacts(view: View, index: number): void {
 
 /** The agents that have woken up until an event: the model each thinks with, and whether it
  *  is gone by then. (One that wakes up again, remembering, is the same agent.) */
-function agentsUntil(index: number): { number: number; place: number; model: string; gone?: string }[] {
-  const agents = new Map<number, { number: number; place: number; model: string; gone?: string }>();
+function agentsUntil(index: number): { number: number; place: number; name: string; model: string; gone?: string }[] {
+  const agents = new Map<number, { number: number; place: number; name: string; model: string; gone?: string }>();
   for (let i = 0; i <= index; i++) {
     const event = film.events[i]!, number = event.number as number;
-    if (event.type === 'wake') agents.set(number, { number, place: event.place as number, model: String(event.model ?? '') });
+    if (event.type === 'wake') agents.set(number, { number, place: event.place as number, name: nameOf(event), model: String(event.model ?? '') });
     if (event.type === 'death' && agents.has(number)) agents.get(number)!.gone = event.left ? 'has left' : 'died';
   }
   return [...agents.values()];
@@ -303,6 +281,7 @@ setInterval(async () => {
   heard = performance.now();
   film.add(answer.events);
   if (live) { at = whole(); playing = about.going; }
+  if (ended) whyNot = (await api<{ whyNot: string | null }>(`/api/runs/${id}`)).whyNot;
   if (answer.events.length || ended) draw();
   if (ended) void readRuns();
 }, POLL);
@@ -326,16 +305,25 @@ $('slider').oninput = event => {
   playing = live = false;
   draw();
 };
-for (const panel of ['agents', 'notes'] as const) {
-  $(`${panel}Button`).onclick = () => {
-    open = open === panel ? null : panel;
-    shown = -2;   // (drawn again, with the panel)
-    draw();
-  };
-}
+// The conversation can be put away, to see all of the world.
+const drawToggle = () => {
+  const closed = $('side').classList.contains('closed');
+  $('sideToggle').replaceChildren(icon(closed ? 'message-square-text' : 'panel-right-close'), closed ? 'Conversation' : '');
+  $('sideToggle').title = closed ? 'Show what the tinkerlings think, say and do' : 'Hide the conversation';
+};
+$('sideToggle').onclick = () => {
+  $('side').classList.toggle('closed');
+  drawToggle();
+};
+drawToggle();
+$('notesButton').onclick = () => {
+  open = open ? null : 'notes';
+  shown = -2;   // (drawn again, with the panel)
+  draw();
+};
 // How the run on screen was set up: its settings, and who lived in it. (What differs from
 // what is usual for the world now is marked.)
-$('setupButton').onclick = async () => {
+async function showSetup(): Promise<void> {
   if (!about) return;
   const run = about, world = (await api<WorldInfo[]>('/api/worlds')).find(found => found.name === run.world);
   const said = (value: unknown) => (value === true ? 'on' : value === false ? 'off' : value === '' ? '–' : Array.isArray(value) ? value.join(', ') || '–' : String(value));
@@ -355,13 +343,43 @@ $('setupButton').onclick = async () => {
         ...each.flatMap((agent, i) => [
           ...(each.length > 1 ? [el('h4', '', `${role.title} ${i + 1}`)] : []),
           fact('Model', agent.model, world?.roles[name]?.model),
-          fact("The world's message to an agent that wakes up", agent.told),
+          fact("The world's message to a tinkerling that wakes up", agent.told),
           fact('Cannot', agent.without.join(', ') || 'nothing is switched off', agent.without.length ? null : undefined),
         ]),
       ];
     }));
+  $('startLike').onclick = () => {
+    ($('runSetup') as HTMLDialogElement).close();
+    startLike(run);
+  };
   ($('runSetup') as HTMLDialogElement).showModal();
-};
+}
 $('speed').onchange = event => { speed = Number((event.target as HTMLSelectElement).value); };
 $('live').onclick = () => { live = playing = true; at = whole(); draw(); };
 $('stop').onclick = () => about && api(`/api/runs/${about.id}/stop`, {});
+// A run that is over goes on: asked for how long, as long as it went the first time.
+$('goOn').onclick = () => {
+  if (!about) return;
+  ($('goOnMinutes') as HTMLInputElement).value = String(about.minutes ? Math.max(1, Math.round(about.minutes)) : 0);
+  $('goOnTrouble').hidden = true;
+  ($('goOnDialog') as HTMLDialogElement).showModal();
+};
+$('goOnStart').onclick = async () => {
+  if (!about) return;
+  const id = about.id, button = $('goOnStart') as HTMLButtonElement;
+  button.disabled = true;
+  button.textContent = 'Playing it again…';
+  const answer = await api<{ ok?: true; error?: string }>(`/api/runs/${id}/resume`,
+                                                         { minutes: Number(($('goOnMinutes') as HTMLInputElement).value) || 0 });
+  button.disabled = false;
+  button.textContent = 'Go on';
+  if (answer.error) {
+    $('goOnTrouble').textContent = answer.error;
+    $('goOnTrouble').hidden = false;
+    return;
+  }
+  ($('goOnDialog') as HTMLDialogElement).close();
+  about = null;   // (its record is read again from the start: its end is gone)
+  void readRuns();
+  await openRun(id);
+};

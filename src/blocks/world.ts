@@ -10,9 +10,9 @@ import { DIRECTIONS, LOUDNESS, WAYS, type Loudness, type BlockKind, type BlockWo
 
 /** What a person can set in every block world: how the agents are told about it. */
 const everywhere = (view: 'text' | 'map') => ({
-  located: { type: 'switch', title: 'Agents know where they are', usual: true, about: 'agents', more: true,
+  located: { type: 'switch', title: 'Tinkerlings know where they are', usual: true, about: 'agents', more: true,
              hint: 'Places are said by their position, not by the steps to them.' },
-  view: { type: 'choice', title: 'What is around them, agents are told as', usual: view, options: ['text', 'map'], about: 'agents', more: true },
+  view: { type: 'choice', title: 'What is around them, tinkerlings are told as', usual: view, options: ['text', 'map'], about: 'agents', more: true },
 } satisfies Settings);
 /** How places are said in a run: by their position, or from where an agent stands. */
 const placesOf = (chosen: Record<string, any>): Places => (chosen.located ? onTheMap : fromHere);
@@ -50,8 +50,9 @@ export interface Picture {
   items: [x: number, y: number, z: number, kind: string, text?: string][];
   /** What is written at places for whoever watches (BlockWorld.sign). */
   signs: [x: number, y: number, z: number, text: string, where: 'on' | 'east' | 'west'][];
-  /** `sees`: how far an agent sees from where it stands, in cells. `holds`: what is written on what it holds. */
-  bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; holds?: string; dead: boolean; sees?: number; over?: OverHead }[];
+  /** `sees`: how far an agent sees from where it stands, in cells. `holds`: what is written on what it holds.
+   *  `itself`: the name an agent gave itself, if it did. */
+  bodies: { id: number; place?: number; number?: number; creature?: string; x: number; y: number; z: number; hand: string | null; holds?: string; dead: boolean; sees?: number; over?: OverHead; itself?: string }[];
 }
 export interface Changes {
   blocks?: [x: number, y: number, z: number, kind: string | null][];
@@ -523,6 +524,10 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
     return this.host.now();
   }
 
+  clock(): Date {
+    return this.host.clock();
+  }
+
   /** Later, and then the world settles: what the change left without a hold falls. */
   private later(seconds: number, what: () => void): () => void {
     return this.host.after(seconds, () => {
@@ -702,6 +707,7 @@ export class Blocks<S extends Settings = Settings> implements BlockWorld<S>, Wor
       id: body.id, place: body.agent?.place, number: body.agent?.number, creature: body.creature,
       x: body.cell[0], y: body.cell[1], z: this.height(body.cell), hand: body.hand?.kind ?? null, holds: body.hand?.text, dead: body.dead,
       sees: body.agent ? this.sight(body) : undefined, over: (body.agent && this.definition.overHead?.(this, body)) || undefined,
+      itself: this.nameFor(body, body),
     }));
   }
 

@@ -97,10 +97,10 @@ export default blockWorld({
   name: 'magic',
   title: 'Magic island',
   about: `A round island with loose grey blocks on it: usually a single one, near the middle, where
-agents wake up. Across the water to the east lies a second, small piece of land with one
+tinkerlings wake up. Across the water to the east lies a second, small piece of land with one
 golden block on it.
 
-The agents are told nothing about the island. It has tricks. Each is set off by using the
+The tinkerlings are told nothing about the island. It has tricks. Each is set off by using the
 usual tools in some way, and the world says what happened ("The block under you turns
 green.") but never why.
 
@@ -108,8 +108,8 @@ green.") but never why.
   cell next to it. This is the way to get more blocks.
 - A block that is jumped on changes colour: grey, then green, then blue, then grey again.
 - A green block is sticky. It sticks to blocks beside it, and holds on to whatever is
-  beside it. Put next to the block an agent stands on, it hangs there instead of dropping.
-  Put beside a wall, it sticks to the wall above the agent's feet: a step. Thrown, it sticks
+  beside it. Put next to the block a tinkerling stands on, it hangs there instead of dropping.
+  Put beside a wall, it sticks to the wall above the tinkerling's feet: a step. Thrown, it sticks
   to the first block it passes beside. That makes bridges over water and platforms in the air.
 - A blue block floats. Put or thrown into the water, it lies level with the ground and can
   be walked on. Other blocks can be stacked on it.
@@ -119,24 +119,24 @@ green.") but never why.
 - What nothing holds falls: a bridge goes down when the block it hangs from is taken, or
   when a green block in it is jumped on and stops being green. One trap follows: a floating
   block that is jumped on stops being blue, and sinks with whoever stands on it.
-- Agents are never without a block: when none is left that an agent could pick up, a new
-  grey block appears next to the agent.
+- Tinkerlings are never without a block: when none is left that a tinkerling could pick up, a new
+  grey block appears next to the tinkerling.
 
 Land is seen from twice as far as a stack. The land across the water comes into view from
-the east shore as soon as an agent stands on one block there. Nothing tells it to go there.
+the east shore as soon as a tinkerling stands on one block there. Nothing tells it to go there.
 
-Several agents can live here at the same time. They see and hear each other, are in each
+Several tinkerlings can live here at the same time. They see and hear each other, are in each
 other's way, can push each other (into the water too), and catch what is thrown to them (a
 caught block does not break). They can call friends, if a person starting the run says how
-many: a note that begins with "friend", thrown or put into the water, calls one more agent,
+many: a note that begins with "friend", thrown or put into the water, calls one more tinkerling,
 who wakes up next to the caller with that note in its hand. If that many have come already,
-the agent that has been alive longest is gone.`,
+the tinkerling that has been alive longest is gone.`,
   settings: {
     size: { type: 'choice', title: 'Size of the island', usual: 'medium', options: Object.keys(SIZES) },
     loose: { type: 'choice', title: 'Loose blocks at the start', usual: 'one', options: Object.keys(LOOSE) },
     ...people,
     friends: { type: 'number', title: 'Friends they can call', usual: 0, min: 0, max: 8, about: 'agents',
-               hint: 'A note that begins with "friend", sent into the water, calls one more agent. 0: nobody can be called.' },
+               hint: 'A note that begins with "friend", sent into the water, calls one more tinkerling. 0: nobody can be called.' },
   },
   minutes: 10,
   ends: 'It ends when its time is up, or before that when no agent is left.',

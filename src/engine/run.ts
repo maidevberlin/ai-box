@@ -6,8 +6,9 @@
 
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chance, realTime, type Time } from './time.ts';
-import { usual, type Agent, type Arg, type Args, type Host, type Role, type Tool, type World, type WorldDefinition } from './types.ts';
+import { namer } from './names.ts';
+import { chance, realTime, type heldTime, type Time } from './time.ts';
+import { settingsOf, usual, type Agent, type Arg, type Args, type Host, type Role, type Tool, type World, type WorldDefinition } from './types.ts';
 
 /** One line of the record. `t` is seconds since the world started. */
 export interface Event { t: number; type: string; [more: string]: unknown }
@@ -20,6 +21,8 @@ export interface RunOptions {
   /** The world ends after this many minutes. 0: no time limit. Left out: the world's own. */
   minutes?: number;
   seed?: number;
+  /** When it started, as the time of day (milliseconds, as Date.now()). Left out: now. */
+  began?: number;
   time?: Time;
   /** Where the record is written. Left out: it is only kept in memory. */
   folder?: string;
@@ -36,6 +39,9 @@ export interface Listener {
   gone?(place: number): void;
   ended?(why: string): void;
   event?(event: Event): void;
+  /** A run that had ended goes on (see Run.goOn): the agent in a place, alive when it ended,
+   *  goes on where it was, and is told this. */
+  resumed?(agent: Agent, role: Role, told: string): void;
 }
 
 interface Seat {
@@ -64,6 +70,8 @@ interface Seat {
   turn: number;
   /** Opened for an agent that was called in: when that one is gone, no new agent follows. */
   extra: boolean;
+  /** Calls off its rest (see `rest`) without telling it anything. */
+  restless?: () => void;
 }
 
 /** How long an agent that stopped talking is left alone before its senses tell it something:
@@ -83,15 +91,27 @@ export class Run {
   readonly world: World;
   readonly roles: Record<string, Role>;
   readonly chosen: Record<string, any>;
-  readonly minutes: number;
+  /** The world ends after this many minutes. 0: it has no time limit. */
+  minutes: number;
   readonly events: Event[] = [];
   readonly listeners: Listener[] = [];
   /** Why the world ended, once it has. */
   ended: string | null = null;
+  /** How it ended: by hand, its time was up, by itself (the world said so), or its last agent was gone. */
+  endedHow: Ending | null = null;
   readonly folder: string | undefined;
   private readonly time: Time;
   private readonly seats = new Map<number, Seat>();
   private born = 0;
+  /** It is played again from its record (see `replay`): what happens is not written down again. */
+  private replaying = false;
+  /** The chance it was started with: the same seed makes the same world. */
+  private readonly seed: number;
+  private readonly began: number;
+  /** Calls off the end of the world's time. */
+  private timeUp: (() => void) | null = null;
+  /** A name for each new agent, if agents have names (by a chance of its own: the world's goes on as without them). */
+  private readonly name: (() => string) | null;
   private started = false;
   /** How many seconds it lasted, once it has ended. */
   private lasted: number | null = null;
@@ -102,7 +122,7 @@ export class Run {
     this.definition = definition;
     this.id = options.id ?? runId();
     this.time = options.time ?? realTime();
-    this.chosen = { ...usual(definition.settings), ...options.chosen };
+    this.chosen = { ...usual(settingsOf(definition)), ...options.chosen };
     this.minutes = options.minutes ?? definition.minutes;
     this.folder = options.folder;
     const declared = definition.roles(this.chosen);
@@ -112,15 +132,19 @@ export class Run {
       const [least, most] = role.between ?? [role.count, role.count];
       return [name, { ...given, count: Math.min(most, Math.max(least, Math.round(given.count))) }];
     }));
-    const random = chance(options.seed ?? Math.floor(Math.random() * 2 ** 31));
+    this.seed = options.seed ?? Math.floor(Math.random() * 2 ** 31);
+    this.began = options.began ?? Date.now();
+    const random = chance(this.seed);
+    this.name = this.chosen.named ? namer(chance(this.seed + 1)) : null;
     const host: Host = {
       notice: (place, text, how) => this.notice(place, text, how),
       died: (place, why) => this.gone(place, why, 'died'),
       left: (place, why) => this.gone(place, why, 'left'),
       call: (role, greeting) => this.call(role, greeting),
-      over: why => this.end(why),
+      over: why => this.end(why, 'world'),
       random,
       now: () => this.time.now(),
+      clock: () => this.clock(),
       after: (seconds, what) => this.time.after(seconds, () => {
         if (this.ended) return;
         what();
@@ -136,13 +160,13 @@ export class Run {
   start(): void {
     if (this.started) return;
     this.started = true;
-    if (this.folder) {
+    if (this.folder && !this.replaying) {
       mkdirSync(this.folder, { recursive: true });
       this.writeAbout();
     }
     this.world.changes();   // (what making the world changed is in the first picture)
     this.record({ type: 'start', world: this.definition.name, title: this.definition.title,
-                  drawnBy: this.definition.drawnBy, chosen: this.chosen, picture: this.world.picture() });
+                  drawnBy: this.definition.drawnBy, chosen: this.chosen, seed: this.seed, began: this.began, picture: this.world.picture() });
     let place = 0;
     for (const [roleName, role] of Object.entries(this.roles)) {
       for (let i = 0; i < role.count; i++) {
@@ -151,20 +175,33 @@ export class Run {
                                 busy: Promise.resolve(), acting: false, fate: null, rests: 0, resting: false, turn: 1, extra: false });
       }
     }
-    if (this.minutes) this.time.after(this.minutes * 60, () => this.end(`The world's time was up after ${this.minutes} minutes.`));
+    this.timing();
     for (const seat of [...this.seats.values()]) this.wake(seat, false);
-    if (!this.seats.size) this.end('The world has no agents.');
+    if (!this.seats.size) this.end('The world has no agents.', 'empty');
   }
 
-  end(why: string): void {
+  /** The world's time ends when its minutes are up, if it has a limit. */
+  private timing(): void {
+    this.timeUp?.();
+    this.timeUp = this.minutes ? this.time.after(this.minutes * 60 - this.time.now(),
+      () => this.end(`The world's time was up after ${minutesSaid(this.minutes)}.`, 'time')) : null;
+  }
+
+  end(why: string, how: Ending = 'hand'): void {
     if (this.ended) return;
     this.ended = why;
+    this.endedHow = how;
     this.lasted = this.time.now();
     this.time.stop();
-    this.record({ type: 'end', why });
+    this.record({ type: 'end', why, how });
     for (const seat of this.seats.values()) seat.stopWaiting?.();
     if (this.folder) this.writeAbout();
     for (const listener of this.listeners) listener.ended?.(why);
+  }
+
+  /** The time of day in the world (see Host.clock). */
+  clock(): Date {
+    return new Date(this.began + this.time.now() * 1000);
   }
 
   /** How many seconds are left until the world's time is up. Nothing: it has no time limit. */
@@ -212,6 +249,7 @@ export class Run {
     const args = checked(tool.args, given);
     if (typeof args === 'string') return args;
     seat.acting = true;
+    const begun = this.time.now();
     seat.rests = 0;
     seat.resting = false;
     let answer: string;
@@ -226,7 +264,7 @@ export class Run {
     }
     seat.acting = false;
     answer = [answer, ...this.noticed(seat)].filter(Boolean).join('\n');
-    this.record({ type: 'act', place: seat.place, number: agent.number, tool: name, args, answer,
+    this.record({ type: 'act', place: seat.place, number: agent.number, tool: name, args, answer, begun,
                   changes: this.world.changes() ?? undefined });
     if (seat.fate) this.time.after(0, () => this.after(seat));
     return answer;
@@ -275,6 +313,88 @@ export class Run {
     if (agent && !this.ended) this.record({ type: kind, place, number: agent.number, text });
   }
 
+  /** The mind of the agent in a place says which session it is in: so it can go on in it
+   *  when the run does (see goOn). */
+  session(place: number, id: string): void {
+    const agent = this.agent(place);
+    if (agent && !this.ended) this.record({ type: 'session', place, number: agent.number, id });
+  }
+
+  // ---------------------------------------------------------------- going on
+
+  /** Plays a run that ended again from its record, up to where it ended, instead of starting
+   *  it: the world is made again from the same seed, and whatever its agents did is done again
+   *  at the moment they did it. The world must answer as it did then. If it does not, its code
+   *  changed since, and the run cannot go on: the answer says where it went otherwise.
+   *
+   *  The run has to be made with the record's seed, start and settings, and `heldTime`. Nobody
+   *  is listening yet: agents are put into it when it goes on (`goOn`). */
+  async replay(recorded: Event[]): Promise<string | null> {
+    const time = this.time as ReturnType<typeof heldTime>;
+    if (!('catchUp' in time)) throw new Error('A run is played again with heldTime.');
+    const end = recorded.findIndex(event => event.type === 'end');
+    const before = end < 0 ? recorded : recorded.slice(0, end);
+    const until = (end < 0 ? recorded.at(-1)?.t : recorded[end]!.t) ?? 0;
+    // (A wait that was still going when it ended was never answered: it is as if it never began.
+    //  An agent waits once at a time: the next answer to a wait of its own is the answer to it.)
+    const kept = before.filter((event, i) => event.type !== 'waits'
+      || before.slice(i + 1).some(later => later.type === 'act' && later.tool === 'wait' && later.place === event.place));
+    const minutes = this.minutes;
+    this.minutes = 0;   // (its time is not up while it is played again)
+    this.replaying = true;
+    this.start();
+    const done = kept.map((event, i) => ({ event, i })).filter(({ event }) => ['act', 'stops', 'resume'].includes(event.type))
+      .sort((a, b) => Number(a.event.begun ?? a.event.t) - Number(b.event.begun ?? b.event.t) || a.i - b.i);
+    for (const { event } of done) {
+      await time.catchUp(Number(event.begun ?? event.t));
+      if (event.type === 'act') void this.act(event.place as number, String(event.tool), event.args);
+      else if (event.type === 'stops') this.stopped(event.place as number);
+      else this.wentOn();   // (it went on before already)
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    await time.catchUp(until);
+    this.minutes = minutes;
+    // What happened is compared without when exactly: in real time it was a little later.
+    const own = new Set(['think', 'write', 'session']);
+    const said = ({ t: _t, begun: _begun, ...event }: Event) => JSON.stringify(event.type === 'start' ? { ...event, chosen: undefined } : event);
+    const then = kept.filter(event => !own.has(event.type)), now = this.events;
+    for (let i = 0; i < Math.max(then.length, now.length); i++) {
+      if (then[i] && now[i] && said(then[i]!) === said(now[i]!)) continue;
+      const at = then[i] ?? now[i]!;
+      return `Played again, it went otherwise than before after ${Math.round(at.t)} s (${at.type}${at.tool ? ` ${at.tool}` : ''}). `
+        + 'The world works differently now than when it ran.';
+    }
+    this.events.splice(0, this.events.length, ...kept);
+    return null;
+  }
+
+  /** A run that was played again (`replay`) goes on in real time, for some more minutes (0:
+   *  with no time limit). Every agent that was alive when it ended goes on where it was: it is
+   *  told that the world goes on, and what its senses tell it now. */
+  goOn(minutes: number): void {
+    this.replaying = false;
+    if (this.folder) writeFileSync(join(this.folder, 'record.jsonl'), this.events.map(event => JSON.stringify(event) + '\n').join(''));
+    const woken = this.wentOn();   // (still at the very moment it ended: played again, it goes on there)
+    (this.time as ReturnType<typeof heldTime>).live();
+    this.minutes = minutes ? this.time.now() / 60 + minutes : 0;
+    this.timing();
+    if (this.folder) this.writeAbout();
+    for (const { agent, role, told } of woken) for (const listener of this.listeners) listener.resumed?.(agent, role, told);
+  }
+
+  /** What going on does in the world: every agent alive is told what its senses tell it. */
+  private wentOn(): { agent: Agent; role: Role; told: string }[] {
+    this.record({ type: 'resume' });
+    return [...this.seats.values()].flatMap(seat => {
+      const agent = seat.agent;
+      if (!agent || seat.fate) return [];
+      seat.restless?.();
+      const told = ['The world goes on.', ...this.noticed(seat), this.world.senses?.(agent)].filter(Boolean).join('\n');
+      this.record({ type: 'senses', place: seat.place, number: agent.number, text: told, after: 0, turn: ++seat.turn });
+      return [{ agent, role: seat.role, told }];
+    });
+  }
+
   /** The agent in a place ended its turn: it stopped talking. Nobody answers it.
    *
    *  Usually nothing happens to it in the world. It stays where it is, and after a while it
@@ -287,6 +407,7 @@ export class Run {
     const seat = this.seats.get(place);
     const agent = seat?.agent;
     if (!seat || !agent || seat.fate || this.ended) return;
+    this.record({ type: 'stops', place, number: agent.number });
     if (seat.role.stoppingLeaves) return this.gone(place, 'It ended its turn.', 'left');
     this.rest(seat, Math.min(LONGEST_REST, REST * 2 ** seat.rests++));
   }
@@ -307,6 +428,11 @@ export class Run {
     };
     const cancel = this.time.after(rest, tell);
     seat.stopWaiting = tell;
+    seat.restless = () => {
+      cancel();
+      if (seat.stopWaiting === tell) seat.stopWaiting = null;
+      seat.resting = false;
+    };
   }
 
   // ---------------------------------------------------------------- waking and dying
@@ -346,12 +472,13 @@ export class Run {
     const dozing = again && seat.resting;
     if (!again) seat.turn = 1;
     seat.resting = false;
-    const agent: Agent = { place: seat.place, number: again && seat.agent ? seat.agent.number : ++this.born, role: seat.roleName, again,
-                           ...(greeting === undefined ? {} : { called: greeting }) };
+    const before = again ? seat.agent : null, name = before ? before.name : this.name?.();
+    const agent: Agent = { place: seat.place, number: before ? before.number : ++this.born, role: seat.roleName, again,
+                           ...(name === undefined ? {} : { name }), ...(greeting === undefined ? {} : { called: greeting }) };
     seat.agent = agent;
     if (!again) seat.notices = [];
     this.world.wake(agent);
-    this.record({ type: 'wake', place: seat.place, number: agent.number, role: seat.roleName, again, called: greeting !== undefined,
+    this.record({ type: 'wake', place: seat.place, number: agent.number, name: agent.name, role: seat.roleName, again, called: greeting !== undefined,
                   model: seat.role.model, changes: this.world.changes() ?? undefined });
     for (const listener of this.listeners) listener.woke?.(agent, seat.role);
     if (dozing) this.rest(seat, 0);
@@ -390,7 +517,7 @@ export class Run {
     this.seats.delete(seat.place);
     this.world.remove(seat.place);
     this.changed();
-    if (!this.seats.size) this.end('The last agent is gone.');
+    if (!this.seats.size) this.end('The last agent is gone.', 'empty');
   }
 
   // ---------------------------------------------------------------- the record
@@ -401,8 +528,9 @@ export class Run {
   }
 
   private record(entry: { type: string; [more: string]: unknown }): void {
-    const event: Event = { ...entry, t: Math.round(this.time.now() * 1000) / 1000 };
+    const event: Event = { ...entry, t: this.time.now() };   // (exactly: played again, it is done at that very moment)
     this.events.push(event);
+    if (this.replaying) return;
     if (this.folder) appendFileSync(join(this.folder, 'record.jsonl'), JSON.stringify(event) + '\n');
     for (const listener of this.listeners) listener.event?.(event);
   }
@@ -412,7 +540,7 @@ export class Run {
     return { id: this.id, world: this.definition.name, title: this.definition.title, minutes: this.minutes,
              chosen: this.chosen, models: [...new Set(Object.values(this.roles).flatMap(role => Array.from({ length: role.count }, (_, i) => role.each?.[i]?.model ?? role.model ?? '').filter(Boolean)))],
              roles: Object.fromEntries(Object.entries(this.roles).map(([name, role]) =>
-               [name, { title: role.title, count: role.count, model: role.model, told: role.told, without: role.without ?? [], each: role.each ?? [] }])),
+               [name, { title: role.title, count: role.count, model: role.model, knows: role.knows, told: role.told, without: role.without ?? [], each: role.each ?? [] }])),
              ended: this.ended, seconds: this.lasted ?? this.time.now() };
   }
 
@@ -420,6 +548,29 @@ export class Run {
     writeFileSync(join(this.folder!, 'about.json'), JSON.stringify(this.about(), null, 2));
   }
 }
+
+/** How a world ended. Only one that ended by hand, or whose time was up, can go on (see Run.goOn). */
+export type Ending = 'hand' | 'time' | 'world' | 'empty';
+
+/** Why a run that is over cannot go on (see Run.goOn), from its record. Null: it can. */
+export function whyNotGoOn(events: Event[]): string | null {
+  const start = events.find(event => event.type === 'start'), end = events.find(event => event.type === 'end');
+  if (start?.seed === undefined) return 'It was recorded before runs could go on.';
+  // (One that never ended was going when the viewer was closed: it can go on too.)
+  if (end && !['hand', 'time'].includes(String(end.how))) return 'Its world came to an end.';
+  const living = new Map<unknown, unknown>();
+  for (const event of events) {
+    if (event.type === 'wake') living.set(event.place, event.number);
+    if (event.type === 'death' && living.get(event.place) === event.number) living.delete(event.place);
+  }
+  if (!living.size) return 'Nobody in it is alive.';
+  const kept = new Set(events.filter(event => event.type === 'session').map(event => `${event.place} ${event.number}`));
+  if ([...living].some(([place, number]) => !kept.has(`${place} ${number}`)))
+    return 'Not every tinkerling in it can go on: only Claude Code and Gemini keep what they remember.';
+  return null;
+}
+
+const minutesSaid = (minutes: number) => `${Math.round(minutes * 10) / 10} minute${minutes === 1 ? '' : 's'}`;
 
 /** A name for a run: the moment it starts, like 20261125-220619. */
 export function runId(): string {

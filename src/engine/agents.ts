@@ -56,15 +56,15 @@ export function ask(model: string, knows: string, question: string): Promise<str
   });
 }
 
-/** A text as one agent gets it: with the moment, the time left and its number filled in.
- *  {time} {day} {date} {left} {n} */
-function filled(text: string, agent: Agent, run: Run): string {
-  const now = new Date(), left = run.left();
+/** A text as one agent gets it: with the moment and the time left filled in.
+ *  {time} {day} {date} {left} */
+function filled(text: string, run: Run): string {
+  const now = run.clock(), left = run.left();
   const lasts = left === null ? 'no time limit' : left >= 60 ? `${Math.floor(left / 60)} min ${left % 60} s` : `${left} s`;
   return text.replaceAll('{time}', now.toTimeString().slice(0, 5))
     .replaceAll('{day}', now.toLocaleDateString('en', { weekday: 'long' }))
     .replaceAll('{date}', now.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' }))
-    .replaceAll('{left}', lasts).replaceAll('{n}', String(agent.number));
+    .replaceAll('{left}', lasts);
 }
 
 /** From now on, whoever wakes up in the run is an AI agent. `address` is where the agent in
@@ -74,14 +74,16 @@ export function populate(run: Run, address: (place: number) => string): void {
   mkdirSync(NEUTRAL, { recursive: true });
   const log = (name: string, text: string) => run.folder && appendFileSync(join(run.folder, name), text);
 
-  function wake(agent: Agent, role: Role): void {
+  /** `again`: it goes on in the session it was in (see Run.goOn), and is told this. */
+  function wake(agent: Agent, role: Role, again?: { session?: string; told: string }): void {
     const { place } = agent;
     const [kind, model] = parted(role.model ?? '');
     const mind = MINDS[kind];
     if (!mind) return void log('errors.txt', `There is no mind "${kind}" (the model of ${role.title} is "${role.model ?? ''}").\n`);
     const here = () => alive.get(place) === me;   // it is gone already: what it still says is not heard
     const me: Mind = mind.wake({
-      model, knows: filled(role.knows, agent, run), told: filled(role.told, agent, run), tools: address(place), folder: NEUTRAL,
+      model, knows: [agent.name && `You are called ${agent.name}.`, filled(role.knows, run)].filter(Boolean).join(' '), told: again?.told ?? filled(role.told, run), tools: address(place), folder: NEUTRAL,
+      resume: again?.session, session: id => run.session(place, id),
       thinks: text => here() && run.inner(place, 'think', text),
       writes: text => here() && run.inner(place, 'write', text),
       stopped: () => here() && run.stopped(place),   // it ended its turn: nobody answers (see Run.stopped)
@@ -95,6 +97,10 @@ export function populate(run: Run, address: (place: number) => string): void {
     woke(agent, role) {
       // (The same agent again, after it died in its world: it goes on with its next action.)
       if (!agent.again || !alive.has(agent.place)) wake(agent, role);
+    },
+    resumed(agent, role, told) {
+      const session = run.events.findLast(event => event.type === 'session' && event.place === agent.place && event.number === agent.number);
+      wake(agent, role, { session: session?.id as string | undefined, told });
     },
     told(agent, text) {
       alive.get(agent.place)?.tell(text);

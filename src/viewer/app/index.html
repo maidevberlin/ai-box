@@ -53,32 +53,42 @@
   .run .facts .when { margin-left: auto; white-space: nowrap; }
 
   /* ---- one run: the world, and what the agents think, say and do ---- */
-  #viewer { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 12px; min-height: 0; }
+  #viewer { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
   #stage { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
   #title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #title .cog { border: 0; background: none; padding: 2px; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+  #title .cog:hover { color: var(--text); }
+  #title .cog .icon { width: 18px; height: 18px; }
   #summary { margin: 4px 0 0; color: var(--muted); max-width: 78ch; }
   /* On the drawing: how many agents there have been, and the notes lying in the world (a
      button, and a panel that opens from it). */
   #facts { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; }
   #facts .chip { padding: 4px 10px; background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
   #facts button.chip { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-  #notes, #agentList { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
+  #notes { position: absolute; left: 10px; top: 42px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 96px);
            overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
            padding: 6px 14px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
   #notes .note { padding: 8px 0; border-bottom: 1px solid var(--line); }
   #notes .note:last-child { border: 0; }
   #notes .where { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   #notes .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  #agentList { padding: 6px; }
-  #agentList .who { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; text-align: left; }
-  #agentList .who:hover:not(:disabled) { background: var(--soft); }
-  #agentList .who:disabled { cursor: default; opacity: .55; }
-  #agentList .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--place); flex: none; }
-  #agentList .what { flex: 1; }
-  #agentList .has { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 700; }
+  /* The legend of the agents alive: a row each, always in the same order, the icon of what each
+     did last always in the same spot. */
+  #legend { position: absolute; left: 10px; top: 42px; display: flex; flex-direction: column; gap: 2px; max-height: calc(100% - 96px); overflow-y: auto; }
+  #legend .who { display: flex; align-items: center; gap: 7px; padding: 3px 8px 3px 6px; border: 0; border-radius: 99px; cursor: pointer;
+                 background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); font-size: 12px; text-align: left; }
+  #legend .who:hover { background: var(--panel); }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--place); flex: none; }
+  #legend .logo { border: 0; background: none; }
+  #legend .logo svg { width: 100%; height: 100%; }
+  #legend b { min-width: 3.2em; }
+  #legend .doing { width: 16px; height: 16px; display: grid; place-items: center; color: var(--muted); }
+  #legend .doing .icon { width: 14px; height: 14px; }
+  #legend .has { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; }
+  #legend .has .icon { width: 12px; height: 12px; }
   #view { flex: 1; min-height: 240px; position: relative; border-radius: 12px; overflow: hidden; background: var(--soft); }
   #scene, #scene canvas, .bubbles { position: absolute; inset: 0; }
-  #hint { position: absolute; right: 10px; top: 10px; pointer-events: none; opacity: .75;
+  #hint { position: absolute; left: 10px; bottom: 10px; pointer-events: none; opacity: .75;
           background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
   .bubble { max-width: 230px; padding: 6px 10px; border-radius: 12px; font-size: 12px; line-height: 1.35;
             background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text);
@@ -101,40 +111,38 @@
   #speed { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 4px 6px; }
   #live { border: 1px solid var(--line); border-radius: 99px; background: none; padding: 3px 11px; color: var(--muted); font-weight: 600; }
   #live.on { border-color: var(--live); color: var(--live); }
+  #goOn { border: 1px solid var(--accent); background: none; color: var(--accent); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
+  #goOn:disabled { border-color: var(--line); color: var(--muted); opacity: .6; }
+  #goOnDialog { width: min(440px, calc(100% - 40px)); }
+  #goOnDialog label { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; }
+  #goOnDialog input { width: 76px; text-align: center; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 7px 10px; }
+  #goOnDialog .trouble { color: var(--stop); }
   #stop { border: 1px solid var(--stop); background: none; color: var(--stop); border-radius: 99px; padding: 3px 11px; font-weight: 600; }
 
-  #side { display: flex; flex-direction: column; padding: 8px; }
-  #side h2 { margin: 0; padding: 8px 8px 10px; font-size: 14px; }
-  #log { position: relative; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 0 4px 8px; }
-  .step { padding: 6px 12px; border-radius: 4px 12px 12px 4px; cursor: pointer; border: 1px solid transparent; border-left: 3px solid var(--place, var(--line)); }
-  .step.now { border-color: var(--accent); border-left-color: var(--place, var(--accent)); }
+  /* The conversation pops up over the lower right of the world: what is said and thought, and
+     what stands out, as it happens. The newest is at the bottom; after a while each fades out. */
+  #side { position: absolute; right: 10px; bottom: 10px; height: 50%; width: min(380px, calc(100% - 20px)); pointer-events: none;
+          display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; overflow: hidden;
+          mask-image: linear-gradient(to bottom, transparent, #000 25%); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 25%); }
+  #side.closed { display: none; }
+  #sideToggle { position: absolute; top: 10px; right: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+                background: color-mix(in srgb, var(--panel) 82%, transparent); color: var(--text); }
+  #side .step { flex: none; background: color-mix(in srgb, var(--panel) 86%, transparent); transition: opacity .4s; }
+  #side .step:not(.on) { display: none; }
+  .step { padding: 6px 12px; border-radius: 4px 12px 12px 4px; border-left: 3px solid var(--place, var(--line)); }
   .step .label { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--place, var(--muted)); }
+  /* (A long thought is cut short: the whole of it is in the run's record.) */
+  .step .text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
   .step .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .step.say { background: var(--soft); }
+  #side .step.say { background: color-mix(in srgb, var(--soft) 92%, transparent); }
   .step.say .heard { color: var(--muted); font-size: 12.5px; white-space: pre-wrap; margin-top: 4px; }
   .step.think .text { color: var(--muted); font-style: italic; }
-  .step.act .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
-  /* (What the world answers is shown in letters of one width: some answers are small maps.) */
-  .step.act .text { color: var(--muted); font: 12px/1.45 ui-monospace, monospace; }
+  .step.act .text { color: var(--muted); }
   .step.wake { color: var(--muted); }
-  /* A new turn of an agent: a line across, then what it is told. */
-  .step.turn { display: flex; flex-direction: column; }
-  .step .turnline { order: -1; display: flex; align-items: center; gap: 10px; margin: 2px 0 8px; color: var(--muted);
-                    font-size: 11px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-  .step .turnline::before, .step .turnline::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
-  .step.death { color: var(--stop); border-top: 1px dashed var(--stop); border-radius: 0; margin-top: 6px; }
+  .step.death { color: var(--stop); }
   .step.stop { text-align: center; color: var(--muted); border-left-color: transparent; }
   .icon { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .step.stop .label { justify-content: center; }
-  .step.folded details summary { list-style: none; cursor: pointer; }
-  .step.folded details summary::-webkit-details-marker { display: none; }
-  .doings { display: flex; flex-wrap: wrap; gap: 4px 14px; }
-  .doing { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
-  .doing .icon { color: var(--place, var(--muted)); }
-  .calls { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
-  .calls .one { padding-left: 8px; border-left: 1px solid var(--line); }
-  .calls .one .call { font-family: ui-monospace, monospace; font-size: 12.5px; }
-  .calls .one .text { color: var(--muted); font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; }
 
   /* ---- the screens that are pages: a head, and what scrolls below it ---- */
   .page { display: flex; flex-direction: column; overflow: hidden; }
@@ -370,7 +378,6 @@
     body { height: auto; grid-template-columns: minmax(0, 1fr); }
     #view { min-height: 60vw; }
     #viewer { grid-template-columns: minmax(0, 1fr); }
-    #side { max-height: 80vh; }
     .stats, .ais { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
@@ -404,10 +411,12 @@
       </header>
       <div id="view">
         <div id="scene"></div>
-        <div id="facts"><button id="agentsButton" class="chip"></button><button id="notesButton" class="chip"></button><button id="setupButton" class="chip">⚙ How it was set up</button></div>
-        <div id="agentList" hidden></div>
+        <div id="facts"><button id="notesButton" class="chip"></button></div>
+        <div id="legend"></div>
         <div id="notes" hidden></div>
         <div id="hint" class="chip">Drag to turn · scroll to zoom</div>
+        <section id="side" aria-label="What the tinkerlings think and say, as it happens"></section>
+        <button id="sideToggle" class="chip"></button>
       </div>
       <div id="controls">
         <button id="play" aria-label="Play">▶</button>
@@ -418,19 +427,15 @@
         </select>
         <button id="live" hidden>● Live</button>
         <button id="stop" hidden>■ End the world</button>
+        <button id="goOn" hidden>▶ Go on</button>
       </div>
     </main>
-
-    <section class="panel" id="side" aria-label="Conversation">
-      <h2>What the agents think, say and do</h2>
-      <div id="log"></div>
-    </section>
   </div>
 
   <section class="panel page" id="connections" hidden>
     <header>
       <h1>AI connections</h1>
-      <p>The agents think with these. Connect as many as you like: a new run offers every model they have.</p>
+      <p>The tinkerlings think with these. Connect as many as you like: a new run offers every model they have.</p>
     </header>
     <div class="scroll" id="aisList"></div>
   </section>
@@ -493,7 +498,15 @@
   <dialog id="runSetup">
     <h2 id="setupTitle"></h2>
     <div id="setupBody"></div>
-    <form method="dialog"><button>Close</button></form>
+    <form method="dialog"><button type="button" id="startLike" class="button main">Start a run like this</button> <button>Close</button></form>
+  </dialog>
+
+  <dialog id="goOnDialog">
+    <h2>Let the world go on</h2>
+    <p>It is played again up to where it ended, then it goes on from there. Every tinkerling that was alive wakes up where it was, and remembers all of it.</p>
+    <label>For <input id="goOnMinutes" type="number" min="0" step="1"> more minutes <span class="muted">(0: no time limit)</span></label>
+    <p id="goOnTrouble" class="trouble" hidden></p>
+    <form method="dialog"><button type="button" id="goOnStart" class="button main">Go on</button> <button>Cancel</button></form>
   </dialog>
 
   <script type="module" src="/app.js"></script>

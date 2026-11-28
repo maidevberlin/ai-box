@@ -12,6 +12,7 @@ import { populate, usualModel } from './engine/agents.ts';
 import { keepAwake } from './engine/awake.ts';
 import { Doors } from './engine/doors.ts';
 import { Run, runId, type Event } from './engine/run.ts';
+import { settingsOf } from './engine/types.ts';
 import { WORLDS } from './worlds/index.ts';
 
 const [name, ...rest] = process.argv.slice(2);
@@ -26,7 +27,7 @@ for (let i = 0; i < rest.length; i += 2) {
   const [flag, value] = [rest[i]!, rest[i + 1] ?? ''];
   if (flag === '--set') {
     const [key, given] = value.split('=') as [string, string];
-    const setting = definition.settings[key];
+    const setting = settingsOf(definition)[key];
     chosen[key] = setting?.type === 'number' ? Number(given) : setting?.type === 'switch' ? given === 'true' : given;
   } else options[flag.replace(/^--/, '')] = value;
 }

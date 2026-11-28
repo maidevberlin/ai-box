@@ -2,7 +2,8 @@
 // A stand-in for an agent that speaks ACP (see src/engine/minds/acp.ts), for the tests. It
 // offers two models. Told something, it thinks, asks to use the world's tool "look" and a
 // shell of its own, says what it was allowed, and ends its turn. Told "who are you?", it
-// answers with what it was told to know when its session began, and the model it is.
+// answers with what it was told to know when its session began, and the model it is. A
+// session it loads again it first tells again, as it went.
 
 import { createInterface } from 'node:readline';
 
@@ -38,6 +39,7 @@ createInterface({ input: process.stdin }).on('line', async line => {
   switch (message.method) {
     case 'initialize': return answer({ protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } }, authMethods: [{ id: 'browser', name: 'Log in with the browser' }] });
     case 'session/new': knows = message.params._meta?.fake?.knows ?? ''; return answer({ sessionId: 's1', models: { currentModelId: model, availableModels: [{ modelId: 'small', name: 'Small' }, { modelId: 'big', name: 'Big', description: 'Thinks longer' }] } });
+    case 'session/load': chunk(message.params.sessionId, 'agent_message_chunk', 'What I said before.'); return answer({});
     case 'session/set_model': model = message.params.modelId; return answer({});
     case 'session/prompt': return answer(await prompt(message.params));
     case 'session/cancel': return;

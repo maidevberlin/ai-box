@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BlockWorld, Body } from '../src/blocks/index.ts';
 import { Run } from '../src/engine/run.ts';
-import { testTime } from '../src/engine/time.ts';
+import { heldTime } from '../src/engine/time.ts';
 import { act } from './help.ts';
 import orchard from '../src/worlds/orchard.ts';
 
 function started(chosen = {}, roles = {}) {
-  const time = testTime();
+  const time = heldTime();
   const run = new Run(orchard, { time, seed: 7, minutes: 0, chosen: { rabbits: false, ...chosen }, roles: { agent: roles } });
   run.start();
   const world = run.world as unknown as BlockWorld<any>;

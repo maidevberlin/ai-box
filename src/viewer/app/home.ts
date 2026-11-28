@@ -52,9 +52,9 @@ function steps(): HTMLElement {
   return el('section', 'welcome',
     el('h2', '', 'Getting started'),
     el('ol', 'steps',
-      step(connected, 'Connect an AI', 'The agents think with an AI you already use: Claude, ChatGPT, a provider with an API key, or models on this computer.', '#ais', 'Connect an AI', !connected),
+      step(connected, 'Connect an AI', 'The tinkerlings think with an AI you already use: Claude, ChatGPT, a provider with an API key, or models on this computer.', '#ais', 'Connect an AI', !connected),
       step(started, 'Start a run', 'Pick a world, decide who lives in it and what they are told, and start it.', '#new', 'New run', connected && !started),
-      step(false, 'Watch what they do', 'Every run is kept: play it back, see what each agent thought, said and did.', '#new', '', false)));
+      step(false, 'Watch what they do', 'Every run is kept: play it back, see what each tinkerling thought, said and did.', '#new', '', false)));
 }
 
 function draw(): void {

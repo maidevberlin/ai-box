@@ -71,6 +71,8 @@ export class Scene {
   private frames = 0;        // how many more frames are drawn: nothing is drawn while nothing moves
   private last = performance.now();
   private stopped = false;
+  /** What was shown last: shown again when the robot is loaded. */
+  private lastShown: [View, Map<number, Above>] | null = null;
   private readonly box: HTMLElement;
 
   constructor(box: HTMLElement) {
@@ -98,7 +100,7 @@ export class Scene {
         figure.above.element.remove();
       }
       this.figures.clear();
-      this.wake();
+      if (this.lastShown) this.show(...this.lastShown, true);
     });
     requestAnimationFrame(() => this.frame());
   }
@@ -121,6 +123,7 @@ export class Scene {
 
   /** Shows a picture. `jump`: at once, without anyone gliding to where they are now. */
   show(view: View, aboves: Map<number, Above>, jump: boolean): void {
+    this.lastShown = [view, aboves];
     if (view.blocksVersion !== this.drawnBlocks) {
       this.drawnBlocks = view.blocksVersion;
       this.drawBlocks(view);

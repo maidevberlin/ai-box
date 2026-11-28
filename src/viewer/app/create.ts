@@ -7,6 +7,7 @@ import type { Model, Provider } from '../../engine/mind.ts';
 import type { Role, Setting } from '../../engine/types.ts';
 import { brand, logo } from './brands.ts';
 import { $, api, el } from './page.ts';
+import type { About } from './runs.ts';
 
 export interface WorldInfo {
   name: string; title: string; about: string; minutes: number; ends: string;
@@ -332,7 +333,7 @@ function drawEnd(): void {
 function summarize(): void {
   const all = Object.values(form.roles).flatMap(agents => (agents.same ? Array(agents.count).fill(agents.all) : agents.each) as Agent[]);
   const models = [...new Set(all.map(agent => found(agent.model)?.model.title ?? 'no AI chosen'))];
-  $('createSummary').textContent = `${world().title} · ${all.length} agent${all.length === 1 ? '' : 's'} · ${models.join(', ')}`;
+  $('createSummary').textContent = `${world().title} · ${all.length} tinkerling${all.length === 1 ? '' : 's'} · ${models.join(', ')}`;
 }
 
 // ---------------------------------------------------------------- what was set last
@@ -356,9 +357,15 @@ const key = (of: WorldInfo) => `tinkerlings:${of.name}`;
 
 /** How the form was left the last time, as far as it still fits the world and this computer. */
 function kept(of: WorldInfo): Filled {
-  const usual = usually(of);
   let last: Partial<Filled> | null = null;
   try { last = JSON.parse(localStorage.getItem(key(of)) ?? 'null'); } catch { /* nothing was kept */ }
+  return fitted(of, last);
+}
+
+/** A form filled in some time ago, as far as it still fits the world and this computer: what
+ *  does not, is as usual. */
+function fitted(of: WorldInfo, last: Partial<Filled> | null): Filled {
+  const usual = usually(of);
   if (!last?.roles) return usual;
   const fits = (agent: Agent | undefined, fallback: Agent): Agent => ({
     model: agent?.model && found(agent.model) ? agent.model : fallback.model,
@@ -394,10 +401,15 @@ function keep(): void {
 async function choose(name: string): Promise<void> {
   picked = name;
   const of = world();
-  form = kept(of);
+  form = again?.world === name ? fitted(of, again.filled) : kept(of);
+  again = null;
   const now = await api<WorldInfo>(`/api/worlds/${of.name}?chosen=${encodeURIComponent(JSON.stringify(form.chosen))}`);
   if (picked !== name) return;
   of.roles = now.roles;
+  // (Told what the world tells them anyway: nothing of their own.)
+  for (const [roleName, agents] of Object.entries(form.roles)) {
+    for (const one of [agents.all, ...agents.each]) if (one.told === now.roles[roleName]?.told) one.told = null;
+  }
   draw();
 }
 
@@ -437,10 +449,29 @@ function draw(): void {
 /** What a world is, in a few words: the first sentence of what is said about it. */
 const short = (of: WorldInfo) => of.about.replace(/\s+/g, ' ').split(/(?<=\.) /)[0]!;
 
+/** A run to start again: the screen opens with the world it was in, set up as it was. */
+let again: { world: string; filled: Partial<Filled> } | null = null;
+
+/** Opens the screen set up as a run was: its world, its settings, its agents. (What no longer
+ *  fits, because the world or this computer changed since, is as usual.) */
+export function startLike(run: About): void {
+  const agent = (one: { model?: string; told?: string; without?: string[] }): Agent =>
+    ({ model: one.model ?? '', told: one.told ?? null, without: one.without ?? [] });
+  again = { world: run.world, filled: {
+    // (Runs from before tinkerlings had names had none.)
+    chosen: { named: false, ...run.chosen }, minutes: run.minutes,
+    roles: Object.fromEntries(Object.entries(run.roles ?? {}).map(([name, role]) => [name, {
+      same: !role.each?.length, count: role.count, all: agent(role),
+      each: (role.each ?? []).map(own => agent({ ...role, ...own })) }])),
+  } };
+  location.hash = 'new';
+}
+
 /** Opens the screen. `onStarted` is told the id of the run that was started. */
 export async function openCreate(onStarted: (id: string) => void): Promise<void> {
   [worlds, minds] = await Promise.all([api<WorldInfo[]>('/api/worlds'), api<MindInfo[]>('/api/minds')]);
-  await choose(worlds.some(candidate => candidate.name === picked) ? picked : worlds[0]!.name);
+  const first = again && worlds.some(candidate => candidate.name === again!.world) ? again.world : picked;
+  await choose(worlds.some(candidate => candidate.name === first) ? first : worlds[0]!.name);
   $('reset').onclick = () => {
     try { localStorage.removeItem(key(world())); } catch { /* nothing was kept */ }
     void choose(picked);

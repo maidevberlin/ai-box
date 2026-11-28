@@ -14,9 +14,10 @@
 //   GET  /api/worlds/<name>?chosen=<json>   one world's roles and tools with these settings
 //   GET  /api/runs              the runs, newest first
 //   GET  /api/runs/<id>?from=N  one run: what it is about, and its record from line N on (from 0:
-//                               also how what its agents do is shown)
+//                               also how what its agents do is shown, and why it cannot go on)
 //   POST /api/runs              start a run: { world, chosen, minutes, roles }
 //   POST /api/runs/<id>/stop    end a run that is going
+//   POST /api/runs/<id>/resume  { minutes }: a run that is over goes on (see Run.goOn)
 //   GET  /api/settings          what Tinkerlings keeps, and where
 //   POST /api/forget            { what: 'runs' | 'everything' }: delete all runs, or start over
 
@@ -29,10 +30,11 @@ import { keepAwake } from '../engine/awake.ts';
 import { HOME } from '../engine/programs.ts';
 import { Doors } from '../engine/doors.ts';
 import { review } from '../engine/review.ts';
-import { Run, runId, WAIT, type Event } from '../engine/run.ts';
+import { Run, runId, WAIT, whyNotGoOn, type Event } from '../engine/run.ts';
+import { heldTime } from '../engine/time.ts';
 import { showing } from '../engine/shown.ts';
 import type { WorldDefinition } from '../engine/types.ts';
-import { usual } from '../engine/types.ts';
+import { settingsOf, usual } from '../engine/types.ts';
 import { WORLDS } from '../worlds/index.ts';
 
 const HERE = import.meta.dirname;
@@ -78,20 +80,60 @@ async function start(wish: Record<string, any>): Promise<string | null> {
   if (!definition) return null;
   // (A role whose model was not chosen gets the usual one of the first AI there is.)
   const model = await usualModel();
-  const roles = Object.fromEntries(Object.keys(definition.roles({ ...usual(definition.settings), ...wish.chosen })).map(name =>
+  const roles = Object.fromEntries(Object.keys(definition.roles({ ...usual(settingsOf(definition)), ...wish.chosen })).map(name =>
     [name, { ...wish.roles?.[name], model: wish.roles?.[name]?.model || model || undefined }]));
   const id = runId();
   if (going.has(id)) return null;   // one started this very second already
   const folder = join(RUNS, id);
   const run = new Run(definition, { id, folder, chosen: wish.chosen, roles,
                                     minutes: wish.minutes === undefined ? undefined : Number(wish.minutes) });
-  going.set(id, run);
-  populate(run, doors.let(run));
-  const [reviewer] = run.about().models as string[];
-  if (reviewer) run.listeners.push({ ended: () => void review(run.events, folder, reviewer) });
+  peopled(run, folder);
   run.start();
   keepAwake(run);
   return id;
+}
+
+/** A run that is going in this process gets its agents, and is reviewed when it ends. */
+function peopled(run: Run, folder: string): void {
+  going.set(run.id, run);
+  populate(run, doors.let(run));
+  const [reviewer] = run.about().models as string[];
+  if (reviewer) run.listeners.push({ ended: () => void review(run.events, folder, reviewer) });
+}
+
+/** Why a run that is over cannot go on. Null: it can. */
+function whyNot(id: string): string | null {
+  if (going.get(id) && !going.get(id)!.ended) return 'It is going.';
+  if (!all[String(about(id)?.world)]) return 'Its world is not there any more.';
+  return whyNotGoOn(record(id, 0));
+}
+
+/** A run that is over goes on for some more minutes (0: with no time limit): played again from
+ *  its record first, so its world is as it was. Says why not, if it cannot. */
+const resuming = new Set<string>();
+async function goOn(id: string, minutes: number): Promise<string | null> {
+  const why = resuming.has(id) ? 'It is going on already.' : whyNot(id);
+  if (why) return why;
+  resuming.add(id);
+  try {
+    return await playedAgain(id, minutes);
+  } finally {
+    resuming.delete(id);
+  }
+}
+
+async function playedAgain(id: string, minutes: number): Promise<string | null> {
+  const events = record(id, 0), known = read(join(RUNS, id, 'about.json')), [start] = events;
+  const folder = join(RUNS, id);
+  const run = new Run(all[String(start!.world)]!, { id, folder, chosen: start!.chosen as Record<string, unknown>, roles: known.roles,
+                                                    seed: Number(start!.seed), began: Number(start!.began), time: heldTime(), minutes: 0 });
+  const otherwise = await run.replay(events);
+  if (otherwise) return otherwise;
+  rmSync(join(folder, 'review.json'), { force: true });   // (it is reviewed again when it ends)
+  peopled(run, folder);
+  run.goOn(minutes);
+  keepAwake(run);
+  return null;
 }
 
 /** Every AI there could be, and how far it is set up on this computer. */
@@ -154,9 +196,9 @@ function forget(everything: boolean): Record<string, unknown> {
 
 /** What the start screen shows of a world: with the usual settings, or with the ones chosen so far. */
 function shown(world: WorldDefinition<any>, chosen: Record<string, unknown> = {}): Record<string, unknown> {
-  const all = { ...usual(world.settings), ...chosen };
+  const all = { ...usual(settingsOf(world)), ...chosen };
   const tools = Object.entries({ ...world.tools(all), wait: WAIT }).map(([name, tool]) => ({ name, about: tool.about, needed: tool.needed, on: 'on' in tool ? tool.on : undefined }));
-  return { name: world.name, title: world.title, about: world.about, settings: world.settings, minutes: world.minutes, ends: world.ends,
+  return { name: world.name, title: world.title, about: world.about, settings: settingsOf(world), minutes: world.minutes, ends: world.ends,
            roles: world.roles(all), tools };
 }
 
@@ -192,7 +234,7 @@ async function serve(request: IncomingMessage, response: ServerResponse): Promis
       const known = about(id!)!, from = Number(url.searchParams.get('from')) || 0, world = all[String(known.world)];
       // (How what the agents do is shown: with the beginning of the record.)
       return send(response, { about: known, from, events: record(id!, from),
-                              shown: from || !world ? undefined : showing(world, (known.chosen ?? {}) as Record<string, unknown>) });
+                              ...!from && { shown: world && showing(world, (known.chosen ?? {}) as Record<string, unknown>), whyNot: whyNot(id!) } });
     }
     return send(response, { error: 'not found' }, undefined, 404);
   }
@@ -212,6 +254,10 @@ async function serve(request: IncomingMessage, response: ServerResponse): Promis
   if (path.startsWith('/api/setup/')) {
     const done = await setUp(id ?? '', action ?? '', JSON.parse(body || '{}')).catch((error: Error) => ({ error: error.message }));
     return send(response, done, undefined, done.error ? 400 : 200);
+  }
+  if (action === 'resume' && RUN_ID.test(id ?? '') && about(id!)) {
+    const why = await goOn(id!, Number(JSON.parse(body || '{}').minutes) || 0);
+    return why ? send(response, { error: why }, undefined, 400) : send(response, { ok: true });
   }
   if (action === 'stop' && going.get(id ?? '')) {
     going.get(id!)!.end('Ended by hand.');

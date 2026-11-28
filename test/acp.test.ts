@@ -14,6 +14,9 @@ const fake = acp({
   bare: ({ knows }) => ({ meta: { fake: { knows } } }),
 });
 
+const resuming = acp({ ...{ title: 'Fake', about: '', site: '', program: join(import.meta.dirname, 'fake-acp.mjs'), args: [], account: 'Fake' },
+                       maker: () => ({ id: 'fake', title: 'Fake' }), bare: () => ({}), resumes: true });
+
 /** A world's tools server with one tool, "look". */
 async function tools(): Promise<{ url: string; close: () => void }> {
   const server = createServer(async (request, response) => {
@@ -27,10 +30,10 @@ async function tools(): Promise<{ url: string; close: () => void }> {
 }
 
 /** Wakes the fake agent, and hears it until it stops talking. */
-function wake(more: Partial<Waking>): Promise<{ thought: string[]; written: string[]; failed: string[] }> {
+function wake(more: Partial<Waking>, kind = fake): Promise<{ thought: string[]; written: string[]; failed: string[] }> {
   return new Promise(resolve => {
     const heard = { thought: [] as string[], written: [] as string[], failed: [] as string[] };
-    const mind = fake.wake({
+    const mind = kind.wake({
       model: '', knows: '', told: '', folder: mkdtempSync(join(tmpdir(), 'acp-')), ...more,
       thinks: text => heard.thought.push(text), writes: text => heard.written.push(text), failed: text => heard.failed.push(text),
       heard: () => {}, stopped: () => { mind.end(); resolve(heard); },
@@ -55,4 +58,14 @@ test('it may use the world\'s tools and nothing else, and is heard whole', async
 test('it knows what it is told to know, as the chosen model', async () => {
   const heard = await wake({ told: 'who are you?', knows: 'the island', model: 'big' });
   assert.deepEqual(heard.written, ['I know: the island. I am big.']);
+});
+
+test('one that can goes on in the session it was in, without being heard again saying what it said', async () => {
+  const sessions: string[] = [];
+  const heard = await wake({ told: 'who are you?', resume: 's7', session: id => sessions.push(id) }, resuming);
+  assert.deepEqual(heard.written, ['I know: . I am small.']);
+  assert.deepEqual(sessions, ['s7']);
+  const told: string[] = [];
+  await wake({ told: 'who are you?', session: id => told.push(id) });
+  assert.deepEqual(told, [], 'one that cannot go on does not say its session');
 });

@@ -20,6 +20,12 @@ export interface Waking {
   tools?: string;
   /** Where it runs: a folder whose path tells it nothing. */
   folder: string;
+  /** It goes on in a session it was in before (one it said, see `session`), instead of
+   *  beginning a new one: it remembers all of it. Only minds that `resume`. */
+  resume?: string;
+  /** Says which session it is in, so it can go on in it later: only a mind that can do that
+   *  says it. Not given: the session need not be kept. */
+  session?(id: string): void;
   thinks(text: string): void;
   writes(text: string): void;
   /** It ended its turn: it stopped talking. */

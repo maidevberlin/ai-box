@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { Picture } from '../src/blocks/world.ts';
 import { Run } from '../src/engine/run.ts';
 import { showing } from '../src/engine/shown.ts';
-import { testTime } from '../src/engine/time.ts';
+import { heldTime } from '../src/engine/time.ts';
 import { usual, type Settings } from '../src/engine/types.ts';
 import { drawing, EVENTS } from '../src/viewer/app/icons.ts';
 import { WORLDS } from '../src/worlds/index.ts';
@@ -15,8 +15,8 @@ const exists = (name: string) => drawing(name) !== undefined;
 
 test('every doing is shown as its tool says, and the run\'s own doings too', () => {
   const shown = showing(orchard, {});
-  assert.deepEqual(shown.walk, { icon: 'footprints', folded: true });
-  assert.deepEqual(shown.dig, { icon: 'shovel', folded: true });
+  assert.deepEqual(shown.walk, { icon: 'footprints' });
+  assert.deepEqual(shown.say, { icon: 'message-circle', standsOut: true });
   assert.equal(shown.look!.overHead, true);
   assert.deepEqual(shown.wait, { icon: 'hourglass', overHead: true });
   assert.equal(shown.think!.icon, 'brain');
@@ -24,13 +24,13 @@ test('every doing is shown as its tool says, and the run\'s own doings too', () 
 
 test('a world can show a doing differently, and only in what it says', () => {
   const shown = showing({ ...orchard, shown: { look: { overHead: false }, think: { icon: 'cloud' } } }, {});
-  assert.deepEqual(shown.look, { icon: 'eye', folded: true, overHead: false });
+  assert.deepEqual(shown.look, { icon: 'eye', overHead: false });
   assert.deepEqual(shown.think, { icon: 'cloud', overHead: true });
 });
 
 test('in the orchard, an agent\'s strength is over its head while hunger takes it', () => {
   for (const hunger of [true, false]) {
-    const run = new Run(orchard, { time: testTime(), seed: 1, minutes: 0, chosen: { hunger }, roles: { agent: {} } });
+    const run = new Run(orchard, { time: heldTime(), seed: 1, minutes: 0, chosen: { hunger }, roles: { agent: {} } });
     run.start();
     const over = (run.world as unknown as { picture(): Picture }).picture().bodies.find(body => body.place === 1)!.over;
     assert.deepEqual(over, hunger ? { icon: 'zap', text: '20/20' } : undefined);

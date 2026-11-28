@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { basic, blockWorld, verbTo, type BlockWorld, type Body } from '../src/blocks/index.ts';
 import { Run, type RunOptions } from '../src/engine/run.ts';
-import { testTime } from '../src/engine/time.ts';
+import { heldTime } from '../src/engine/time.ts';
 import { act as say } from './help.ts';
 import type { Role } from '../src/engine/types.ts';
 
@@ -32,7 +32,7 @@ const strip = (role: Partial<Role> = {}, make: (world: BlockWorld<any>) => void 
 });
 
 function started(definition: ReturnType<typeof strip>, options: RunOptions = {}) {
-  const time = testTime();
+  const time = heldTime();
   const run = new Run(definition, { time, seed: 1, ...options });
   run.start();
   const act = (verb: string, args: Record<string, unknown> = {}, place = 1) => say(run, place, verb, args);
@@ -294,7 +294,7 @@ test('the world ends when its time is up, and the record holds everything', asyn
   const { act, run, time } = started(strip(), { minutes: 1 });
   await act('look');
   time.pass(61);
-  assert.equal(run.ended, "The world's time was up after 1 minutes.");
+  assert.equal(run.ended, "The world's time was up after 1 minute.");
   assert.deepEqual(run.events.map(event => event.type), ['start', 'wake', 'act', 'end']);
   assert.equal(await act('look'), 'The world has ended.');
 });
@@ -574,7 +574,7 @@ test('an agent knows again who it has met, and hears steps it does not see', asy
 test('agents of one role can each be set up on their own, within how many the role allows', () => {
   const woke: [number, string | undefined, string][] = [];
   const definition = strip({ between: [1, 3] });
-  const run = new Run(definition, { time: testTime(), seed: 1, roles: { agent: {
+  const run = new Run(definition, { time: heldTime(), seed: 1, roles: { agent: {
     count: 5, model: 'all/same', each: [{ model: 'one/own', told: 'Hello, first.' }, {}] } } });
   run.listeners.push({ woke: (agent, role) => void woke.push([agent.place, role.model, role.told]) });
   run.start();

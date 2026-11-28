@@ -236,6 +236,8 @@ export interface BlockWorld<S extends Settings = Settings> {
   // time and chance
   /** Seconds since the world started. */
   now(): number;
+  /** The time of day in the world (see Host.clock). */
+  clock(): Date;
   /** Do something later. With a place: only if the block there is still the same one then. */
   after(seconds: number, what: () => void, at?: Place): void;
   /** Do something again and again. With a place: as long as the block there stays. */

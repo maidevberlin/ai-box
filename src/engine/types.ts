@@ -29,6 +29,17 @@ export type Chosen<S extends Settings> = 0 extends 1 & S ? Record<string, any> :
     : string;
 };
 
+/** The engine's own settings: every world has them, before its own (see settingsOf). */
+export const ENGINE = {
+  named: { type: 'switch', title: 'Tinkerlings have names', usual: true, about: 'agents',
+           hint: 'Each knows only its own. Off: they have none, and may give each other one.' },
+} satisfies Settings;
+
+/** All settings of a world: the engine's and its own. Whatever reads a world's settings reads these. */
+export function settingsOf(definition: { settings: Settings }): Settings {
+  return { ...ENGINE, ...definition.settings };
+}
+
 // ---------------------------------------------------------------- agents
 
 /** A kind of agent in a world. The world's code declares its roles; a person starting a
@@ -80,6 +91,8 @@ export interface Agent {
   place: number;
   /** Which agent of the world it is: 1 for the first that woke up, 2 for the next... */
   number: number;
+  /** What it is called, if agents have names in its run (see names.ts). It knows it; others don't. */
+  name?: string;
   role: string;
   /** Woken up again after dying, with its memory. */
   again: boolean;
@@ -122,9 +135,9 @@ export interface Tool<W, B, A extends Args = Args> {
 export interface Shown {
   /** Its icon: the name of one at lucide.dev, like "footprints". */
   icon: string;
-  /** It says little in words: it moves the agent or a thing, which is seen in the world, or
-   *  it only looks. In the conversation, a row of such doings is one line: "walk (3), look (4)". */
-  folded?: boolean;
+  /** It stands out: when it is done, it pops up in the conversation over the world (saying
+   *  something, harming someone, leaving). Most doings do not: they are seen in the world. */
+  standsOut?: true;
   /** It is not seen in the world: for a moment, its icon is over the agent's head. */
   overHead?: boolean;
 }
@@ -154,6 +167,8 @@ export interface Host {
   random(): number;
   /** Seconds since the world started. */
   now(): number;
+  /** The time of day in the world: when it started, and as long after as it has lasted. */
+  clock(): Date;
   /** Do something later. Returns how to call it off. This is all the time a world has:
    *  nothing happens by itself unless somebody asked for it this way. */
   after(seconds: number, what: () => void): () => void;

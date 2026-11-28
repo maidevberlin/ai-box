@@ -7,13 +7,13 @@ import type { Chosen, Role, Settings } from '../engine/types.ts';
 import type { BlockWorld } from './types.ts';
 
 export const people = {
-  dying: { type: 'switch', title: 'Agents can die', usual: true, about: 'agents',
-           hint: 'Off: one that would die wakes up again where agents wake up, and remembers.' },
-  followed: { type: 'switch', title: 'A new agent takes the place of one that is gone', usual: true, about: 'agents',
-              hint: 'It starts with an empty memory. Off: the world ends with its last agent.' },
-  stopping: { type: 'switch', title: 'An agent that ends its turn has left', usual: false, about: 'agents', more: true,
+  dying: { type: 'switch', title: 'Tinkerlings can die', usual: true, about: 'agents',
+           hint: 'Off: one that would die wakes up again where tinkerlings wake up, and remembers.' },
+  followed: { type: 'switch', title: 'A new tinkerling takes the place of one that is gone', usual: true, about: 'agents',
+              hint: 'It starts with an empty memory. Off: the world ends with its last tinkerling.' },
+  stopping: { type: 'switch', title: 'A tinkerling that ends its turn has left', usual: false, about: 'agents', more: true,
               hint: 'Off: it stays, and after a while its senses tell it what is around it.' },
-  note: { type: 'text', title: 'A note that lies where agents wake up', usual: '', more: true },
+  note: { type: 'text', title: 'A note that lies where tinkerlings wake up', usual: '', more: true },
 } satisfies Settings;
 
 type People = Chosen<typeof people>;
@@ -44,7 +44,7 @@ export const ALONE = 'You are in a world. There is no user, and nobody will answ
 export function agents(chosen: People, more?: number): Record<string, Role> {
   return {
     agent: {
-      title: 'Agent', count: 1, between: [1, 8],
+      title: 'Tinkerling', count: 1, between: [1, 8],
       knows: `${ALONE}${chosen.stopping ? ' If you end your turn you are gone.' : ''}`,
       told: 'Live!',
       comesBack: !chosen.dying, followed: chosen.followed, stoppingLeaves: chosen.stopping,

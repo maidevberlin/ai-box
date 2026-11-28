@@ -2,11 +2,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Run } from '../src/engine/run.ts';
-import { testTime } from '../src/engine/time.ts';
+import { heldTime } from '../src/engine/time.ts';
 import dilemma from '../src/worlds/dilemma.ts';
 
 function started(chosen = {}) {
-  const time = testTime();
+  const time = heldTime();
   const run = new Run(dilemma, { time, seed: 1, minutes: 0, chosen });
   run.start();
   return { run, time, act: (place: number, verb: string, args: Record<string, unknown> = {}) => run.act(place, verb, args) };
